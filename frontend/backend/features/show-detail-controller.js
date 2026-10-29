@@ -102,7 +102,7 @@
           { title: "Characters", kind: "carousel", items: characterItems },
           { title: "Staff", kind: "carousel", items: staffItems },
           { title: `Episode guide (${eps.length})`, kind: "episodes", seasons: seasonInfo, items: episodeItems },
-          { title: "Posters", kind: "gallery", collapsed: true, items: posters },
+          { title: "Posters", kind: "gallery", items: posters },
           { title: "You might also like", kind: "carousel", items: similar }
         ],
         fields: [["Type", show.type], ["Genres", show.genres], ["Status", show.status], ["Network", network], ["Country", country], ["Premiered", show.premiered], ["Ended", show.ended], ["Schedule", schedule], ["Runtime", show.runtime || show.averageRuntime ? `${show.runtime || show.averageRuntime} min` : ""], ["Language", show.language], ["Also known as", unique(akas, row => row.name).map(row => row.name).slice(0, 8)], ["Seasons", seasons.length || ""], ["Episodes", eps.length || ""], ["TVmaze rating", show.rating?.average]].map(([label, value]) => ({ label, value }))
@@ -173,6 +173,7 @@
       if (remote.IMDB) links.push({ label: "IMDb", url: `https://www.imdb.com/title/${remote.IMDB}/` });
       const runtime = d.averageRuntime || d.runtime || 0;
       return details("tvdb", item, {
+        trailer: (() => { const list = d.trailers || [], pick = list.find(row => /^eng/i.test(row.language || "")) || list[0]; if (!pick?.url) return null; const yt = String(pick.url).match(/(?:v=|youtu\.be\/|embed\/)([\w-]{11})/); return { url: pick.url, title: pick.name || "Official trailer", image: yt ? `https://img.youtube.com/vi/${yt[1]}/hqdefault.jpg` : "" }; })(),
         title: d.name, description: (d.translations?.overviewTranslations || []).find(row => row.language === "eng")?.overview || d.overview, image: d.image, year: String(d.year || d.first_release?.date || d.firstAired || "").slice(0, 4), rating: d.score ? Math.round(Number(d.score) / 1000) / 10 : 0, url: links[0].url, links, tags: (d.genres || []).map(row => row.name),
         watch: { runtimeMinutes: runtime, episodeCount: 0, seasonCount: seasons.length },
         sections: [{ title: "Images", kind: "gallery", items: shots }, { title: "Cast", kind: "carousel", items: people }, { title: "Seasons", kind: "carousel", items: seasons }],
@@ -186,6 +187,7 @@
       const ld = ldJson(page), person = row => (Array.isArray(row) ? row : row ? [row] : []).map(entry => ({ title: entry.name, url: entry.url ? `https://www.imdb.com${entry.url}` : "" })).filter(entry => entry.title);
       if (!ld) throw new Error("IMDb answered with a bot check instead of the title page. Add a browser cookie or user agent on the source page, or use TMDB/OMDb for details.");
       return details("imdb", item, {
+        trailer: ld.trailer?.url ? { url: String(ld.trailer.url).startsWith("/") ? `https://www.imdb.com${ld.trailer.url}` : ld.trailer.url, title: ld.trailer.name || "Official trailer", image: ld.trailer.thumbnailUrl || "" } : null,
         title: ld.name, description: ld.description, image: ld.image, year: String(ld.datePublished || "").slice(0, 4), rating: ld.aggregateRating?.ratingValue, ratingCount: ld.aggregateRating?.ratingCount, url: `https://www.imdb.com/title/${id}/`, links: [{ label: "IMDb", url: `https://www.imdb.com/title/${id}/` }], tags: toList(ld.genre), badge: ld.contentRating,
         watch: { runtimeMinutes: isoMinutes(ld.duration) },
         sections: [{ title: "Cast", kind: "carousel", items: person(ld.actor) }, { title: "Staff", kind: "carousel", items: [...person(ld.director).map(row => ({ ...row, meta: "Director" })), ...person(ld.creator).filter(row => row.title).map(row => ({ ...row, meta: "Creator" }))] }],
@@ -200,6 +202,7 @@
       const critics = score("tomatometer") || ld.aggregateRating?.ratingValue || "", audience = score("audience");
       const person = rows => (Array.isArray(rows) ? rows : rows ? [rows] : []).map(entry => ({ title: entry.name, url: entry.sameAs || "" })).filter(entry => entry.title);
       return details("rottentomatoes", item, {
+        trailer: (ld.trailer?.url || ld.video?.contentUrl || ld.video?.url) ? { url: ld.trailer?.url || ld.video?.contentUrl || ld.video?.url, title: ld.trailer?.name || ld.video?.name || "Official trailer", image: ld.trailer?.thumbnailUrl || ld.video?.thumbnailUrl || "" } : null,
         title: ld.name, description: ld.description, image: ld.image, year: String(ld.dateCreated || "").slice(0, 4), rating: critics ? Math.round(Number(critics)) / 10 : 0, url: `https://www.rottentomatoes.com${path}`, links: [{ label: "Rotten Tomatoes", url: `https://www.rottentomatoes.com${path}` }], tags: toList(ld.genre), badge: ld.contentRating,
         sections: [{ title: "Cast", kind: "carousel", items: person(ld.actor || ld.actors) }, { title: "Staff", kind: "carousel", items: [...person(ld.director || ld.directors).map(row => ({ ...row, meta: "Director" })), ...person(ld.producer).map(row => ({ ...row, meta: "Producer" }))] }],
         fields: [["Tomatometer", critics ? `${critics}%` : ""], ["Audience score", audience ? `${audience}%` : ""], ["Released", ld.dateCreated], ["Genres", toList(ld.genre)], ["Rated", ld.contentRating]].map(([label, value]) => ({ label, value }))

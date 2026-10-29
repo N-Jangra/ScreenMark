@@ -13,7 +13,7 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "light", textSize: "normal", favoritesOnly: false, reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6366f1", categoryColors: {},
+    theme: "light", textSize: "normal", dateFormat: "auto", iconStyle: "tiles", imageStorage: "all", favoritesOnly: false, reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6366f1", categoryColors: {},
     showSidebar: true, showScrollbars: false, bottomBarStyle: "box", bottomBarCorners: "round", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
     navBar: { order: navKeys, visible: { dashboard: true, discover: true, explore: true, timeline: false, statistics: false, settings: true } },
     metadataSourceOrder: ["tvmaze", "anilist", "omdb"], customSources: [],
@@ -124,7 +124,7 @@
   let activeCategory = prefs.dashboardDefaultCategory === "remember" ? "all" : prefs.dashboardDefaultCategory || "all";
   let toastTimer;
   const detailIdFromQuery = query => { const raw = String(query || ""); return raw.startsWith("=") ? decodeURIComponent(raw.slice(1)) : new URLSearchParams(raw).get("id") || ""; };
-  let detailStack = [], detailRef = null, refData = null, refLoading = false, refError = "", refRequest = 0;
+  let detailTab = "", detailSeason = "", detailStack = [], detailRef = null, refData = null, refLoading = false, refError = "", refRequest = 0;
   let detailItemId = initialRoute[0] === "details" ? detailIdFromQuery(initialHashQuery) || null : null, detailPreview = null, detailData = null, detailError = "", detailLoading = false, detailEditMode = false, detailReturnPage = "dashboard", detailRequest = 0;
   let detailImagePosition = 0;
   const dashboardPageSize = 40;
@@ -149,6 +149,20 @@
   let dialogEntries = 0, skipNextPop = false, closingFromPop = false;
   function pushDialogEntry() { try { window.history.pushState({ dialog: true }, "", location.href); dialogEntries += 1; } catch (_) {} }
   function popDialogEntry() { if (dialogEntries > 0 && window.history.state?.dialog) { dialogEntries -= 1; skipNextPop = true; window.history.back(); } }
+  // In-app confirmation sheet (replaces the browser's window.confirm). Resolves true or false.
+  function appConfirm(message, { title = "Are you sure?", confirmLabel = "Confirm", danger = false } = {}) {
+    return new Promise(resolve => {
+      let dialog = document.getElementById("app-confirm");
+      if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "app-confirm"; dialog.className = "app-confirm"; dialog.setAttribute("aria-labelledby", "app-confirm-title"); document.body.appendChild(dialog); }
+      dialog.innerHTML = `<div class="app-confirm-card"><h2 id="app-confirm-title">${esc(title)}</h2><p>${esc(message)}</p><div class="app-confirm-actions"><button type="button" class="button secondary" data-confirm="no">Cancel</button><button type="button" class="button ${danger ? "danger" : "primary"}" data-confirm="yes">${esc(confirmLabel)}</button></div></div>`;
+      let settled = false;
+      const finish = value => { if (settled) return; settled = true; try { dialog.close(); } catch (_) {} dialog.removeAttribute("open"); resolve(value); };
+      dialog.onclose = () => finish(false); dialog.oncancel = () => finish(false);
+      dialog.onclick = event => { const choice = event.target.closest("[data-confirm]"); if (choice) finish(choice.dataset.confirm === "yes"); else if (event.target === dialog) finish(false); };
+      try { dialog.showModal(); } catch (_) { dialog.setAttribute("open", ""); }
+      dialog.querySelector('[data-confirm="yes"]')?.focus();
+    });
+  }
   function showPopup(dialog, { silent = false } = {}) {
     if (!dialog) return;
     if (typeof dialog.showModal === "function") {
@@ -196,6 +210,20 @@
     document.body.style.background = palette.background;
     document.body.style.color = palette.text;
     const root = document.documentElement;
+    // Text-safe versions of the accent and status colors for this theme's surfaces (nudged lighter on dark themes, darker on light ones until they read clearly).
+    const toRgb = hex => { const m = String(hex).replace("#", "").match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i) || String(hex).replace("#", "").match(/^([0-9a-f])([0-9a-f])([0-9a-f])$/i)?.slice(1).map(x => x + x).reduce((acc, x, i) => (acc[i + 1] = x, acc), []); return m ? [1, 2, 3].map(i => parseInt(m[i], 16)) : [99, 102, 241]; };
+    const relLum = ([r, g, b]) => { const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }; return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); };
+    const contrast = (a, b) => { const [hi, lo] = [relLum(a), relLum(b)].sort((x, y) => y - x); return (hi + .05) / (lo + .05); };
+    const readable = hex => {
+      let color = toRgb(hex); const surfaces = [palette.surface, palette.surface2, palette.shell].map(toRgb), target = palette.mode === "dark" ? [255, 255, 255] : [0, 0, 0];
+      for (let step = 0; step <= 20 && Math.min(...surfaces.map(surface => contrast(color, surface))) < 4.5; step++) color = color.map((v, i) => Math.round(v + (target[i] - v) * .12));
+      return `rgb(${color.join(",")})`;
+    };
+    document.body.style.setProperty("--accent-text", readable(prefs.mainColor || "#6657d9"));
+    document.body.style.setProperty("--warn-text", readable("#d97706"));
+    document.body.style.setProperty("--danger-text", readable("#dc3545"));
+    document.body.style.setProperty("--ok-text", readable("#16a34a"));
+    document.body.style.setProperty("--info-text", readable("#0ea5e9"));
     document.body.style.setProperty("--legacy-bg", palette.shell);
     document.body.style.setProperty("--legacy-card", palette.surface);
     document.body.style.setProperty("--legacy-text", palette.text);
@@ -219,6 +247,8 @@
     document.body.dataset.sidebar = prefs.showSidebar ? "shown" : "hidden";
     document.documentElement.dataset.showScrollbars = prefs.showScrollbars === true ? "true" : "false";
     document.body.dataset.barLayout = prefs.bottomBarLayout;
+    document.body.dataset.iconStyle = prefs.iconStyle === "inline" ? "inline" : "tiles";
+    window.SplitAppDates?.setFormat(prefs.dateFormat); window.SplitAppBackend?.setImageStorage?.(prefs.imageStorage);
     $("#bottom-bar").dataset.bg = prefs.bottomBarBackground;
     document.body.dataset.barBackground = prefs.bottomBarBackground;
     document.documentElement.style.setProperty("--accent", prefs.mainColor || "#6657d9");
@@ -320,7 +350,7 @@
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
     return { config, prefs, items, history, logEntries, roles, trackedStatuses, statusIcon, activeCategory, addCategory, discoverCategory: currentDiscoverCategory(), libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", mixCategory: mixCategory || (activeCategory !== "all" ? activeCategory : "all"), statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
-      detailData, detailError, detailLoading, detailReturnPage, detailRef, refData, refLoading, refError, detailStackSize: detailStack.length, category, labelCategory, defaultStatus, esc, safeLucideName };
+      detailData, detailError, detailLoading, detailReturnPage, detailRef, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, refItem: detailRef?.type === "episode" ? items.find(entry => entry.category === "series" && (entry.cachedDetails?.sections || []).some(section => section.kind === "episodes" && section.items.some(row => String(row.id) === String(detailRef.id)))) || null : null, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardGroupItems(groupKey) {
     const library = window.SplitAppLibrary.create(pageContext());
@@ -731,11 +761,11 @@
       await clearAppCaches(action); render(); toast("Temporary cache cleared."); return;
     }
     if (action === "clear-data") {
-      if (!confirm("Clear all tracked movies, series and activity history from this device?")) return;
+      if (!(await appConfirm("Clear all tracked movies, series and activity history from this device?", { title: "Clear tracked data", confirmLabel: "Clear", danger: true }))) return;
       items = []; history = []; persist(); render(); toast("Tracked data cleared."); return;
     }
     if (action === "factory-reset") {
-      if (!confirm("Factory reset ScreenMark? This removes your library, settings, and app cache from this device.")) return;
+      if (!(await appConfirm("Factory reset ScreenMark? This removes your library, settings, and app cache from this device.", { title: "Factory reset", confirmLabel: "Reset", danger: true }))) return;
       await clearAppCaches("temporary");
       localStorage.removeItem(`${storageKey}_log`);
       try { await window.Capacitor?.Plugins?.EncryptedStore?.clearState?.(); } catch (_) {}
@@ -874,18 +904,18 @@
     if (!form?.isConnected || !form.reportValidity()) return;
     saveItem({ currentTarget: form });
   }
-  function updateProgress(id) {
+  async function updateProgress(id) {
     const item = items.find(entry => entry.id === id); if (!item) return;
     const step = Math.max(1, Number(category(item.category)?.step) || Number(prefs.progressIncrement) || 1); if (!stepEpisodes(item, step)) item.progress = (Number(item.progress) || 0) + step; item.updatedAt = Date.now();
     const previousStatus = item.status;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = roles.done;
-    if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "ask" && window.confirm(`Mark “${item.title}” completed?`)) item.status = roles.done;
+    if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "ask" && await appConfirm(`Mark “${item.title}” completed?`, { title: "Completed?", confirmLabel: "Mark completed" })) item.status = roles.done;
     if (item.status !== previousStatus && trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     persist(); render(); toast("Progress updated.");
   }
-  function deleteItem(id) {
+  async function deleteItem(id) {
     const item = items.find(entry => entry.id === id); if (!item) return;
-    if (!window.confirm(`Delete “${item.title}” from your library?`)) return;
+    if (!(await appConfirm(`Delete “${item.title}” from your library?`, { title: "Delete title", confirmLabel: "Delete", danger: true }))) return;
     if (prefs.backupBeforeDestructive) exportList();
     items = items.filter(entry => entry.id !== id);
     persist(); entryDraftId = null; goto(addReturnPage); toast("Entry deleted.");
@@ -1023,9 +1053,10 @@
       // A Mix add of a title that was saved from a single source upgrades that entry to a Mix entry.
       if (result.source === "mix" && existing.metadataSource !== "mix") {
         const from = window.SplitAppSources.list().find(source => source.key === existing.metadataSource)?.name || existing.metadataSource || "a manual entry";
-        if (window.confirm(`“${existing.title}” is already in your library (${from}). Convert it to a Mix entry that merges every enabled source?`)) {
-          Object.assign(existing, { metadataSource: "mix", source: "mix", providerId: result.providerId, updatedAt: Date.now() }); persist(); toast("Converted to a Mix entry."); return existing;
-        }
+        appConfirm(`“${existing.title}” is already in your library (${from}). Convert it to a Mix entry that merges every enabled source?`, { title: "Convert to Mix entry", confirmLabel: "Convert" }).then(ok => {
+          if (ok) { Object.assign(existing, { metadataSource: "mix", source: "mix", providerId: result.providerId, updatedAt: Date.now() }); persist(); render(); toast("Converted to a Mix entry."); }
+        });
+        return existing;
       }
       toast("That entry is already in your library."); return existing;
     }
@@ -1143,8 +1174,8 @@
     prefs.metadataSources[`custom:${config.id}`] = prefs.metadataSources[`custom:${config.id}`] !== false;
     persist(); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast(index >= 0 ? "Custom source updated." : "Custom source added.");
   }
-  function deleteCustomSource() {
-    const id = $("#custom-source-form")?.elements.sourceId.value; if (!id || !window.confirm("Delete this custom source?")) return;
+  async function deleteCustomSource() {
+    const id = $("#custom-source-form")?.elements.sourceId.value; if (!id || !(await appConfirm("Delete this custom source?", { title: "Delete source", confirmLabel: "Delete", danger: true }))) return;
     prefs.customSources = (prefs.customSources || []).filter(row => row.id !== id);
     delete prefs.metadataSources[`custom:${id}`]; refreshSourceRegistry();
     persist(); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast("Custom source deleted.");
@@ -1188,18 +1219,18 @@
   }
   // In-app drill-down (cast, characters, staff, episodes, suggestions); each step keeps the page it came from for Back.
   const detailSnapshot = () => ({ detailPreview, detailItemId, detailData, detailError, detailLoading, detailEditMode, detailReturnPage, detailRef, refData, refError, scroll: window.scrollY });
-  function clearDetailStack() { detailStack = []; detailRef = null; refData = null; refError = ""; refLoading = false; refRequest++; }
-  function openDetailRef(type, id, title, extra) {
+  function clearDetailStack() { detailTab = ""; detailSeason = ""; detailStack = []; detailRef = null; refData = null; refError = ""; refLoading = false; refRequest++; }
+  function openDetailRef(type, id, title, extra, replace = false) {
     if (!id) return;
-    detailStack.push(detailSnapshot());
+    if (!replace) detailStack.push(detailSnapshot());
     if (type === "show") {
       const existing = items.find(row => row.metadataSource === "tvmaze" && String(row.providerId) === String(id));
       detailRef = null; refData = null; detailEditMode = false; detailError = ""; detailData = null; detailRequest++;
       if (existing) { detailPreview = null; detailItemId = existing.id; }
       else { detailItemId = null; detailPreview = { id: `tvmaze:${id}`, title: title || "Series", category: "series", source: "tvmaze", metadataSource: "tvmaze", providerId: String(id), status: defaultStatus("series") }; }
-      render(); scrollPageTop(); historyPush(); loadDetails(); return;
+      render(); scrollPageTop(); historyPush(replace); loadDetails(); return;
     }
-    detailRef = { type, id, title, extra }; refData = null; refError = ""; render(); scrollPageTop(); historyPush(); loadDetailRef();
+    detailRef = { type, id, title, extra }; refData = null; refError = ""; render(); scrollPageTop(); historyPush(replace); loadDetailRef();
   }
   async function loadDetailRef() {
     const ref = detailRef, requestId = ++refRequest; if (!ref) return;
@@ -1273,14 +1304,21 @@
     const watched = new Set((item.watchedEpisodeIds || []).map(String));
     const id = String(episodeId);
     const previousStatus = item.status;
-    if (watched.has(id)) watched.delete(id); else watched.add(id);
+    let earlier = 0;
+    if (watched.has(id)) watched.delete(id);
+    else {
+      // Watching an episode means you saw the ones before it: check those too.
+      const info = window.SplitAppLibrary.episodeInfo(item), index = info ? info.eps.findIndex(entry => String(entry.id) === id) : -1;
+      if (index > 0) info.eps.slice(0, index).forEach(entry => { if (!watched.has(String(entry.id))) { watched.add(String(entry.id)); earlier += 1; } });
+      watched.add(id);
+    }
     item.watchedEpisodeIds = [...watched];
     item.goal = Number(item.goal) || Number(detailData?.goal) || watched.size;
     item.progress = watched.size;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = roles.done;
     item.updatedAt = Date.now();
     if (item.status !== previousStatus && trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
-    persist(); render(); toast(watched.has(id) ? "Episode marked watched." : "Episode marked unwatched.");
+    persist(); render(); toast(watched.has(id) ? (earlier ? `Episode and ${earlier} earlier ${earlier === 1 ? "episode" : "episodes"} marked watched.` : "Episode marked watched.") : "Episode marked unwatched.");
   }
   function deleteFromDetails(id) {
     const item = items.find(entry => entry.id === id); if (!item) return;
@@ -1305,7 +1343,7 @@
     if (!dialog) {
       dialog = document.createElement("dialog"); dialog.id = "item-action-dialog"; dialog.className = "ios-action-sheet";
       document.body.appendChild(dialog);
-      dialog.addEventListener("click", event => {
+      dialog.addEventListener("click", async event => {
         if (event.target === dialog) { closePopup(dialog); return; }
         const button = event.target.closest("[data-sheet-action]"); if (!button) return;
         const target = items.find(entry => entry.id === dialog.dataset.itemId);
@@ -1314,7 +1352,7 @@
         const action = button.dataset.sheetAction;
         if (action === "details") openDetails(target.id);
         else if (action === "remove") {
-          if (!window.confirm(`Remove “${target.title}” from your collection?`)) return;
+          if (!(await appConfirm(`Remove “${target.title}” from your collection?`, { title: "Remove title", confirmLabel: "Remove", danger: true }))) return;
           if (prefs.backupBeforeDestructive) exportList();
           items = items.filter(entry => entry.id !== target.id); persist(); render(); toast("Entry removed.");
         } else if (action !== "cancel") { setItemStatus(target, action); render(); toast(`Marked as ${action}.`); }
@@ -1370,6 +1408,13 @@
     const settingPreviewIcons = {
       textSize: { small: "type", normal: "text", large: "text-cursor-input" },
       animationSpeed: { off: "pause", fast: "zap", normal: "gauge", slow: "turtle", custom: "sliders-horizontal" },
+      dashboardView: { list: "list", "compact-list": "align-justify", grid: "layout-grid", "detailed-grid": "layout-dashboard", "compact-grid": "grid-3x3", "large-grid": "square", timeline: "calendar-days" },
+      dashboardDefaultCategory: { remember: "history", all: "layers", movie: "film", series: "tv" },
+      dashboardSort: { "updated-desc": "clock-3", "created-desc": "calendar-plus", "progress-desc": "trending-up", "progress-asc": "trending-down", "rating-desc": "star", "release-desc": "calendar-days", "alphabetical-asc": "arrow-down-a-z", "alphabetical-desc": "arrow-up-z-a" },
+      defaultStatus: { Watchlist: "bookmark", "In Progress": "play", Completed: "circle-check", "On Hold": "pause", Dropped: "circle-x" },
+      dateFormat: { auto: "globe", dmy: "calendar", mdy: "calendar", iso: "calendar-days", long: "calendar-check" },
+      iconStyle: { tiles: "layout-grid", inline: "list" },
+      imageStorage: { all: "images", posters: "image", online: "cloud-off" },
       animationEasing: { smooth: "spline", spring: "activity", bouncy: "repeat", linear: "move-right" },
       pageTransition: { slide: "move-right", fade: "cloud", zoom: "maximize-2", rise: "move-up", flip: "flip-horizontal", none: "ban" },
       cardEntrance: { rise: "arrow-up-from-line", fade: "cloud", pop: "sparkles", slide: "move-right", none: "ban" },
@@ -1380,11 +1425,9 @@
       bottomBarCorners: { round: "panels-top-left", sharp: "square" },
       bottomBarLabels: { "icons-labels": "list", "icons-only": "layout-grid" },
       bottomBarLayout: { spread: "align-horizontal-space-between", center: "align-horizontal-justify-center", left: "align-horizontal-justify-start" },
-      dashboardView: { cards: "layout-grid", list: "list" },
       cardCorners: { rounded: "circle", soft: "squircle", square: "square" },
       dashboardDensity: { comfortable: "rows-3", compact: "rows-2" },
       dashboardGroupBy: { none: "list", status: "circle-check", category: "folders", release: "calendar-days" },
-      dashboardSort: { title: "arrow-down-a-z", recent: "clock-3", rating: "star" },
       ratingFormat: { "5-stars": "star", "10-point": "chart-no-axes-column-increasing" },
       automaticCompletion: { automatic: "refresh-cw", ask: "message-circle-question", manual: "hand" },
       defaultStatus: Object.fromEntries(config.categories[0].statuses.map(status => [status, statusIcon(status)])),
@@ -1505,7 +1548,7 @@
     toast("Replaying animations.");
   }
   function resetAppearance() {
-    ["theme", "textSize", "font", "mainColor", "showSidebar", "showScrollbars", "bottomBarStyle", "bottomBarCorners", "bottomBarLabels", "bottomBarBackground", "bottomBarTransparency", "bottomBarLayout"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
+    ["theme", "textSize", "font", "dateFormat", "iconStyle", "mainColor", "showSidebar", "showScrollbars", "bottomBarStyle", "bottomBarCorners", "bottomBarLabels", "bottomBarBackground", "bottomBarTransparency", "bottomBarLayout"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
     prefs.categoryColors = {};
     prefs.navIcons = { ...prefsDefaults.navIcons };
     prefs.navBar = { order: [...navKeys], visible: { ...prefsDefaults.navBar.visible } };
@@ -1693,13 +1736,17 @@
       closePopup($("#timeline-filter-dialog")); render(); return;
     }
     const detailRefButton = event.target.closest("[data-detail-ref]");
-    if (detailRefButton) { const [type, ...rest] = detailRefButton.dataset.detailRef.split(":"); { let extra; try { extra = JSON.parse(detailRefButton.dataset.detailRefExtra || "null"); } catch (_) {} openDetailRef(type, rest.join(":"), detailRefButton.dataset.detailRefTitle, extra); } return; }
+    if (detailRefButton) { const [type, ...rest] = detailRefButton.dataset.detailRef.split(":"); { let extra; try { extra = JSON.parse(detailRefButton.dataset.detailRefExtra || "null"); } catch (_) {} openDetailRef(type, rest.join(":"), detailRefButton.dataset.detailRefTitle, extra, detailRefButton.dataset.refReplace === "true"); } return; }
     if (event.target.closest("[data-detail-back]")) { detailBack(); return; }
     if (event.target.closest("[data-detail-ref-retry]")) { loadDetailRef(); return; }
     const seasonButton = event.target.closest("[data-season-toggle]");
-    if (seasonButton) { toggleSeason(detailItemId, seasonButton.dataset.seasonToggle.split(","), seasonButton.dataset.seasonDone === "true"); return; }
+    if (seasonButton) {
+      const ids = seasonButton.dataset.seasonToggle.split(","), undo = seasonButton.dataset.seasonDone === "true";
+      appConfirm(`${undo ? "Uncheck" : "Mark as watched"} all ${ids.length} episodes of this season?`, { title: undo ? "Uncheck season" : "Check whole season", confirmLabel: undo ? "Uncheck" : "Mark watched" }).then(ok => { if (ok) toggleSeason(detailItemId, ids, undo); });
+      return;
+    }
     const episode = event.target.closest("[data-episode-toggle]");
-    if (episode) { toggleEpisodeWatched(detailItemId, episode.dataset.episodeId, episode.dataset.episodeTitle || "Episode"); return; }
+    if (episode) { toggleEpisodeWatched(episode.dataset.itemId || detailItemId, episode.dataset.episodeId, episode.dataset.episodeTitle || "Episode"); return; }
     const favoritesFilter = event.target.closest("[data-favorites-filter]");
     if (favoritesFilter) { setPreference("favoritesOnly", !prefs.favoritesOnly); render(); return; }
     const quick = event.target.closest("[data-action=watch-next],[data-action=mark-all-watched],[data-action=toggle-favorite]");
@@ -1707,9 +1754,32 @@
       const item = items.find(entry => entry.id === quick.dataset.id), kind = quick.dataset.action; if (!item) return;
       const info = window.SplitAppLibrary.episodeInfo(item);
       if (kind === "watch-next") { if (info?.next) toggleEpisodeWatched(item.id, info.next.id, `${info.mark(info.next)} ${info.next.title}`); else updateProgress(item.id); }
-      else if (kind === "mark-all-watched") { if (info) toggleSeason(item.id, info.eps.map(entry => String(entry.id)), info.done === info.total); }
+      else if (kind === "mark-all-watched") { if (info) { const undo = info.done === info.total; appConfirm(`${undo ? "Uncheck" : "Mark as watched"} all ${info.total} episodes of “${item.title}”?`, { title: undo ? "Uncheck all" : "Mark all watched", confirmLabel: undo ? "Uncheck" : "Mark watched" }).then(ok => { if (ok) toggleSeason(item.id, info.eps.map(entry => String(entry.id)), undo); }); } }
       else { item.favorite = !item.favorite; item.updatedAt = Date.now(); persist(); render(); toast(item.favorite ? "Added to favorites." : "Removed from favorites."); }
       return;
+    }
+    const tabButton = event.target.closest("[data-detail-tab]");
+    if (tabButton) {
+      detailTab = tabButton.dataset.detailTab; const root = tabButton.closest(".detail-page");
+      root.querySelectorAll("[data-detail-tab]").forEach(button => { const on = button === tabButton; button.classList.toggle("active", on); button.setAttribute("aria-selected", String(on)); });
+      root.querySelectorAll("[data-detail-panel]").forEach(panel => { panel.hidden = panel.dataset.detailPanel !== detailTab; });
+      return;
+    }
+    const seasonPill = event.target.closest("[data-season-pill]");
+    if (seasonPill) {
+      detailSeason = seasonPill.dataset.seasonPill; const root = seasonPill.closest(".season-list");
+      root.querySelectorAll("[data-season-pill]").forEach(button => { const on = button === seasonPill; button.classList.toggle("active", on); button.setAttribute("aria-selected", String(on)); });
+      root.querySelectorAll("[data-season-panel]").forEach(panel => { panel.hidden = panel.dataset.seasonPanel !== detailSeason; const lazy = !panel.hidden && panel.querySelector("template[data-lazy-season]"); if (lazy) lazy.replaceWith(lazy.content); });
+      return;
+    }
+    const rateEpisode = event.target.closest("[data-episode-rate]"), reactEpisode = event.target.closest("[data-episode-react]");
+    if (rateEpisode || reactEpisode) {
+      const button = rateEpisode || reactEpisode, item = items.find(entry => entry.id === button.dataset.itemId); if (!item) return;
+      item.episodeNotes = item.episodeNotes || {}; const note = { ...(item.episodeNotes[button.dataset.episodeId] || {}) };
+      if (rateEpisode) { const score = Number(rateEpisode.dataset.episodeRate); if (note.rating === score) delete note.rating; else note.rating = score; }
+      else { if (note.reaction === reactEpisode.dataset.episodeReact) delete note.reaction; else note.reaction = reactEpisode.dataset.episodeReact; }
+      if (Object.keys(note).length) item.episodeNotes[button.dataset.episodeId] = note; else delete item.episodeNotes[button.dataset.episodeId];
+      item.updatedAt = Date.now(); persist(); render(); return;
     }
     const layoutToggle = event.target.closest("[data-ratings-layout]");
     if (layoutToggle) {
@@ -1912,6 +1982,43 @@
     goto(button.dataset.sidebarPage);
   });
   $("#header-filter").addEventListener("click", () => showPopup($("#dashboard-filter-dialog")));
+  // ---- Pull to refresh on Details and drill-down pages (touch or mouse drag from the very top) ----
+  (() => {
+    const THRESHOLD = 72, MAX = 130; let ptr = null, startY = 0, candidate = false, pulling = false, distance = 0, busy = false;
+    const element = () => {
+      if (ptr) return ptr;
+      ptr = document.createElement("div"); ptr.className = "ptr"; ptr.setAttribute("role", "status"); ptr.setAttribute("aria-live", "polite");
+      ptr.innerHTML = '<span class="ptr-bubble"><svg class="ptr-arrow" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg><span class="ptr-spinner"></span><svg class="ptr-check" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span><span class="ptr-text"></span>';
+      document.body.appendChild(ptr); return ptr;
+    };
+    const show = (state, text, offset) => { const el = element(); el.dataset.state = state; el.querySelector(".ptr-text").textContent = text; el.style.setProperty("--pull", `${offset}px`); el.style.setProperty("--turn", `${Math.min(1, offset / THRESHOLD) * 180}deg`); el.classList.add("show"); };
+    const hide = () => { if (ptr) { ptr.classList.remove("show"); ptr.dataset.state = ""; ptr.style.setProperty("--pull", "0px"); } };
+    const allowed = target => page === "details" && !busy && window.scrollY <= 0 && !target.closest?.("input, textarea, select, dialog, [data-detail-image-src], .detail-carousel, .detail-gallery, .ep-ratings-scroll, .season-pills, .detail-tabs");
+    const begin = (y, target) => { candidate = allowed(target); startY = y; pulling = false; distance = 0; };
+    const move = (y, event) => {
+      if (!candidate) return;
+      const dy = y - startY;
+      if (dy <= 6 || window.scrollY > 0) { if (pulling) { pulling = false; hide(); } return; }
+      pulling = true; distance = Math.min(MAX, dy * .55);
+      if (event.cancelable) event.preventDefault();
+      show(distance >= THRESHOLD ? "ready" : "pull", distance >= THRESHOLD ? "Release to refresh" : "Pull to refresh", distance);
+    };
+    const finish = async () => {
+      const shouldRefresh = pulling && distance >= THRESHOLD; candidate = false; pulling = false;
+      if (!shouldRefresh) { hide(); return; }
+      busy = true; show("loading", "Refreshing…", 62);
+      try { await (detailRef ? loadDetailRef() : loadDetails()); show("done", "Updated", 62); }
+      catch (_) { show("done", "Could not refresh", 62); }
+      await new Promise(resolve => setTimeout(resolve, 650)); hide(); busy = false;
+    };
+    document.addEventListener("touchstart", event => begin(event.touches[0].clientY, event.target), { passive: true });
+    document.addEventListener("touchmove", event => move(event.touches[0].clientY, event), { passive: false });
+    document.addEventListener("touchend", finish); document.addEventListener("touchcancel", () => { candidate = false; pulling = false; hide(); });
+    let mouseDown = false;
+    document.addEventListener("mousedown", event => { if (event.button !== 0 || event.target.closest("button, a, label")) return; mouseDown = true; begin(event.clientY, event.target); });
+    document.addEventListener("mousemove", event => { if (mouseDown) move(event.clientY, event); });
+    document.addEventListener("mouseup", () => { if (mouseDown) { mouseDown = false; finish(); } });
+  })();
   $("#header-type").addEventListener("click", event => { const button = event.target.closest("[data-category-filter]"); if (!button) return; activeCategory = button.dataset.categoryFilter || "all"; render(); });
   $("[data-close-setting-picker]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#setting-picker-dialog")); });
   $("#floating-add").addEventListener("click", () => openItem());

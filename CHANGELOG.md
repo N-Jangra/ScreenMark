@@ -6,6 +6,8 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 
 ### Added
 
+- Settings: Date format (device default, DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD, 29 Oct 2026) applied across pages; Icon style (inside boxes or inline); Image storage (save all images, posters and covers only, or online only).
+- Pull to refresh on Details and drill-down pages (touch, or mouse drag from the top): arrow → "Release to refresh" → spinner → ✓ Updated. Replaces the Refresh source button.
 - Favorites: heart any title from its Details page; a ♥ Favorites filter on Home (with count) and a heart on favorite cards.
 - Home: "Continue watching" hero with a Resume button, an "Airing next" list, and series cards that show "S1 · E4 watched · 173 eps left" with a one-tap check for the next episode (from the CueMark mockups in `cm/`).
 - Details: a favorite heart (any category), genres under the title, an episode summary with Mark all watched / next episode, Cast & Crew "Full list", and an Official trailer card (TMDB, AniList).
@@ -15,6 +17,18 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 
 ### Changed
 
+- Details: Edit sits beside Favorite and Delete in the header (swapping to Cancel / Save while editing); the redundant Next episode button is gone; a renamed title now shows its new name.
+- Fixed the "Metadata & Storage" settings page disappearing from the Settings index after the Animations page was added.
+- Details hero restyled: clearer backdrop, source badge on the banner, larger title and coloured status / year / rating chips. Settings option pickers (Dashboard view, Default category, Sort, Default status, …) now show proper icons instead of dots.
+- Details: purple "‹ Back" like the Settings sub-pages; "You might also like" now ends both the Episodes and Overview tabs.
+- Home header restyled (CueMark reference): clearer All / Movies / TV series toggle, search with an icon, larger status pills over a divider, and a "Tap ✓ for +1 ep" hint.
+- Metadata Sources: a source's API key box only shows while the source is switched on (it stays on the source's options page). Source options page: visible toggle on the Enable card and aligned sections.
+- Timeline and Statistics: the same top bar as the settings sub-pages (purple ‹ Back to Explore, centred title, icon tile; search sits in the Timeline bar) with no extra space above it; fixed the empty Timeline text showing raw `${...}` placeholders.
+- Discover, Explore and Settings → Metadata Sources (plus each source's options page) restyled to the CueMark reference: "N sources active" chip, full-width type toggle and larger search, subtitles and a "Manage all" link on Explore with icon tiles and an On/Off state for Mix fetch, roomier source cards, a gradient Enable card and a grouped actions card on the options page.
+- Confirmations (delete, clear data, factory reset, mark all / whole season, Mix convert) now use an in-app sheet instead of the browser's popup.
+- Theme contrast pass: accent, warning, danger, success and info text are tuned per theme so they stay readable on every theme's surfaces.
+- Details: heart and delete buttons share one size; sources with a trailer link (TMDB, AniList, TheTVDB, IMDb, Rotten Tomatoes) show a Trailer card, others get a "Find the trailer on YouTube" link.
+- Details redesign (from the CueMark mockup): one progress card (count, time left, Mark all watched, Next, quick adjust); Episodes / Overview / Ratings / Cast & Crew tabs; season pills showing one season at a time; the episode page gains a Watched toggle, Prev/Next episode, and your own star rating and reaction per episode (stored with the title as `episodeNotes`).
 - Watch progress and the episode checklist are now one: for a series with a saved episode guide, the ✓ boxes drive the count, and ±1ep / +5ep / the quick ✓ move the checks. Older entries that only had a counter are converted to the first N episodes watched.
 - Details URLs now identify the page: `#details/<source>/<id>/<name>` for Discover/Explore titles and `&ref=episode/<id>/<name>` (or person/character) for drill-down pages; they restore on reload and browser Back steps out of a drill-down.
 - Removed the Wikidata metadata source (search, details, settings and proxy allow-list).

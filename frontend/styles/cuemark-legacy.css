@@ -125,7 +125,7 @@ body[data-theme="light"] .stat-card strong { color: #20242b; }
   background: var(--surface-2);
   color: var(--legacy-secondary);
 }
-.chip.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.chip.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text,var(--accent)); }
 .button { border-radius: 13px; font-weight: 650; }
 .button.primary {
   background: linear-gradient(135deg, var(--accent), #7c3aed);
@@ -157,7 +157,7 @@ body[data-theme="light"] .setting-title { color: #20242b; }
   -webkit-backdrop-filter: blur(18px);
 }
 .nav-button { color: var(--muted); }
-.nav-button.active { color: var(--accent); }
+.nav-button.active { color: var(--accent-text,var(--accent)); }
 .nav-button.active .nav-icon { background: var(--accent-soft); }
 .toast { background: #171a24; box-shadow: var(--shadow); }
 .detail-error { border: 1px solid rgba(239, 68, 68, .22); background: rgba(127, 29, 29, .25); color: #fca5a5; }

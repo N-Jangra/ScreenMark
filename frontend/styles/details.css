@@ -44,7 +44,7 @@
   max-height: 190px;
   border-radius: 15px;
   background: var(--surface-2);
-  color: var(--accent);
+  color: var(--accent-text,var(--accent));
   font-size: 2rem;
   object-fit: cover;
   box-shadow: 0 9px 22px rgba(0, 0, 0, .2);
@@ -91,7 +91,7 @@
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
   border-radius: 12px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text,var(--accent));
   font-size: .8rem;
   font-weight: 650;
   text-decoration: none;
@@ -115,7 +115,7 @@
 .detail-source-link-card { color: inherit; text-decoration: none; }
 .detail-source-link-card .detail-source-item { transition: border-color var(--speed), transform var(--speed); }
 .detail-source-link-card:hover .detail-source-item { border-color: var(--accent); transform: translateY(-1px); }
-.episode-toggle { margin-top: 8px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--accent); font-size: .72rem; font-weight: 650; cursor: pointer; }
+.episode-toggle { margin-top: 8px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--accent-text,var(--accent)); font-size: .72rem; font-weight: 650; cursor: pointer; }
 .episode-toggle.is-watched { border-color: color-mix(in srgb, #22c55e 45%, var(--line)); background: color-mix(in srgb, #22c55e 14%, var(--surface)); color: #4ade80; }
 .detail-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .detail-gallery-image { width:100%; border:1px solid var(--line); border-radius:13px; background:var(--surface-2); color:var(--legacy-secondary); font-size:.72rem; text-align:left; }
@@ -123,7 +123,7 @@
 .detail-gallery span { display: block; padding: 7px 9px; }
 .detail-source-image { width:58px; height:70px; border-radius:9px; }
 .detail-source-image img { display:block; width:100%; height:100%; object-fit:cover; }
-.detail-entry-link { display:inline-block; margin-top:7px; color:var(--accent); font-size:.72rem; text-decoration:none; }
+.detail-entry-link { display:inline-block; margin-top:7px; color:var(--accent-text,var(--accent)); font-size:.72rem; text-decoration:none; }
 .detail-tracking-section { display:grid; gap:12px; }
 .detail-tracking-section h3 { margin-bottom:0; }
 .detail-tracking-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:42px; color:var(--legacy-text); font-size:.86rem; }
@@ -191,15 +191,24 @@ body[data-theme="light"] .episode-toggle.is-watched { color: #15803d; }
 .season-progress i { display: block; height: 100%; background: var(--accent); }
 .season-chevron { transition: transform var(--speed); color: var(--muted); }
 .season-block[open] .season-chevron { transform: rotate(90deg); }
-.season-all { margin: 0 12px 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--accent); font-size: .72rem; font-weight: 650; cursor: pointer; }
+.season-all { margin: 0 12px 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--accent-text,var(--accent)); font-size: .72rem; font-weight: 650; cursor: pointer; }
 .episode-list { list-style: none; margin: 0; padding: 0 8px 8px; display: grid; gap: 6px; }
-.episode-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px; border-radius: 12px; background: var(--surface); }
+.episode-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.episode-row { --thumb-w: 96px; --check: 26px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 4px; border-radius: 0; background: transparent; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.episode-row:last-child { border-bottom: 0; }
 .episode-row:not(:has(.episode-check)) { grid-template-columns: minmax(0, 1fr) auto; }
-.episode-row.is-watched .episode-text strong { opacity: .6; text-decoration: line-through; }
-.episode-check { width: 26px; height: 26px; border-radius: 8px; border: 2px solid var(--line); background: transparent; color: #fff; font-weight: 800; cursor: pointer; display: grid; place-items: center; padding: 0; }
-.episode-check.is-watched { background: #22c55e; border-color: #22c55e; }
-.episode-main { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; align-items: start; min-width: 0; cursor: pointer; }
-.episode-thumb { display: block; aspect-ratio: 16 / 9; border-radius: 8px; background: var(--surface-2); overflow: hidden; }
+/* centre the check box and the rating on the thumbnail (16:9) */
+.episode-check, .episode-rating { margin-top: calc(var(--thumb-w) * 9 / 32 - var(--check) / 2); }
+.episode-rating { margin-top: calc(var(--thumb-w) * 9 / 32 - 11px); }
+.episode-text strong { color: var(--legacy-text, inherit); }
+.episode-text em { color: var(--muted); }
+.episode-row.is-watched .episode-text strong { color: var(--ok-text, #16a34a); }
+.episode-row.is-watched .episode-text em, .episode-row.is-watched .episode-text small { opacity: .75; }
+
+.episode-check { width: var(--check); height: var(--check); border-radius: 8px; border: 2px solid var(--line); background: transparent; color: #fff; font-weight: 800; cursor: pointer; display: grid; place-items: center; padding: 0; }
+.episode-check.is-watched { background: #16a34a; border-color: #16a34a; }
+.episode-main { all: unset; box-sizing: border-box; display: grid; grid-template-columns: var(--thumb-w) minmax(0, 1fr); gap: 12px; align-items: start; min-width: 0; cursor: pointer; }
+.episode-thumb { display: block; width: var(--thumb-w); aspect-ratio: 16 / 9; border-radius: 8px; background: var(--surface-2); overflow: hidden; }
 .episode-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .episode-text { display: grid; gap: 3px; min-width: 0; }
 .episode-text strong { font-size: .82rem; line-height: 1.3; }
@@ -215,7 +224,7 @@ body[data-theme="light"] .episode-toggle.is-watched { color: #15803d; }
 button.detail-carousel-card { all: unset; box-sizing: border-box; display: grid; flex: 0 0 128px; gap: 4px; scroll-snap-align: start; cursor: pointer; }
 .ref-hero .detail-cover-trigger.is-landscape { width: min(280px, 100%); }
 .ref-hero .detail-cover-trigger.is-landscape img { aspect-ratio: 16 / 9; object-fit: cover; }
-@media (max-width: 520px) { .episode-main { grid-template-columns: 72px minmax(0, 1fr); } }
+@media (max-width: 520px) { .episode-row { --thumb-w: 76px; } }
 .detail-page, .detail-page * { overflow-anchor: none; }
 .detail-page { scroll-padding-top: 70px; }
 /* Drill-down heroes have no banner above them, so don't pull the cover up into the clipped card */
@@ -232,10 +241,10 @@ button.detail-carousel-card { all: unset; box-sizing: border-box; display: grid;
 .source-note { margin: 4px 4px 0; }
 .source-alt-names { display: flex; flex-wrap: wrap; gap: 6px; }
 .source-alt-name { padding: 6px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: inherit; font-size: .74rem; cursor: pointer; }
-.source-alt-name.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); font-weight: 650; }
+.source-alt-name.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent-text,var(--accent)); font-weight: 650; }
 .ep-ratings-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .ep-ratings-bar .ep-ratings-note { margin: 0; }
-.ep-layout-toggle { padding: 4px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--accent); font-size: .72rem; font-weight: 650; cursor: pointer; }
+.ep-layout-toggle { padding: 4px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--accent-text,var(--accent)); font-size: .72rem; font-weight: 650; cursor: pointer; }
 .ep-ratings[data-layout=vertical] .ep-ratings-h, .ep-ratings[data-layout=horizontal] .ep-ratings-v { display: none; }
 .ep-ratings-v { max-height: 420px; overflow: auto; }
 .ep-ratings-cols { display: grid; grid-template-columns: 32px repeat(var(--seasons), minmax(40px, 1fr)); gap: 4px; align-items: center; width: max-content; min-width: 100%; }
@@ -244,3 +253,104 @@ button.detail-carousel-card { all: unset; box-sizing: border-box; display: grid;
 .ep-rate-empty { display: block; height: 1px; }
 /* Wide screens: keep the sticky heading exactly as wide as the page below it */
 @media (min-width: 768px) { .detail-page > .detail-page-heading { margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; } }
+
+/* ---- Details: tabs, unified progress, season pills, episode page extras (CueMark mockup) ---- */
+.detail-tabs { position: sticky; top: 56px; z-index: 9; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 4px; border-radius: 16px; background: var(--surface-2); }
+.detail-tabs button { padding: 8px 4px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-size: .76rem; font-weight: 750; cursor: pointer; white-space: nowrap; }
+.detail-tabs button.active { background: var(--surface); color: var(--accent-text,var(--accent)); box-shadow: 0 1px 3px #0003; }
+.detail-tab-panel { display: grid; gap: 14px; }
+.detail-tab-panel[hidden] { display: none; }
+.detail-unified-progress { display: grid; gap: 10px; }
+.detail-unified-progress .detail-episode-line strong { font-size: 1.15rem; }
+.detail-quick-adjust { display: flex; align-items: center; justify-content: space-between; padding-top: 10px; border-top: 1px solid var(--line); }
+.detail-quick-adjust > span { color: var(--muted); font-size: .68rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.season-pills { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
+.season-pills::-webkit-scrollbar { display: none; }
+.season-pill { flex: none; padding: 7px 14px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--muted); font-size: .76rem; font-weight: 700; cursor: pointer; }
+.season-pill.active { border-color: transparent; background: var(--accent); color: #fff; }
+.season-pill.complete:not(.active) { color: #16a34a; }
+.season-panel[hidden] { display: none; }
+.season-summary { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px; margin-bottom: 8px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-2); }
+.season-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.season-actions .season-all { margin: 0; }
+.season-actions small { color: var(--muted); font-size: .68rem; }
+.season-panel .episode-list { padding: 0; }
+.detail-heading-title { flex: 1; min-width: 0; margin: 0 10px; font-size: .8rem; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ep-watch-button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--accent-text,var(--accent)); font-size: .74rem; font-weight: 750; cursor: pointer; }
+.ep-watch-button.is-watched { border-color: transparent; background: #16a34a; color: #fff; }
+.ep-nav-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px 14px; }
+.ep-nav-row .button { border-radius: 14px; }
+.ep-reactions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.ep-reaction-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); font-size: .74rem; font-weight: 650; cursor: pointer; }
+.ep-reaction-chip.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent-text,var(--accent)); }
+
+/* Heading bar: always as wide as the page below it (a grid item with negative margins otherwise sits off to one side) */
+.detail-page > .detail-page-heading { width: calc(100% + var(--gutter) * 2); max-width: none; }
+@media (min-width: 768px) { .detail-page > .detail-page-heading { width: 100%; max-width: 100%; } }
+.detail-page-heading .detail-heading-title { position: static; left: auto; transform: none; flex: 1 1 auto; min-width: 0; margin: 0 12px; text-align: center; }
+.ep-watch-button { color: var(--muted); }
+.ep-watch-button.is-watched { color: #fff; }
+
+/* Episode page (CueMark mockup) */
+.ep-hero { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--ios-card-border); border-radius: 26px; background: var(--surface); }
+.ep-still { position: relative; aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden; background: #0b1020; }
+.ep-still .detail-image-trigger { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; }
+.ep-still img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ep-still::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, #000000c0, transparent 60%); pointer-events: none; }
+.ep-still-copy { position: absolute; z-index: 1; left: 14px; right: 14px; bottom: 12px; color: #fff; pointer-events: none; }
+.ep-still-copy h2 { margin: 6px 0 2px; font-size: 1.35rem; line-height: 1.15; }
+.ep-still-copy p { margin: 0; font-size: .78rem; opacity: .85; }
+.ep-kicker { display: inline-block; padding: 3px 8px; border-radius: 6px; background: var(--accent); font-size: .62rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.ep-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.ep-pills span { padding: 5px 12px; border-radius: 99px; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent-text,var(--accent)); font-size: .74rem; font-weight: 700; }
+.ep-pills span.is-rating { background: #fef3c7; color: #92400e; }
+body[data-theme=dark] .ep-pills span.is-rating { background: #422006; color: #fcd34d; }
+.ep-nav-row { display: grid; grid-template-columns: 1fr 1.25fr 1fr; gap: 8px; padding: 12px 0 0; border-top: 1px solid var(--line); }
+.ep-hero .ep-nav-row { padding: 12px 0 0; }
+.ep-nav-button { padding: 11px 6px; border: 0; border-radius: 14px; background: var(--surface-2); color: var(--text, inherit); font-size: .78rem; font-weight: 700; cursor: pointer; }
+.ep-nav-button:disabled { opacity: .4; cursor: default; }
+.ep-center-check { background: var(--accent); color: #fff; }
+.ep-center-check.is-watched { background: #16a34a; }
+.ep-stars { display: flex; justify-content: space-around; padding: 6px 0; }
+.ep-stars button { border: 0; background: transparent; font-size: 2rem; line-height: 1; color: var(--line); cursor: pointer; }
+.ep-stars button.active { color: #f59e0b; }
+.ep-rated { color: var(--accent-text,var(--accent)); font-size: .78rem; font-weight: 700; text-transform: none; letter-spacing: 0; }
+.ep-reaction .detail-section-head { display: flex; justify-content: space-between; width: 100%; }
+.detail-trailer-search { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-2); color: inherit; text-decoration: none; }
+.detail-trailer-search > span:first-child { grid-row: span 2; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: #ef4444; color: #fff; }
+.detail-trailer-search small { color: var(--muted); font-size: .72rem; }
+
+/* Details back button: same look as the Settings sub-pages */
+.detail-back { display: inline-flex; align-items: center; gap: 4px; padding: 7px 0; border: 0; background: transparent; color: var(--accent-text, var(--accent)); font: 600 .88rem var(--font-family); cursor: pointer; }
+.detail-back span { font-size: 1.15rem; line-height: 1; }
+
+/* Pull to refresh */
+.ptr { position: fixed; left: 50%; top: calc(10px + env(safe-area-inset-top)); z-index: 60; display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--legacy-text, inherit); box-shadow: 0 10px 28px -10px #0006; font-size: .78rem; font-weight: 700; opacity: 0; pointer-events: none; transform: translate(-50%, calc(var(--pull, 0px) - 70px)); transition: opacity .18s ease, transform .22s var(--ease-out, ease); }
+.ptr.show { opacity: 1; }
+.ptr[data-state=pull], .ptr[data-state=ready] { transition: opacity .12s ease; }
+.ptr-bubble { position: relative; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent-text, var(--accent)); }
+.ptr-arrow { transform: rotate(var(--turn, 0deg)); transition: transform .12s linear; }
+.ptr[data-state=ready] .ptr-bubble { background: var(--accent); color: #fff; }
+.ptr-spinner, .ptr-check { position: absolute; display: none; }
+.ptr-spinner { width: 18px; height: 18px; border: 2.5px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: ptr-spin .7s linear infinite; }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
+.ptr[data-state=loading] .ptr-arrow, .ptr[data-state=done] .ptr-arrow { display: none; }
+.ptr[data-state=loading] .ptr-spinner { display: block; }
+.ptr[data-state=done] .ptr-check { display: block; color: #16a34a; animation: sp-pop .25s var(--ease-out, ease) both; }
+.ptr[data-state=done] .ptr-bubble { background: color-mix(in srgb, #16a34a 14%, var(--surface)); }
+
+/* ===== Details hero: clear backdrop, source badge, coloured chips (CueMark reference) ===== */
+.detail-hero.ios-hero .ios-hero-bg { position: relative; height: 132px; background-position: center 30%; }
+.detail-hero.ios-hero .ios-hero-bg::after { background: linear-gradient(to top, var(--surface) 0%, color-mix(in srgb, var(--surface) 35%, transparent) 55%, #00000026 100%); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.detail-hero.ios-hero .ios-hero-body { margin-top: -78px; align-items: flex-end; }
+.hero-source-badge { position: absolute; z-index: 2; top: 12px; right: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 99px; background: #000000a6; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: #fff; font-size: .72rem; font-weight: 700; }
+.hero-source-badge svg { width: 14px; height: 14px; color: #a78bfa; }
+.detail-hero.ios-hero .detail-hero-copy h2 { font-size: 1.5rem; line-height: 1.15; }
+.detail-hero.ios-hero .detail-badges > span { padding: 4px 11px; border-radius: 99px; font-size: .72rem; font-weight: 800; }
+.detail-hero.ios-hero .detail-badges > span.is-year { background: #ede9fe; color: #5b21b6; }
+.detail-hero.ios-hero .detail-badges > span.is-rating { display: inline-flex; align-items: center; gap: 4px; background: #fef3c7; color: #92400e; }
+.detail-hero.ios-hero .detail-badges > span.is-rating svg { width: 12px; height: 12px; fill: currentColor; }
+body[data-theme=dark] .detail-hero.ios-hero .detail-badges > span.is-year { background: #2e1065; color: #c4b5fd; }
+body[data-theme=dark] .detail-hero.ios-hero .detail-badges > span.is-rating { background: #422006; color: #fcd34d; }
+body[data-theme=dark] .detail-hero.ios-hero .ios-status-badge { background: #064e3b!important; color: #6ee7b7!important; }
+.detail-edit-actions .button { min-height: 36px; padding: 0 16px; border-radius: 99px; font-weight: 700; }

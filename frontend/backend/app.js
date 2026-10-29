@@ -59,7 +59,15 @@
     return copy;
   }
 
+  // Settings → Metadata & Storage → Image storage: "all" saves every image, "posters" only covers and backdrops, "online" none.
+  let imageStorage = "all";
+  function setImageStorage(mode) { imageStorage = ["all", "posters", "online"].includes(mode) ? mode : "all"; }
   function collectImageCandidates(item) {
+    if (imageStorage === "online") return [];
+    const candidates = collectAllImageCandidates(item);
+    return imageStorage === "posters" ? candidates.filter(candidate => candidate.paths.some(path => !path.includes("sections"))) : candidates;
+  }
+  function collectAllImageCandidates(item) {
     const candidates = [];
     const bySource = new Map();
     const add = (path, source) => {
@@ -623,6 +631,7 @@
     chooseFolder,
     getFolderUri: () => getFolderUri({ prompt: false }),
     loadItemImages,
+    setImageStorage,
     inspectFolder,
     isNativeFolderStorageAvailable: hasFolderPlugin
   });
