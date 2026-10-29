@@ -852,3 +852,8 @@ body[data-icon-style=inline] .explore-list-icon{color:var(--tile,var(--accent-te
 body[data-icon-style=inline] :is(.setting-icon,.explore-source-icon,.storage-action-icon,.manage-nav-row-icon,.setting-option-preview){color:var(--accent-text,var(--accent))}
 body[data-icon-style=inline] :is(.setting-icon svg,.explore-list-icon svg,.explore-source-icon svg,.storage-action-icon svg,.setting-option-preview svg){width:22px;height:22px}
 body[data-icon-style=inline] .settings-subpage-icon{justify-self:end}
+
+/* Discover for a single source uses the settings sub-page header */
+.discover-page.settings-detail-page{padding-top:0!important}
+.discover-page.settings-detail-page .discover-source-description{margin:4px 2px 12px;color:var(--muted);font-size:.85rem}
+.source-option small a{color:var(--accent-text,var(--accent));font-weight:800;text-decoration:none}
