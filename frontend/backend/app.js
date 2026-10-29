@@ -550,10 +550,10 @@
     };
     let folderData = null;
     const encryptedItemIds = new Set();
-    // Do not launch Android's document picker from startup. The encrypted
-    // app-private store is a usable local fallback until the user chooses a
-    // shared folder from Settings → Backups.
+    // Startup never opens Android's document picker itself: the storage gate (see app.js) does that once the user taps Choose folder.
     const folderUri = await getFolderUri({ prompt: false });
+    // In the Android app the library database lives in a folder you choose: with none chosen yet (or the old one gone) the storage gate asks for one before anything loads.
+    if (!folderUri && hasFolderPlugin()) throw new Error("Choose a folder for your library database.");
     if (folderUri) folderData = await readFolderDatabase(folderUri);
 
     const plugin = window.Capacitor?.Plugins?.EncryptedStore;

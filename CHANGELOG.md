@@ -30,6 +30,7 @@ First tracked release: a local-first tracker for **movies and TV series** that r
 
 ### Fixed
 
+- Android: startup now asks for the storage folder whenever none is chosen (or the old one is gone) instead of silently running without one.
 - Covers saved in the chosen storage folder now load on start, so they still show offline after the app cache is cleared (previously they only came from the cache or the internet).
 - Backup import file picker being blocked; Discover rows clipped on tablets; Details header not spanning the page; empty Timeline text showing raw placeholders; Metadata & Storage missing from the Settings index; renamed titles keeping the old name on Details.
 
