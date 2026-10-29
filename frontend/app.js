@@ -2149,5 +2149,8 @@
     if (storageFolderGate) storageFolderGate.hidden = true;
     applyPreferences(); render(); syncBackupSchedule();
     if (page === "details" && detailItemId && !detailPreview) loadDetails();
+    // Covers saved in the chosen folder: load them so they show without the cache or a connection.
+    let repaint = 0; const repaintSoon = () => { clearTimeout(repaint); repaint = setTimeout(() => { if (["dashboard", "details", "timeline"].includes(page)) render(); }, 400); };
+    window.SplitAppBackend?.hydrateThumbnails?.(items, repaintSoon).then(count => { if (count) repaintSoon(); }).catch(() => {});
   });
 })();

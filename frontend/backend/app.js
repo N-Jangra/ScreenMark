@@ -153,6 +153,7 @@
       items: Array.isArray(data.items) ? data.items.map(item => {
         const copy = { ...item };
         delete copy.localImageData;
+        delete copy.localThumbnailData;
         if (copy.cachedDetails) copy.cachedDetails = trimDetails(copy.cachedDetails);
         return copy;
       }) : [],
@@ -202,6 +203,37 @@
       } catch (error) { console.warn(`Could not read ScreenMark item folder ${folder.name}`, error); }
     }
     return items;
+  }
+
+  // Fills in `localThumbnailData` for library items from the saved folder, so covers still show after the app/WebView cache is cleared or while offline.
+  async function hydrateThumbnails(items, onBatch) {
+    const plugin = window.Capacitor?.Plugins?.BackupFolder;
+    if (!Array.isArray(items) || !plugin?.listFiles || !plugin?.readBinaryFile) return 0;
+    const uri = await getFolderUri({ prompt: false });
+    if (!uri) return 0;
+    const root = (await plugin.listFiles({ uri }))?.files || [];
+    const tree = root.find(file => file.name === folderTreeName && file.uri);
+    const treeFiles = tree ? (await plugin.listFiles({ uri: tree.uri }))?.files || [] : [];
+    const titlesDir = treeFiles.find(file => file.name === "titles" && file.uri);
+    if (!titlesDir) return 0;
+    const folders = new Map(((await plugin.listFiles({ uri: titlesDir.uri }))?.files || []).filter(file => file.uri).map(file => [file.name, file]));
+    const queue = items.filter(item => !item.localThumbnailData && (item.thumbnailPath || item.localImageFiles?.length));
+    let done = 0;
+    const worker = async () => {
+      while (queue.length) {
+        const item = queue.shift(), folder = folders.get(itemDirectoryName(item));
+        if (!folder) continue;
+        try {
+          const files = (await plugin.listFiles({ uri: folder.uri }))?.files || [];
+          const name = item.thumbnailPath ? String(item.thumbnailPath).split("/").pop() : ".thumbnail";
+          const thumbnail = files.find(file => file.name === name && file.uri);
+          const { base64Content } = thumbnail ? await plugin.readBinaryFile({ uri: thumbnail.uri }) : {};
+          if (base64Content) { item.localThumbnailData = `data:${item.thumbnailMime || "image/webp"};base64,${base64Content}`; done += 1; if (done % 6 === 0) onBatch?.(done); }
+        } catch (error) { console.warn(`Could not read saved artwork for ${item.title || item.id}`, error); }
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    return done;
   }
 
   async function loadItemImages(item) {
@@ -631,6 +663,7 @@
     chooseFolder,
     getFolderUri: () => getFolderUri({ prompt: false }),
     loadItemImages,
+    hydrateThumbnails,
     setImageStorage,
     inspectFolder,
     isNativeFolderStorageAvailable: hasFolderPlugin
