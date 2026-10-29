@@ -1,0 +1,11 @@
+{
+  "appId": "com.cuemark.screenmark",
+  "appName": "ScreenMark",
+  "webDir": "frontend",
+  "bundledWebRuntime": false,
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

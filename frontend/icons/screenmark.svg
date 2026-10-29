@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="ScreenMark">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1b1033"/><stop offset="1" stop-color="#0b1020"/></linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e05b68"/><stop offset="1" stop-color="#6657d9"/></linearGradient>
+    <clipPath id="bar"><rect x="20" y="26" width="56" height="12" rx="3"/></clipPath>
+  </defs>
+  <rect width="96" height="96" rx="22" fill="url(#bg)"/>
+  <rect x="20" y="42" width="56" height="32" rx="6" fill="none" stroke="url(#glow)" stroke-width="4"/>
+  <g transform="rotate(-8 20 38)">
+    <g clip-path="url(#bar)">
+      <rect x="20" y="26" width="56" height="12" fill="url(#glow)"/>
+      <path d="M31 24l-8 16M43 24l-8 16M55 24l-8 16M67 24l-8 16M79 24l-8 16" stroke="#1b1033" stroke-width="4"/>
+    </g>
+  </g>
+  <path d="M43 51v16l14-8z" fill="url(#glow)"/>
+</svg>

@@ -1,0 +1,86 @@
+/* Motion + performance layer. Transform/opacity only (GPU-cheap), scaled by Animation speed,
+   and trimmed automatically on low-memory devices (html[data-lowend=true]) or with Reduce motion. */
+:root{--ease-out:cubic-bezier(.2,.7,.2,1);--ease-spring:cubic-bezier(.32,.72,0,1)}
+
+/* ---- Page transitions (direction aware) ---- */
+@keyframes sp-in-fwd{from{opacity:0;transform:translate3d(14px,0,0)}to{opacity:1;transform:none}}
+@keyframes sp-in-back{from{opacity:0;transform:translate3d(-14px,0,0)}to{opacity:1;transform:none}}
+@keyframes sp-rise{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
+@keyframes sp-sheet-up{from{transform:translate3d(0,100%,0)}to{transform:none}}
+@keyframes sp-pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+@keyframes sp-fade{from{opacity:0}to{opacity:1}}
+@keyframes sp-fab{from{opacity:0;transform:scale(.6) translate3d(0,12px,0)}to{opacity:1;transform:none}}
+
+body[data-nav-dir=forward] #page-content.page-route-enter{animation:sp-in-fwd calc(var(--speed,180ms) * 1.4) var(--ease-out) both}
+body[data-nav-dir=back] #page-content.page-route-enter{animation:sp-in-back calc(var(--speed,180ms) * 1.4) var(--ease-out) both}
+
+/* gentle stagger for the first few cards only */
+#page-content.page-route-enter .item-card:nth-child(-n+6),
+#page-content.page-route-enter .discover-card:nth-child(-n+6),
+#page-content.page-route-enter .settings-section:nth-child(-n+5){animation:sp-rise calc(var(--speed,180ms) * 1.6) var(--ease-out) both}
+#page-content.page-route-enter .item-card:nth-child(2),#page-content.page-route-enter .discover-card:nth-child(2),#page-content.page-route-enter .settings-section:nth-child(2){animation-delay:calc(var(--speed,180ms) * .25)}
+#page-content.page-route-enter .item-card:nth-child(3),#page-content.page-route-enter .discover-card:nth-child(3),#page-content.page-route-enter .settings-section:nth-child(3){animation-delay:calc(var(--speed,180ms) * .5)}
+#page-content.page-route-enter .item-card:nth-child(4),#page-content.page-route-enter .discover-card:nth-child(4),#page-content.page-route-enter .settings-section:nth-child(4){animation-delay:calc(var(--speed,180ms) * .75)}
+#page-content.page-route-enter .item-card:nth-child(n+5),#page-content.page-route-enter .discover-card:nth-child(n+5),#page-content.page-route-enter .settings-section:nth-child(n+5){animation-delay:var(--speed,180ms)}
+
+/* ---- Sheets, dialogs, backdrops ---- */
+.choice-dialog[open]{animation:sp-sheet-up calc(var(--speed,180ms) * 1.9) var(--ease-spring) both}
+dialog.ios-action-sheet[open]{animation:sp-sheet-up calc(var(--speed,180ms) * 1.6) var(--ease-spring) both}
+dialog::backdrop{animation:sp-fade calc(var(--speed,180ms) * 1.4) ease both}
+.detail-image-modal[open]{animation:sp-pop calc(var(--speed,180ms) * 1.2) var(--ease-out) both}
+@media(min-width:768px){.choice-dialog[open],dialog.ios-action-sheet[open]{animation-name:sp-pop}}
+
+/* ---- Micro-interactions ---- */
+.floating-add-button:not([hidden]){animation:sp-fab calc(var(--speed,180ms) * 2) var(--ease-spring) both}
+.button,.ios-pill,.icon-button,.nav-button,.sidebar-nav-button,.card-menu-button,.icon-picker-option,.entry-status-option{transition:transform calc(var(--speed,180ms) * .7) var(--ease-out),background-color var(--speed,180ms) ease,color var(--speed,180ms) ease,box-shadow var(--speed,180ms) ease}
+.button:active,.ios-pill:active,.icon-button:active,.nav-button:active,.sidebar-nav-button:active,.floating-add-button:active,.card-menu-button:active,.entry-status-option:active{transform:scale(.95)}
+.item-card{transition:transform calc(var(--speed,180ms) * .7) var(--ease-out)}
+.item-card:active{transform:scale(.985)}
+.nav-button.active .nav-icon{animation:sp-fab calc(var(--speed,180ms) * 1.6) var(--ease-spring) both}
+.progress-line span,.bar-track span{transition:width calc(var(--speed,180ms) * 2.4) var(--ease-out)}
+.toast{transition:transform calc(var(--speed,180ms) * 1.4) var(--ease-spring),opacity var(--speed,180ms) ease}
+
+/* ---- Performance: skip layout/paint of off-screen groups & cards ---- */
+.dashboard-status-group{content-visibility:auto;contain-intrinsic-size:auto 220px}
+.item-card,.discover-card{contain:layout style}
+img{content-visibility:auto}
+#page-content{contain:layout style}
+
+/* ---- Low-memory devices: drop blur/shadows, shorten everything ---- */
+html[data-lowend=true]{--speed:min(var(--speed,180ms),120ms)}
+html[data-lowend=true] *{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+html[data-lowend=true] .item-card,html[data-lowend=true] .ios-card,html[data-lowend=true] .detail-section,html[data-lowend=true] .detail-hero{box-shadow:none!important}
+html[data-lowend=true] .topbar,html[data-lowend=true] .bottom-bar,html[data-lowend=true] .detail-page-heading,html[data-lowend=true] .add-entry-heading,html[data-lowend=true] .choice-dialog-header,html[data-lowend=true] .app-sidebar{background:var(--surface)!important}
+html[data-lowend=true] #page-content.page-route-enter .item-card,html[data-lowend=true] #page-content.page-route-enter .discover-card,html[data-lowend=true] #page-content.page-route-enter .settings-section{animation:none}
+html[data-lowend=true] .floating-add-button,html[data-lowend=true] .nav-button.active .nav-icon{animation:none}
+html[data-lowend=true] .ios-hero-bg::after{backdrop-filter:none}
+
+/* ---- Reduce motion / Animation speed Off ---- */
+body[data-reduced-motion=true] *,body[data-reduced-motion=true] *::before,body[data-reduced-motion=true] *::after,
+body[data-reduced-motion=true] dialog::backdrop{animation-duration:.001ms!important;animation-delay:0s!important;transition-duration:.001ms!important}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after,dialog::backdrop{animation-duration:.001ms!important;animation-delay:0s!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
+
+/* ---- Settings → Animations: style choices (body data-* set by applyPreferences) ---- */
+@keyframes sp-zoom{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+@keyframes sp-flip{from{opacity:0;transform:perspective(900px) rotateY(-14deg) translate3d(12px,0,0)}to{opacity:1;transform:none}}
+body[data-page-anim=fade][data-nav-dir] #page-content.page-route-enter{animation-name:sp-fade}
+body[data-page-anim=zoom][data-nav-dir] #page-content.page-route-enter{animation-name:sp-zoom}
+body[data-page-anim=rise][data-nav-dir] #page-content.page-route-enter{animation-name:sp-rise}
+body[data-page-anim=flip][data-nav-dir] #page-content.page-route-enter{animation-name:sp-flip}
+body[data-page-anim=none][data-nav-dir] #page-content.page-route-enter{animation:none}
+body[data-card-anim=fade] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section):nth-child(-n+6){animation-name:sp-fade}
+body[data-card-anim=pop] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section):nth-child(-n+6){animation-name:sp-pop}
+body[data-card-anim=slide] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section):nth-child(-n+6){animation-name:sp-in-fwd}
+body[data-card-anim=none] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section){animation:none}
+body[data-stagger=false] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section){animation-delay:0s!important}
+body[data-sheet-anim=pop] .choice-dialog[open],body[data-sheet-anim=pop] dialog.ios-action-sheet[open]{animation-name:sp-pop}
+body[data-sheet-anim=fade] .choice-dialog[open],body[data-sheet-anim=fade] dialog.ios-action-sheet[open]{animation-name:sp-fade}
+body[data-sheet-anim=slide] .choice-dialog[open],body[data-sheet-anim=slide] dialog.ios-action-sheet[open]{animation-name:sp-sheet-up}
+body[data-press=soft] :is(.button,.ios-pill,.icon-button,.nav-button,.sidebar-nav-button,.floating-add-button,.card-menu-button,.entry-status-option):active{transform:scale(.98)}
+body[data-press=none] :is(.button,.ios-pill,.icon-button,.nav-button,.sidebar-nav-button,.floating-add-button,.card-menu-button,.entry-status-option):active,body[data-press=none] .item-card:active{transform:none}
+@media(hover:hover){body[data-hover-lift=true] :is(.item-card,.discover-card,.detail-carousel-card){transition:transform calc(var(--speed,180ms) * .9) var(--ease-out),box-shadow calc(var(--speed,180ms) * .9) var(--ease-out)}
+body[data-hover-lift=true] :is(.item-card,.discover-card):hover{transform:translate3d(0,-4px,0);box-shadow:0 12px 24px -10px #0004}
+body[data-hover-lift=true] .detail-carousel-card:hover{transform:translate3d(0,-3px,0)}}
+body[data-nav-bounce=false] .nav-button.active .nav-icon{animation:none}
+body[data-progress-anim=false] :is(.progress-line span,.bar-track span){transition:none}
+body[data-shimmer=false] :is(.discover-suggest-loading span,[class*=skeleton],[class*=shimmer]){animation:none}

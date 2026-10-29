@@ -1,0 +1,30 @@
+# Local dependencies and generated builds
+node_modules/
+build_env/
+dist/
+outputs/
+*.apk
+*.aab
+
+# Android / Gradle generated files
+.gradle/
+local.properties
+android/app/build/
+android/build/
+android/.cxx/
+android/.externalNativeBuild/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+
+# Local configuration, logs, caches, and editor files
+.env
+.env.*
+!.env.example
+*.log
+.cache/
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.tmp
