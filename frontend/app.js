@@ -106,7 +106,11 @@
   let page = initialRoute[0] === "search" ? "dashboard" : initialRoute[0] in titles ? initialRoute[0] : "dashboard";
   let settingsGroup = page === "settings" ? (initialRoute[1] === "manage-backups" ? "backups" : initialRoute[1] || null) : null;
   let settingsParam = initialRoute[0] === "settings" ? new URLSearchParams(initialHashQuery).get("id") || "" : "", settingsFrom = "", renderedSettingsGroup;
-  let renderedRoute = null, inAppNav = false, mixCache = null, mixRequest = 0, mixCategory = "", statsRange = "week", addCategory = "", discoverCategoryChoice = "";
+  const statsSections = ["watchtime", "library", "activity", "ratings"];
+  const normalizeStatsSection = section => section === "playtime" ? "watchtime" : section === "breakdown" ? "library" : section;
+  let statsSubpage = page === "statistics" && statsSections.includes(initialRoute[1]) ? normalizeStatsSection(initialRoute[1]) : "";
+  let statsLimits = { rated: 10, quick: 8 };
+  let renderedRoute = null, inAppNav = false, mixCache = null, mixRequest = 0, mixCategory = "", statsRange = "week", statsActivityDate = "", addCategory = "", discoverCategoryChoice = "";
   let metadataSourceFilter = "all";
   let entryDraftId = null, addReturnPage = "dashboard";
   let libraryQuery = new URLSearchParams(location.search).get("q") || "";
@@ -343,7 +347,9 @@
   }
   function goto(next, updateHistory = true) {
     if (next === "search") next = "dashboard";
-    page = next in titles ? next : "dashboard";
+    const [nextPage, nextSection] = String(next).split("/");
+    page = nextPage in titles ? nextPage : "dashboard";
+    statsSubpage = page === "statistics" && statsSections.includes(nextSection) ? normalizeStatsSection(nextSection) : "";
     if (page !== "discover" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; discoverRequestId++; discoverCache = null; }
     if (page !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
     if (page !== "details") clearDetailStack();
@@ -364,7 +370,7 @@
     return query ? `${base}?${query}` : base;
   }
   function historyPush(replace = false) {
-    const route = page === "details" ? detailRoute() : page === "settings" && settingsGroup ? `settings/${settingsGroup}${settingsParam ? `?id=${encodeURIComponent(settingsParam)}` : ""}` : page === "discover" && discoverSource ? `discover?source=${encodeURIComponent(discoverSource)}` : page;
+    const route = page === "details" ? detailRoute() : page === "settings" && settingsGroup ? `settings/${settingsGroup}${settingsParam ? `?id=${encodeURIComponent(settingsParam)}` : ""}` : page === "discover" && discoverSource ? `discover?source=${encodeURIComponent(discoverSource)}` : page === "statistics" && statsSubpage ? `statistics/${statsSubpage}` : page;
     const url = new URL(location.href);
     url.search = "";
     if (page === "dashboard" && libraryQuery) url.searchParams.set("q", libraryQuery);
@@ -390,7 +396,7 @@
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, history, logEntries, roles, trackedStatuses, statusIcon, activeCategory, addCategory, discoverCategory: currentDiscoverCategory(), libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", mixCategory: mixCategory || (activeCategory !== "all" ? activeCategory : "all"), statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { statsLimits, statsSubpage, statsActivityDate, statsRange, dataRevision: localMutationRevision, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, history, logEntries, roles, trackedStatuses, statusIcon, activeCategory, addCategory, discoverCategory: currentDiscoverCategory(), libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", mixCategory: mixCategory || (activeCategory !== "all" ? activeCategory : "all"), statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRef, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, refItem: detailRef?.type === "episode" ? items.find(entry => entry.category === "series" && (entry.cachedDetails?.sections || []).some(section => section.kind === "episodes" && section.items.some(row => String(row.id) === String(detailRef.id)))) || null : null, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardGroupItems(groupKey) {
@@ -585,7 +591,7 @@
     const content = $("#page-content");
     $("#floating-add").hidden = page !== "dashboard";
     if (page === "settings") { if (settingsGroup !== renderedSettingsGroup) { settingsFrom = renderedSettingsGroup || ""; renderedSettingsGroup = settingsGroup; } } else renderedSettingsGroup = undefined;
-    const route = page === "settings" ? `settings/${settingsGroup || "index"}` : page;
+    const route = page === "settings" ? `settings/${settingsGroup || "index"}` : page === "statistics" && statsSubpage ? `statistics/${statsSubpage}` : page;
     const preservePageState = route === renderedRoute;
     const previousControls = preservePageState ? [...content.querySelectorAll("input, textarea, select")].map(element => ({
       id: element.id,
@@ -1745,9 +1751,22 @@
     try {
       const data = JSON.parse(await file.text()); const incoming = Array.isArray(data) ? data : data.items;
       if (!Array.isArray(incoming)) throw new Error("No item list found in this file.");
-      const normalized = incoming.filter(item => item && item.title).map(item => ({ ...item, id: crypto.randomUUID(), category: config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key, createdAt: Date.now(), updatedAt: Date.now() }));
+      const now = Date.now(), idMap = new Map();
+      const stamp = value => { const n = Number(value) || Date.parse(value) || 0; return n > 0 && n <= now ? n : now; };
+      // Keep the backup's own dates so Timeline and Statistics → Activity show when things really happened.
+      const normalized = incoming.filter(item => item && item.title).map(item => {
+        const id = crypto.randomUUID();
+        if (item.id != null) idMap.set(String(item.id), id);
+        return { ...item, id, category: config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key, createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
+      });
       const known = new Set(items.map(item => `${item.category}:${item.title.toLowerCase()}`));
-      const fresh = normalized.filter(item => !known.has(`${item.category}:${item.title.toLowerCase()}`)); items = [...fresh, ...items]; persist(); render(); toast(`Imported ${fresh.length} ${fresh.length === 1 ? "entry" : "entries"}.`);
+      const fresh = normalized.filter(item => !known.has(`${item.category}:${item.title.toLowerCase()}`));
+      const freshIds = new Set(fresh.map(item => item.id));
+      let importedHistory = (Array.isArray(data.history) ? data.history : []).filter(entry => entry && idMap.has(String(entry.itemId)) && freshIds.has(idMap.get(String(entry.itemId)))).map(entry => ({ ...entry, itemId: idMap.get(String(entry.itemId)) }));
+      if (!importedHistory.length) importedHistory = fresh.filter(item => trackedStatuses.includes(item.status)).map(item => ({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: item.updatedAt }));
+      items = [...fresh, ...items];
+      history = [...importedHistory, ...history].sort((a, c) => (Number(c.at) || Date.parse(c.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0));
+      persist(); render(); toast(`Imported ${fresh.length} ${fresh.length === 1 ? "entry" : "entries"}.`);
     } catch (error) { toast(error.message || "Could not import this file."); }
   }
   function resetDashboard() {
@@ -1840,7 +1859,17 @@
     if (event.target.closest("[data-custom-source-test]")) { testCustomSourceForm(); return; }
     if (event.target.closest("[data-custom-source-delete]")) { deleteCustomSource(); return; }
     const rangeButton = event.target.closest("[data-stats-range]");
-    if (rangeButton) { statsRange = rangeButton.dataset.statsRange === "month" ? "month" : "week"; render(); return; }
+    if (rangeButton) { statsRange = rangeButton.dataset.statsRange === "month" ? "month" : "week"; statsActivityDate = ""; render(); return; }
+    const activityDay = event.target.closest("[data-stats-activity-date]");
+    if (activityDay) { statsActivityDate = activityDay.dataset.statsActivityDate; render(); return; }
+    const statsMore = event.target.closest("[data-stats-more]");
+    if (statsMore) { const kind = statsMore.dataset.statsMore === "rated" ? "rated" : "quick"; statsLimits = { ...statsLimits, [kind]: statsLimits[kind] + (kind === "rated" ? 15 : 10) }; render(); return; }
+    const statsRating = event.target.closest("[data-stats-rating]");
+    if (statsRating) {
+      const item = itemById(String(statsRating.dataset.statsRating));
+      if (item) { item.rating = Number(statsRating.dataset.score) || 0; item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); toast(`Rated ${item.title} ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}.`); }
+      return;
+    }
     const findHours = event.target.closest("[data-stats-find-hours]");
     if (findHours) { findMissingHours(findHours); return; }
     const fetchFacts = event.target.closest("[data-stats-fetch-facts]");
@@ -2251,6 +2280,7 @@
     discoverSource = next === "discover" ? new URLSearchParams(hashQuery).get("source") || "" : "";
     page = next; settingsGroup = next === "settings" ? (route[1] === "manage-backups" ? "backups" : route[1] || null) : null;
     settingsParam = next === "settings" ? new URLSearchParams(hashQuery).get("id") || "" : "";
+    statsSubpage = next === "statistics" && statsSections.includes(route[1]) ? normalizeStatsSection(route[1]) : "";
     document.body.dataset.navDir = "back";
     if (next === "details") { const id = detailIdFromQuery(hashQuery); if (id && id !== detailItemId) { detailItemId = id; detailPreview = null; detailData = null; detailError = ""; render(); syncPageNavigation(); loadDetails(); return; } }
     render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" });
@@ -2270,6 +2300,12 @@
   });
   window.addEventListener("popstate", syncRouteFromHash);
   // Android hardware back: close an open sheet, then step back through pages, then leave the app from Home.
+  // Show the version that is actually installed (from the APK), not the one baked into app-config.js.
+  window.Capacitor?.Plugins?.App?.getInfo?.().then(info => {
+    if (!info?.version) return;
+    window.APP_INSTALLED_VERSION = info.version;
+    if (page === "settings" && settingsGroup === "app-info") render();
+  }).catch(() => {});
   window.Capacitor?.Plugins?.App?.addListener?.("backButton", () => {
     const openDialog = document.querySelector("dialog[open]");
     if (openDialog) { closePopup(openDialog); return; }
@@ -2293,15 +2329,14 @@
       const nativeItems = Array.isArray(restored.items) ? restored.items.filter(item => config.categories.some(category => category.key === item.category)) : items;
       const nativeHistory = Array.isArray(restored.history) ? restored.history : history;
       const nativePreferences = restored.preferences && typeof restored.preferences === "object" ? restored.preferences : {};
-      if (restored.loadedFromFolder) {
+      // Changes made while the folder was loading win over the loaded copy (they used to be overwritten).
+      if (localMutationRevision === initialRevision) {
         items = nativeItems;
         history = nativeHistory;
-        Object.keys(prefs).forEach(key => delete prefs[key]);
-        Object.assign(prefs, JSON.parse(JSON.stringify(prefsDefaults)), nativePreferences);
-      } else if (localMutationRevision === initialRevision) {
-        items = nativeItems;
-        history = nativeHistory;
-        Object.assign(prefs, nativePreferences);
+        if (restored.loadedFromFolder) {
+          Object.keys(prefs).forEach(key => delete prefs[key]);
+          Object.assign(prefs, JSON.parse(JSON.stringify(prefsDefaults)), nativePreferences);
+        } else Object.assign(prefs, nativePreferences);
       } else {
         const currentItems = new Map(items.map(item => [String(item.id), item]));
         const mergedItems = new Map(nativeItems.map(item => [String(item.id), item]));
