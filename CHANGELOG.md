@@ -21,18 +21,31 @@ First tracked release: a local-first tracker for **movies and TV series** that r
 - **Metadata:** TVmaze, AniList, OMDb, TMDB, TheTVDB, IMDb and Rotten Tomatoes (IMDb and Rotten Tomatoes are unofficial and may be blocked). Per-source options page: enable, domain and alternative domains, user agent, cookies, API key. Custom JSON sources and Mix fetch (beta).
 - **Settings:** Animations page (speed, easing, transitions, card entrance, sheets, press and hover effects, preview, reset); Date format; Icon style (inside boxes or inline); Image storage (save all, covers only, or online only); Metadata & Storage; Backups & sync; Logcat.
 - **Discover / Explore / Timeline / Statistics:** restyled with sub-page headers, a "sources active" chip, subtitles and a "Manage all" link; Statistics shows watch time, activity and ratings.
+- **Storage:** IndexedDB library store with a data worker; the library appears straight from IndexedDB at launch and the folder sync runs in the background. Saves write only the titles that changed.
+- **Artwork:** on-device cover cache (IndexedDB) with online-first fallback; the saved folder only fills the cache in the background.
+- **Export:** Android's Save as screen with chunked writes, so large libraries export without crashing; Backup Before Destructive Actions saves quietly into the backup folder.
+- **Statistics:** an overview plus four sub-pages — Watch time, Library breakdown, Activity (selectable days) and Ratings (histogram, highest rated, and a Not rated yet list you can rate from).
+- **Timeline:** rebuilt with All time / This week / This month filters, month sections and one card per day.
+- **Discover:** source chips (All sources, each source, manage) and a "sources active" chip that opens Metadata Sources.
+- **App Info:** redesigned page showing the installed version, stat tiles and grouped lists; ⋮ menu gains Edit entry, which opens the title's details in edit mode.
 
 ### Changed
 
 - Dashboard views reduced to List, Compact list, Poster grid, Detailed grid, Compact grid, Large poster grid and Timeline.
 - Fresh installs start on the Light theme with TVmaze and AniList on (OMDb, TMDB and TheTVDB need a key; IMDb and Rotten Tomatoes start off).
 - Wikidata is no longer a source.
+- Import List keeps the backup's dates and writes history so imported titles show on Timeline and Statistics.
+- Removed settings that did nothing: Backup Password Reminder, Maximum Backup Size, Validate Backup Location, Restore Preview, Metadata Retry Limit, Metadata Sync Frequency, Metadata Sync Workers, Thumbnail Cleanup, Thumbnail Quality, Metadata Thumbnails, Image Cache Limit, Storage Warning Limit and Backup Storage Limit.
+- Content now ends just above the bottom bar instead of leaving dead space; the Statistics top bar says "Statistics".
+- Settings and Storage pages use a sampled size estimate and remembered cache sizes instead of serialising the whole library.
 
 ### Fixed
 
 - Android: startup now asks for the storage folder whenever none is chosen (or the old one is gone) instead of silently running without one.
 - Covers saved in the chosen storage folder now load on start, so they still show offline after the app cache is cleared (previously they only came from the cache or the internet).
 - Backup import file picker being blocked; Discover rows clipped on tablets; Details header not spanning the page; empty Timeline text showing raw placeholders; Metadata & Storage missing from the Settings index; renamed titles keeping the old name on Details.
+- A change made while the storage folder was still loading at startup could be overwritten; it now wins.
+- ⋮ → View Details no longer fails intermittently; Add no longer opens pre-filled from the last edited title and its results collapse after a match is used.
 
 ### Known limitations
 
