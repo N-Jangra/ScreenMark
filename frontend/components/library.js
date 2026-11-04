@@ -9,6 +9,8 @@
     const mark = entry => `S${entry.season} · E${entry.number}`;
     return { eps, watched, total: eps.length, done: eps.filter(entry => watched.has(String(entry.id))).length, next: eps.find(entry => !watched.has(String(entry.id))), last: [...eps].reverse().find(entry => watched.has(String(entry.id))), mark };
   };
+  // One shared collator: String.localeCompare with options builds a new one per call, which dominates sorting 1000+ titles.
+  const titleCollator = new Intl.Collator(undefined, { sensitivity: "base" });
   window.SplitAppLibrary = Object.freeze({
     episodeInfo,
     create(context) {
@@ -19,7 +21,14 @@
     const percent = goal ? Math.min(100, Math.round(progress / goal * 100)) : 0;
     const rating = item.rating ? `★ ${esc(item.rating)}${prefs.ratingFormat === "10-point" ? "/10" : "/5"}` : "";
     const thumbnail = item.localThumbnailData || item.image;
-    const art = prefs.showThumbnails && thumbnail ? `<img src="${esc(thumbnail)}" alt="" loading="lazy">` : `<span>${esc(cat?.icon || "✦")}</span>`;
+    // Covers saved on this device load via the artwork cache (see app.js); others straight from their URL.
+    const localPending = !item.localThumbnailData && Boolean(item.thumbnailPath);
+    const fallbackIcon = `<span${thumbnail || localPending ? " hidden" : ""}>${esc(cat?.icon || "✦")}</span>`;
+    const art = prefs.showThumbnails && (thumbnail || localPending)
+      ? (localPending
+        ? `<img data-deferred-image data-lazy-src="${esc(item.image || "")}" data-local-item-id="${esc(item.id)}" alt="" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">${fallbackIcon}`
+        : `<img src="${esc(thumbnail)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">${fallbackIcon}`)
+      : `<span>${esc(cat?.icon || "✦")}</span>`;
     const accent = prefs.categoryColors[item.category] || cat?.color || prefs.mainColor;
     const info = item.category === "series" ? episodeInfo(item) : null;
     const check = info?.next ? `<button type="button" class="card-check" data-action="watch-next" data-id="${esc(item.id)}" aria-label="Mark ${esc(info.mark(info.next))} watched" title="Mark ${esc(info.mark(info.next))} watched">✓</button>` : "";
@@ -33,7 +42,7 @@
     return items.filter(item => (activeCategory === "all" || item.category === activeCategory) && (!prefs.favoritesOnly || item.favorite) && (!normalized || `${item.title} ${item.status}`.toLocaleLowerCase().includes(normalized)));
   }
   function dashboardItems(status, query = "") {
-    const compareTitle = (left, right) => String(left.title || "").localeCompare(String(right.title || ""), undefined, { sensitivity: "base" });
+    const compareTitle = (left, right) => titleCollator.compare(String(left.title || ""), String(right.title || ""));
     return filteredItems(query).filter(item => !status || item.status === status).sort((left, right) => {
       switch (prefs.dashboardSort) {
         case "recent": case "recently-added": case "created-desc": return (Number(right.createdAt) || 0) - (Number(left.createdAt) || 0) || compareTitle(left, right);
