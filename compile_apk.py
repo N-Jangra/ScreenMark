@@ -249,13 +249,13 @@ def build_app(env, version_name="1.0", release=True):
     if not apk_src:
         raise FileNotFoundError("Could not locate compiled APK output file.")
     safe_version = re.sub(r"[^0-9A-Za-z._-]+", "-", version_name).strip("-") or "1.0"
+    dist_dir = os.path.join(BASE_DIR, "dist")
+    os.makedirs(dist_dir, exist_ok=True)
     if release:
-        dist_dir = os.path.join(BASE_DIR, "dist")
-        os.makedirs(dist_dir, exist_ok=True)
         suffix = "release" if os.path.basename(apk_src) == "app-release.apk" else "release-unsigned"
-        apk_dest = os.path.join(dist_dir, f"screenmark-{safe_version}-{suffix}.apk")
     else:
-        apk_dest = os.path.join(BASE_DIR, f"ScreenMark-{safe_version}-debug.apk")
+        suffix = "debug"
+    apk_dest = os.path.join(dist_dir, f"screenmark-{safe_version}-{suffix}.apk")
     shutil.copyfile(apk_src, apk_dest)
     log(f"SUCCESS! The compiled APK has been copied to: {apk_dest}")
 
@@ -263,7 +263,7 @@ def main():
     try:
         parser = argparse.ArgumentParser(description="Build ScreenMark APK (signed release into dist/ by default)")
         parser.add_argument("--version", default=None, help="APK version name, e.g. 1.2.3 (default: keep the version in android/app/build.gradle)")
-        parser.add_argument("--debug", action="store_true", help="Build a debug APK next to this script instead of a signed release APK in dist/")
+        parser.add_argument("--debug", action="store_true", help="Build a debug APK (dist/<app>-<version>-debug.apk) instead of the signed release APK")
         args = parser.parse_args()
 
         if args.version:
