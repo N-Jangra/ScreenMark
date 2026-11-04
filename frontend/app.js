@@ -19,9 +19,9 @@
     metadataSourceOrder: ["tvmaze", "anilist", "omdb"], customSources: [],
     dashboardView: "list", dashboardDefaultCategory: "remember", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1,
-    backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30, backupPasswordReminder: true, maximumBackupSize: 1000, validateBackupLocation: true, restorePreview: true,
-    metadataMode: "online", metadataSources: { tvmaze: true, anilist: true, omdb: false }, metadataRefreshInterval: "weekly", metadataRetryLimit: 3, offlineFallback: "cached", metadataSyncFrequency: "immediate", metadataWorkers: 5, thumbnailCleanup: "weekly", metadataThumbnails: true, thumbnailSize: "medium", thumbnailQuality: "balanced",
-    imageCacheMaxEntries: 250, storageWarningLimitMb: 500, backupStorageLimitMb: 1000, backgroundBackups: false,
+    backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30,
+    metadataMode: "online", metadataSources: { tvmaze: true, anilist: true, omdb: false }, metadataRefreshInterval: "weekly", offlineFallback: "cached", thumbnailSize: "medium",
+    backgroundBackups: false,
     apiKeys: {}, sourceOptions: {}
   };
   const themePalettes = {
@@ -173,10 +173,14 @@
     dialog.dataset.popupFallback = "true";
     document.body.dataset.popupFallback = "true";
   }
-  function closePopup(dialog) {
+  function closePopup(dialog, { preserveHistory = false } = {}) {
     if (!dialog) return;
     if (typeof dialog.close === "function") {
-      try { const wasOpen = dialog.open; dialog.close(); if (wasOpen && !closingFromPop) popDialogEntry(); return; } catch (_) {}
+      try {
+        const wasOpen = dialog.open; dialog.close();
+        if (wasOpen && !closingFromPop) { if (preserveHistory) dialogEntries = Math.max(0, dialogEntries - 1); else popDialogEntry(); }
+        return;
+      } catch (_) {}
     }
     dialog.removeAttribute("open");
     dialog.removeAttribute("aria-modal");
@@ -184,10 +188,35 @@
     if (!document.querySelector("dialog[data-popup-fallback][open]")) delete document.body.dataset.popupFallback;
   }
 
-  function persist() {
+  // Saving is scoped so a change only touches what changed:
+  //   persist()                    whole library (imports, resets, anything unspecified)
+  //   persist({ ids: [id, ...] })  only those titles (add / edit / status / progress / rating / sync)
+  //   persist({ removed: [id] })   delete those titles
+  //   persist({ meta: true })      preferences and history only
+  // Bursts are coalesced into one write ~250ms after the last change.
+  let persistTimer = 0, persistWaiters = [], persistFull = false;
+  const persistIds = new Set(), persistRemoved = new Set();
+  function persist(scope) {
     localMutationRevision += 1;
-    const write = window.SplitAppBackend?.save({ items, history, preferences: prefs });
-    if (write?.catch) write.catch(error => recordLog("error", `App data save failed: ${error.message || error}`));
+    if (scope && typeof scope === "object") {
+      (scope.ids || []).forEach(id => persistIds.add(String(id)));
+      (scope.removed || []).forEach(id => persistRemoved.add(String(id)));
+    } else persistFull = true;
+    const promise = new Promise(resolve => persistWaiters.push(resolve));
+    clearTimeout(persistTimer);
+    persistTimer = setTimeout(flushPersist, 250);
+    return promise;
+  }
+  function flushPersist() {
+    clearTimeout(persistTimer); persistTimer = 0;
+    const waiters = persistWaiters; persistWaiters = [];
+    if (!waiters.length) return;
+    const scope = persistFull ? { full: true } : { ids: [...persistIds], removed: [...persistRemoved] };
+    persistFull = false; persistIds.clear(); persistRemoved.clear();
+    const write = window.SplitAppBackend?.save({ items, history, preferences: prefs }, scope);
+    const finish = () => waiters.forEach(resolve => resolve());
+    if (write?.catch) write.catch(error => { recordLog("error", `App data save failed: ${error.message || error}`); }).then(finish);
+    else finish();
   }
   function recordLog(level, message) {
     try {
@@ -316,7 +345,7 @@
     if (next === "search") next = "dashboard";
     page = next in titles ? next : "dashboard";
     if (page !== "discover" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; discoverRequestId++; discoverCache = null; }
-    if (page !== "add") { addMetadataQuery = ""; addMetadataRequestId++; }
+    if (page !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
     if (page !== "details") clearDetailStack();
     if (page !== "settings") settingsGroup = null;
     if (updateHistory) historyPush();
@@ -346,10 +375,22 @@
     }
   }
 
+  // Cheap size estimate (sampled) instead of serialising the whole library on every Settings render.
+  let libraryBytesCache = { key: "", value: 0 };
+  function estimateLibraryBytes() {
+    const key = `${localMutationRevision}|${items.length}`;
+    if (libraryBytesCache.key === key) return libraryBytesCache.value;
+    const step = Math.max(1, Math.floor(items.length / 40));
+    let sampled = 0, bytes = 0;
+    for (let index = 0; index < items.length; index += step) { bytes += JSON.stringify(items[index]).length; sampled++; }
+    const value = Math.round((sampled ? bytes / sampled * items.length : 0) + JSON.stringify(history).length + JSON.stringify(prefs).length);
+    libraryBytesCache = { key, value };
+    return value;
+  }
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { config, prefs, items, history, logEntries, roles, trackedStatuses, statusIcon, activeCategory, addCategory, discoverCategory: currentDiscoverCategory(), libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", mixCategory: mixCategory || (activeCategory !== "all" ? activeCategory : "all"), statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    return { libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, history, logEntries, roles, trackedStatuses, statusIcon, activeCategory, addCategory, discoverCategory: currentDiscoverCategory(), libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", mixCategory: mixCategory || (activeCategory !== "all" ? activeCategory : "all"), statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRef, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, refItem: detailRef?.type === "episode" ? items.find(entry => entry.category === "series" && (entry.cachedDetails?.sections || []).some(section => section.kind === "episodes" && section.items.some(row => String(row.id) === String(detailRef.id)))) || null : null, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardGroupItems(groupKey) {
@@ -362,6 +403,135 @@
     if (groupBy === "release") return games.filter(item => String(item.year || "Unknown release date") === groupKey);
     return games;
   }
+  // ---- Device artwork cache (IndexedDB blobs) ----
+  // Order for every cover: on-device cache -> online (instant, HTTP-cached) -> saved-folder files.
+  // The slow Android folder (storage framework) only fills the cache in the background.
+  const nativeAndroid = Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor?.getPlatform?.() === "android");
+  let itemIndex = new Map();
+  function itemById(id) {
+    const key = String(id);
+    let at = itemIndex.get(key);
+    if (at !== undefined && String(items[at]?.id) === key) return items[at];
+    itemIndex = new Map(items.map((row, index) => [String(row.id), index]));
+    at = itemIndex.get(key);
+    return at === undefined ? undefined : items[at];
+  }
+  const thumbUrlCache = new Map(); // "key|sig" -> blob: URL
+  const thumbKeyOf = item => `${item.id}:p`;
+  const thumbSigOf = item => String(item.localImageFingerprint || item.thumbnailPath || "");
+  async function cachedThumbUrls(entries) {
+    const found = new Map(), need = [];
+    entries.forEach(([key, sig]) => { const url = thumbUrlCache.get(`${key}|${sig}`); if (url) found.set(key, url); else need.push([key, sig]); });
+    if (need.length && window.SplitAppIDB?.getThumbs) {
+      try {
+        const sigByKey = new Map(need);
+        (await window.SplitAppIDB.getThumbs(need)).forEach(([key, blob]) => {
+          const url = URL.createObjectURL(blob);
+          thumbUrlCache.set(`${key}|${sigByKey.get(key)}`, url);
+          found.set(key, url);
+        });
+      } catch (_) {}
+    }
+    return found;
+  }
+  // fetch() decodes data: URLs natively, off the JS thread.
+  async function dataUrlToBlob(dataUrl) {
+    if (!/^data:[^;,]+;base64,/i.test(dataUrl || "")) return null;
+    try { return await (await fetch(dataUrl)).blob(); } catch (_) { return null; }
+  }
+  // Background work waits for an idle moment and for pending taps/scrolls.
+  function yieldToUser() {
+    return new Promise(resolve => {
+      const go = () => {
+        if (navigator.scheduling?.isInputPending?.()) { setTimeout(go, 40); return; }
+        if (window.scheduler?.postTask) window.scheduler.postTask(resolve, { priority: "background" }).catch(resolve);
+        else if (window.requestIdleCallback) window.requestIdleCallback(() => resolve(), { timeout: 1500 });
+        else setTimeout(resolve, 0);
+      };
+      go();
+    });
+  }
+  let thumbFillRunning = false;
+  async function fillThumbCache() {
+    if (thumbFillRunning || !nativeAndroid || !window.SplitAppIDB?.listThumbKeys) return;
+    const hydrate = window.SplitAppBackend?.hydrateThumbnails;
+    if (typeof hydrate !== "function") return;
+    thumbFillRunning = true;
+    try {
+      const have = new Map(await window.SplitAppIDB.listThumbKeys());
+      const missing = items.filter(item => item.thumbnailPath && have.get(thumbKeyOf(item)) !== thumbSigOf(item));
+      for (let offset = 0; offset < missing.length; offset += 12) {
+        while (document.hidden) await new Promise(resolve => setTimeout(resolve, 3000));
+        await yieldToUser();
+        const clones = missing.slice(offset, offset + 12).map(item => ({ ...item, localThumbnailData: "", localPortraitData: "", localLandscapeData: "", backdrop: "", cachedDetails: undefined, localImageFiles: undefined }));
+        try { await hydrate(clones); } catch (_) {}
+        const entries = [];
+        for (let index = 0; index < clones.length; index++) {
+          const blob = await dataUrlToBlob(clones[index].localThumbnailData);
+          const original = missing[offset + index];
+          if (blob) entries.push([thumbKeyOf(original), thumbSigOf(original), blob]);
+        }
+        if (entries.length) { try { await window.SplitAppIDB.putThumbs(entries); } catch (_) {} }
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+    } finally { thumbFillRunning = false; }
+  }
+  const deferredQueue = [];
+  let deferredTimer = 0, deferredDrain = null, deferredObserver = null;
+  function finishDeferredImage(image, source) {
+    if (!image?.isConnected) return;
+    delete image.dataset.localItemId; delete image.dataset.lazySrc;
+    if (source) image.src = source;
+    else { image.hidden = true; if (image.nextElementSibling) image.nextElementSibling.hidden = false; }
+  }
+  async function drainDeferredImages() {
+    if (deferredDrain) return deferredDrain;
+    deferredDrain = (async () => {
+      const hydrate = window.SplitAppBackend?.hydrateThumbnails;
+      while (deferredQueue.length) {
+        const batch = deferredQueue.splice(0, 24);
+        const cached = await cachedThumbUrls(batch.map(record => [thumbKeyOf(record.item), thumbSigOf(record.item)]));
+        const slow = [];
+        for (const record of batch) {
+          const hit = cached.get(thumbKeyOf(record.item));
+          if (hit) finishDeferredImage(record.image, hit);
+          else if (/^https?:/i.test(record.online)) finishDeferredImage(record.image, record.online); // not cached yet: online straight away
+          else slow.push(record);
+        }
+        if (!slow.length || typeof hydrate !== "function") { slow.forEach(record => finishDeferredImage(record.image, record.online)); continue; }
+        const clones = slow.map(record => ({ ...record.item, localThumbnailData: "", localPortraitData: "", localLandscapeData: "", backdrop: "", cachedDetails: undefined, localImageFiles: undefined }));
+        try { await hydrate(clones); } catch (error) { recordLog("warning", `Could not load saved artwork: ${error?.message || error}`); }
+        slow.forEach((record, index) => {
+          const local = clones[index].localThumbnailData;
+          finishDeferredImage(record.image, local || record.online);
+          if (local) dataUrlToBlob(local).then(blob => blob && window.SplitAppIDB?.putThumbs?.([[thumbKeyOf(record.item), thumbSigOf(record.item), blob]])).catch(() => {});
+        });
+      }
+    })().finally(() => { deferredDrain = null; });
+    return deferredDrain;
+  }
+  function activateDeferredImage(image) {
+    if (!image?.isConnected || image.hasAttribute("src")) return;
+    const item = image.dataset.localItemId && itemById(image.dataset.localItemId);
+    const online = image.dataset.lazySrc || "";
+    if (!item) { finishDeferredImage(image, online); return; }
+    const warm = thumbUrlCache.get(`${thumbKeyOf(item)}|${thumbSigOf(item)}`);
+    if (warm) { finishDeferredImage(image, warm); return; }
+    deferredQueue.push({ item, image, online });
+    if (!deferredTimer) deferredTimer = setTimeout(() => { deferredTimer = 0; drainDeferredImages(); }, 0);
+  }
+  function observeDeferredImages(root = document) {
+    const images = [...(root?.querySelectorAll?.("img[data-deferred-image]") || [])].filter(image => !image.hasAttribute("src"));
+    if (!images.length) return;
+    if (!window.IntersectionObserver) { images.forEach(activateDeferredImage); return; }
+    if (!deferredObserver) deferredObserver = new IntersectionObserver(entries => entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      deferredObserver.unobserve(entry.target);
+      activateDeferredImage(entry.target);
+    }), { rootMargin: "400px 0px" });
+    images.forEach(image => deferredObserver.observe(image));
+  }
+
   function loadDashboardMore(button) {
     const status = button.dataset.dashboardLoadMore;
     const offset = Number(button.dataset.offset) || 0;
@@ -371,6 +541,7 @@
     if (!target || !batch.length) { button.remove(); return; }
     const library = window.SplitAppLibrary.create(pageContext());
     target.insertAdjacentHTML("beforeend", batch.map(library.card).join(""));
+    observeDeferredImages(target);
     const nextOffset = offset + batch.length;
     target.dataset.renderedCount = String(nextOffset);
     button.dataset.offset = String(nextOffset);
@@ -467,6 +638,7 @@
     window.lucide?.createIcons({ root: $("#header-filter"), attrs: { "aria-hidden": "true" } });
     window.lucide?.createIcons({ root: $("#floating-add"), attrs: { "aria-hidden": "true" } });
     observeDashboardLoaders();
+    observeDeferredImages(content);
     content.querySelector("[data-clear-collection-search]")?.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
@@ -566,18 +738,18 @@
       event.preventDefault(); event.stopPropagation();
       const key = button.dataset.navIconPick, icon = button.dataset.icon;
       prefs.navIcons[key] = icon === "brand" && key === "dashboard" ? "brand" : safeLucideName(icon, prefs.navIcons[key]);
-      persist(); applyPreferences(); render();
+      persist({ meta: true }); applyPreferences(); render();
     }));
     content.querySelectorAll("[data-nav-icon-select]").forEach(select => select.addEventListener("change", event => {
       event.stopPropagation();
       const key = select.dataset.navIconSelect;
       prefs.navIcons[key] = key === "dashboard" && select.value === "brand" ? "brand" : safeLucideName(select.value, prefs.navIcons[key]);
-      persist(); applyPreferences(); render();
+      persist({ meta: true }); applyPreferences(); render();
     }));
     content.querySelector("[data-close-dashboard-filter]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#dashboard-filter-dialog")); });
     content.querySelector("[data-reset-dashboard-filter]")?.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
-      dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; persist(); closePopup($("#dashboard-filter-dialog")); render();
+      dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; persist({ meta: true }); closePopup($("#dashboard-filter-dialog")); render();
     });
     const dashboardFilterForm = content.querySelector("#dashboard-filter-form");
     const applyDashboardFilter = () => {
@@ -590,7 +762,7 @@
       prefs.dashboardDensity = dashboardFilterForm.elements.density?.value || prefs.dashboardDensity;
       prefs.dashboardGroupBy = dashboardFilterForm.elements.groupBy?.value || prefs.dashboardGroupBy;
       ["showRatings", "showProgress", "showThumbnails"].forEach(key => { prefs[key] = Boolean(dashboardFilterForm.elements[key]?.checked); });
-      persist(); applyPreferences(); closePopup($("#dashboard-filter-dialog")); render();
+      persist({ meta: true }); applyPreferences(); closePopup($("#dashboard-filter-dialog")); render();
     };
     dashboardFilterForm?.addEventListener("submit", event => { event.preventDefault(); event.stopPropagation(); applyDashboardFilter(); });
     dashboardFilterForm?.querySelector('[type="submit"]')?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); applyDashboardFilter(); });
@@ -629,12 +801,12 @@
     content.querySelectorAll("[data-nav-move]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
       prefs.navBar.order = moveInOrder([...prefs.navBar.order], button.dataset.navKey, button.dataset.navMove);
-      persist(); applyPreferences(); render();
+      persist({ meta: true }); applyPreferences(); render();
     }));
     content.querySelectorAll("[data-source-move]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
       prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], button.dataset.sourceKey, button.dataset.sourceMove);
-      persist(); render();
+      persist({ meta: true }); render();
     }));
     content.querySelectorAll("[data-backup-folder-action]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
@@ -689,22 +861,45 @@
     const target = $("#storage-cache-breakdown");
     if (!target) return;
     const prefix = `splitapp_${config.key}`;
+    const snapshotKey = `${prefix}_storage_snapshot_v1`;
+    try { const snap = JSON.parse(localStorage.getItem(snapshotKey) || "null"); if (snap?.html) { target.innerHTML = snap.html; const node = $("#storage-total"); if (node && snap.total) node.textContent = snap.total; } } catch (_) {}
     try {
       const names = (await window.caches?.keys?.() || []).filter(name => name.startsWith(prefix));
       const totals = { metadata: 0, images: 0, other: 0 };
+      // Per-cache sizes are remembered with a cheap signature (entry count + first/last URL), so an unchanged
+      // cache costs one keys() call. Changed caches are measured in small slices that yield to the UI and stop
+      // as soon as the page is left, so this never competes with scrolling or navigation.
+      const sizesKey = `${prefix}_cache_sizes_v1`;
+      let known = {}; try { known = JSON.parse(localStorage.getItem(sizesKey) || "{}") || {}; } catch (_) {}
+      const next = {};
+      const alive = () => Boolean($("#storage-cache-breakdown")?.isConnected) && page === "settings";
       for (const name of names) {
+        if (!alive()) return;
         const bucket = name.includes("image") ? "images" : name.includes("metadata") ? "metadata" : "other";
         const cache = await window.caches.open(name);
-        for (const request of await cache.keys()) {
-          try { const response = await cache.match(request); if (response) totals[bucket] += (await response.clone().blob()).size; } catch (_) {}
+        const requests = await cache.keys();
+        const sig = `${requests.length}|${requests[0]?.url || ""}|${requests[requests.length - 1]?.url || ""}`;
+        if (known[name]?.sig === sig) { next[name] = known[name]; totals[bucket] += known[name].bytes; continue; }
+        let bytes = 0;
+        for (let offset = 0; offset < requests.length; offset += 16) {
+          if (!alive()) return;
+          const sizes = await Promise.all(requests.slice(offset, offset + 16).map(async request => {
+            const response = await cache.match(request);
+            return Number(response?.headers.get("content-length")) || (response ? (await response.blob()).size : 0);
+          }));
+          bytes += sizes.reduce((sum, size) => sum + size, 0);
+          await yieldToUser();
         }
+        next[name] = { sig, bytes }; totals[bucket] += bytes;
       }
+      try { localStorage.setItem(sizesKey, JSON.stringify(next)); } catch (_) {}
       if (!$("#storage-cache-breakdown")) return;
       const format = bytes => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-      const libraryBytes = new Blob([JSON.stringify({ items, history, preferences: prefs })]).size;
+      const libraryBytes = estimateLibraryBytes();
       const total = libraryBytes + totals.metadata + totals.images + totals.other;
       const totalNode = $("#storage-total"); if (totalNode) totalNode.textContent = format(total);
       target.innerHTML = `<div class="storage-breakdown-row"><span>Metadata responses</span><strong>${format(totals.metadata)}</strong></div><div class="storage-breakdown-row"><span>Images and artwork</span><strong>${format(totals.images)}</strong></div>${totals.other ? `<div class="storage-breakdown-row"><span>Other app cache</span><strong>${format(totals.other)}</strong></div>` : ""}`;
+      try { localStorage.setItem(snapshotKey, JSON.stringify({ html: target.innerHTML, total: format(total) })); } catch (_) {}
     } catch (_) {
       if (target.isConnected) target.innerHTML = '<div class="storage-breakdown-row"><span>Cache usage</span><strong>Not available in this browser</strong></div>';
     }
@@ -821,7 +1016,7 @@
     const message = $("#add-metadata-message"), box = $("#add-metadata-results");
     if (!query) { message.textContent = "Enter a title to search."; return; }
     if (prefs.metadataMode === "offline" || !navigator.onLine) { message.textContent = prefs.metadataMode === "offline" ? "Online metadata is disabled in Settings." : "Reconnect to search metadata sources."; return; }
-    message.textContent = "Searching enabled sources…"; box.innerHTML = "";
+    message.textContent = "Searching enabled sources…"; box.innerHTML = ""; box.hidden = false;
     try {
       const results = await discoverSearch(query, $("#item-form")?.elements.category.value || config.categories[0].key);
       if (requestId !== addMetadataRequestId || page !== "add") return;
@@ -850,6 +1045,10 @@
     const preview = $("[data-add-image-preview]");
     if (preview && result.image && !hasLocalImage) { preview.src = result.image; preview.hidden = false; }
     const message = $("#add-metadata-message");
+    // The match is applied: collapse the result list (searching again reopens it).
+    box.innerHTML = ""; box._results = null; box.hidden = true;
+    const queryInput = $("#add-metadata-query"); if (queryInput) queryInput.value = result.title || queryInput.value;
+    
     message.textContent = `Selected ${result.source} · ${result.title}. Loading available details…`;
     if (!result.providerId || !window.SplitAppDetails?.load) { message.textContent = `Selected ${result.source} · ${result.title}`; return; }
     try {
@@ -898,7 +1097,7 @@
     if (!entry.title) return;
     if (old) items[items.indexOf(old)] = entry; else items.unshift(entry);
     if (entry.status !== roles.queued && entry.status !== old?.status) history.unshift({ itemId: entry.id, title: entry.title, action: entry.status, status: entry.status, at: Date.now() });
-    persist(); entryDraftId = null; goto(addReturnPage); toast(old ? "Entry updated." : "Added to your library.");
+    persist({ ids: [entry.id] }); entryDraftId = null; goto(addReturnPage); toast(old ? "Entry updated." : "Added to your library.");
   }
   function saveAddForm(form) {
     if (!form?.isConnected || !form.reportValidity()) return;
@@ -911,16 +1110,17 @@
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = roles.done;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "ask" && await appConfirm(`Mark “${item.title}” completed?`, { title: "Completed?", confirmLabel: "Mark completed" })) item.status = roles.done;
     if (item.status !== previousStatus && trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
-    persist(); render(); toast("Progress updated.");
+    persist({ ids: [item.id] }); render(); toast("Progress updated.");
   }
   async function deleteItem(id) {
     const item = items.find(entry => entry.id === id); if (!item) return;
     if (!(await appConfirm(`Delete “${item.title}” from your library?`, { title: "Delete title", confirmLabel: "Delete", danger: true }))) return;
-    if (prefs.backupBeforeDestructive) exportList();
+    if (prefs.backupBeforeDestructive) exportList({ silent: true });
     items = items.filter(entry => entry.id !== id);
-    persist(); entryDraftId = null; goto(addReturnPage); toast("Entry deleted.");
+    persist({ removed: [id] }); entryDraftId = null; goto(addReturnPage); toast("Entry deleted.");
   }
-  function openEdit(id) { const item = items.find(entry => entry.id === id); if (item) openItem(item); }
+  // ⋮ → Edit entry opens the title's details page in edit mode (same as its Edit button).
+  function openEdit(id) { if (items.some(entry => entry.id === id)) openDetails(id, true); }
   function saveDetailEdit(event) {
     event.preventDefault();
     const item = items.find(row => row.id === detailItemId);
@@ -935,7 +1135,7 @@
     item.updatedAt = Date.now();
     if (oldStatus !== item.status && trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
     detailEditMode = false;
-    persist(); render(); toast("Entry updated.");
+    persist({ ids: [item.id] }); render(); toast("Entry updated.");
   }
 
   function submitDiscover() {
@@ -1054,14 +1254,14 @@
       if (result.source === "mix" && existing.metadataSource !== "mix") {
         const from = window.SplitAppSources.list().find(source => source.key === existing.metadataSource)?.name || existing.metadataSource || "a manual entry";
         appConfirm(`“${existing.title}” is already in your library (${from}). Convert it to a Mix entry that merges every enabled source?`, { title: "Convert to Mix entry", confirmLabel: "Convert" }).then(ok => {
-          if (ok) { Object.assign(existing, { metadataSource: "mix", source: "mix", providerId: result.providerId, updatedAt: Date.now() }); persist(); render(); toast("Converted to a Mix entry."); }
+          if (ok) { Object.assign(existing, { metadataSource: "mix", source: "mix", providerId: result.providerId, updatedAt: Date.now() }); persist({ ids: [existing.id] }); render(); toast("Converted to a Mix entry."); }
         });
         return existing;
       }
       toast("That entry is already in your library."); return existing;
     }
     const item = { ...result, metadataSource: result.source, id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
-    items.unshift(item); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist(); toast("Added to your library."); hydrateSavedItem(item); return item;
+    items.unshift(item); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist({ ids: [item.id] }); toast("Added to your library."); hydrateSavedItem(item); return item;
   }
   // Keep the best value per fact across providers (a later source never blanks out earlier data).
   function mergeFacts(previous = {}, next = {}) {
@@ -1103,7 +1303,7 @@
       saved.metadataSource = "mix"; saved.source = "mix"; saved.mixSources = loaded.mixSources || [];
       saved.cachedDetails = loaded; saved.facts = mergeFacts(saved.facts, loaded.facts);
       saved.description = loaded.description || saved.description; saved.year = loaded.year || saved.year; saved.image = loaded.portraitImage || loaded.image || saved.image;
-      saved.updatedAt = Date.now(); persist(); toast(`Merged details from ${loaded.mixSources?.length || 0} sources.`);
+      saved.updatedAt = Date.now(); persist({ ids: [saved.id] }); toast(`Merged details from ${loaded.mixSources?.length || 0} sources.`);
     } catch (error) { recordLog("warning", `Mix fetch could not merge details for ${saved.title}: ${error?.message || error}`); toast("Added. Details could not be merged yet."); }
   }
   // Looks up runtime / episode counts (OMDb, TVmaze, then AniList) for titles whose saved source has none.
@@ -1135,7 +1335,7 @@
         item.cachedDetails = loaded; item.facts = mergeFacts(item.facts, loaded.facts);
         item.description = loaded.description || item.description; item.year = loaded.year || item.year;
         item.image = loaded.portraitImage || loaded.image || item.image;
-        done += 1; persist();
+        done += 1; persist({ ids: [item.id] });
       } catch (error) { recordLog("warning", `Could not fetch details for ${item.title}: ${error?.message || error}`); }
       await new Promise(resolve => setTimeout(resolve, 350));
     }
@@ -1172,13 +1372,13 @@
     if (index >= 0) list[index] = config; else list.push(config);
     prefs.customSources = list; refreshSourceRegistry();
     prefs.metadataSources[`custom:${config.id}`] = prefs.metadataSources[`custom:${config.id}`] !== false;
-    persist(); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast(index >= 0 ? "Custom source updated." : "Custom source added.");
+    persist({ meta: true }); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast(index >= 0 ? "Custom source updated." : "Custom source added.");
   }
   async function deleteCustomSource() {
     const id = $("#custom-source-form")?.elements.sourceId.value; if (!id || !(await appConfirm("Delete this custom source?", { title: "Delete source", confirmLabel: "Delete", danger: true }))) return;
     prefs.customSources = (prefs.customSources || []).filter(row => row.id !== id);
     delete prefs.metadataSources[`custom:${id}`]; refreshSourceRegistry();
-    persist(); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast("Custom source deleted.");
+    persist({ meta: true }); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast("Custom source deleted.");
   }
   function detailSettings() { return { metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions, offlineFallback: prefs.offlineFallback }; }
   async function loadDetails() {
@@ -1208,7 +1408,7 @@
           item.image = loaded.portraitImage || loaded.image || item.image;
           item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop;
           item.updatedAt = Date.now();
-          persist();
+          persist({ ids: [item.id] });
           const localImageData = await window.SplitAppBackend?.loadItemImages?.(item);
           if (localImageData && Object.keys(localImageData).length) item.localImageData = localImageData;
         }
@@ -1257,7 +1457,7 @@
       if (!Number(item.goal)) item.goal = category(item.category)?.unit === "minutes" ? Number(loaded.facts?.runtimeMinutes) || 0 : Number(loaded.goal) || Number(loaded.facts?.episodeCount) || 0;
       item.description = loaded.description || item.description; item.year = loaded.year || item.year;
       item.image = loaded.portraitImage || loaded.image || item.image; item.backdrop = loaded.landscapeImage || item.backdrop;
-      item.updatedAt = Date.now(); persist(); if (page === "details" && detailItemId === item.id) render();
+      item.updatedAt = Date.now(); persist({ ids: [item.id] }); if (page === "details" && detailItemId === item.id) render();
     } catch (error) { recordLog("warning", `Could not save details for ${item.title}: ${error?.message || error}`); }
     finally { hydrating.delete(item.id); }
   }
@@ -1297,7 +1497,7 @@
     ids.forEach(id => done ? watched.delete(id) : watched.add(id));
     item.watchedEpisodeIds = [...watched]; item.goal = Number(item.goal) || Number(detailData?.goal) || watched.size; item.progress = watched.size;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = roles.done;
-    item.updatedAt = Date.now(); persist(); render();
+    item.updatedAt = Date.now(); persist({ ids: [item.id] }); render();
   }
   function toggleEpisodeWatched(itemId, episodeId, episodeTitle) {
     const item = items.find(entry => entry.id === itemId); if (!item) return;
@@ -1318,14 +1518,14 @@
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = roles.done;
     item.updatedAt = Date.now();
     if (item.status !== previousStatus && trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
-    persist(); render(); toast(watched.has(id) ? (earlier ? `Episode and ${earlier} earlier ${earlier === 1 ? "episode" : "episodes"} marked watched.` : "Episode marked watched.") : "Episode marked unwatched.");
+    persist({ ids: [item.id] }); render(); toast(watched.has(id) ? (earlier ? `Episode and ${earlier} earlier ${earlier === 1 ? "episode" : "episodes"} marked watched.` : "Episode marked watched.") : "Episode marked unwatched.");
   }
   function deleteFromDetails(id) {
     const item = items.find(entry => entry.id === id); if (!item) return;
-    if (prefs.backupBeforeDestructive) exportList();
+    if (prefs.backupBeforeDestructive) exportList({ silent: true });
     items = items.filter(entry => entry.id !== id);
     detailItemId = null; detailData = null; detailPreview = null;
-    persist(); goto(detailReturnPage); toast("Entry deleted.");
+    persist({ removed: [id] }); goto(detailReturnPage); toast("Entry deleted.");
   }
   function requestDeleteDetails(id) {
     if (!items.some(entry => entry.id === id)) return;
@@ -1335,7 +1535,7 @@
     if (!item || item.status === status) return;
     item.status = status; item.updatedAt = Date.now();
     if (trackedStatuses.includes(status)) history.unshift({ itemId: item.id, title: item.title, action: status, status, at: Date.now() });
-    persist();
+    persist({ ids: [item.id] });
   }
   function openItemActions(id) {
     const item = items.find(entry => entry.id === id); if (!item) return;
@@ -1347,23 +1547,25 @@
         if (event.target === dialog) { closePopup(dialog); return; }
         const button = event.target.closest("[data-sheet-action]"); if (!button) return;
         const target = items.find(entry => entry.id === dialog.dataset.itemId);
-        closePopup(dialog);
-        if (!target) return;
         const action = button.dataset.sheetAction;
+        // Details/Edit navigate to another page; keep the sheet's history entry so closing it cannot undo that navigation.
+        closePopup(dialog, { preserveHistory: action === "details" || action === "edit" });
+        if (!target) return;
         if (action === "details") openDetails(target.id);
+        else if (action === "edit") openEdit(target.id);
         else if (action === "remove") {
           if (!(await appConfirm(`Remove “${target.title}” from your collection?`, { title: "Remove title", confirmLabel: "Remove", danger: true }))) return;
-          if (prefs.backupBeforeDestructive) exportList();
-          items = items.filter(entry => entry.id !== target.id); persist(); render(); toast("Entry removed.");
+          if (prefs.backupBeforeDestructive) exportList({ silent: true });
+          items = items.filter(entry => entry.id !== target.id); persist({ removed: [target.id] }); render(); toast("Entry removed.");
         } else if (action !== "cancel") { setItemStatus(target, action); render(); toast(`Marked as ${action}.`); }
       });
     }
     dialog.dataset.itemId = id;
-    dialog.innerHTML = `<div class="ios-action-group"><p>${esc(item.title)}</p><button type="button" data-sheet-action="${esc(roles.active)}" class="accent"><i data-lucide="circle-play"></i>Mark as ${esc(roles.active)}</button><button type="button" data-sheet-action="${esc(roles.done)}" class="success"><i data-lucide="check-circle"></i>Mark as ${esc(roles.done)}</button><button type="button" data-sheet-action="details"><i data-lucide="info"></i>View Full Details</button><button type="button" data-sheet-action="remove" class="danger"><i data-lucide="trash-2"></i>Remove from Collection</button></div><button type="button" class="ios-action-cancel" data-sheet-action="cancel">Cancel</button>`;
+    dialog.innerHTML = `<div class="ios-action-group"><p>${esc(item.title)}</p><button type="button" data-sheet-action="${esc(roles.active)}" class="accent"><i data-lucide="circle-play"></i>Mark as ${esc(roles.active)}</button><button type="button" data-sheet-action="${esc(roles.done)}" class="success"><i data-lucide="check-circle"></i>Mark as ${esc(roles.done)}</button><button type="button" data-sheet-action="edit"><i data-lucide="pencil"></i>Edit entry</button><button type="button" data-sheet-action="details"><i data-lucide="info"></i>View Full Details</button><button type="button" data-sheet-action="remove" class="danger"><i data-lucide="trash-2"></i>Remove from Collection</button></div><button type="button" class="ios-action-cancel" data-sheet-action="cancel">Cancel</button>`;
     window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
     showPopup(dialog);
   }
-  function openDetails(id) { clearDetailStack(); detailReturnPage = page === "details" ? detailReturnPage : page; detailPreview = null; detailEditMode = false; detailItemId = id; detailData = null; detailError = ""; goto("details"); loadDetails(); }
+  function openDetails(id, edit = false) { clearDetailStack(); detailReturnPage = page === "details" ? detailReturnPage : page; detailPreview = null; detailEditMode = edit; detailItemId = id; detailData = null; detailError = ""; goto("details"); loadDetails(); }
   function openDiscoverDetails(result) { if (!result) return; clearDetailStack(); detailReturnPage = "discover"; detailPreview = { ...result, metadataSource: result.source }; detailEditMode = false; detailItemId = null; detailData = null; detailError = ""; goto("details"); loadDetails(); }
   function showDetailImage(position) {
     const dialog = $("#detail-image-modal");
@@ -1384,7 +1586,7 @@
   function setPreference(key, value) {
     prefs[key] = value;
     if (key === "bottomBarBackground" && value === "solid") prefs.bottomBarTransparency = 100;
-    persist(); applyPreferences();
+    persist({ meta: true }); applyPreferences();
     if (key === "backgroundBackups" || key === "backupSchedule") syncBackupSchedule();
     if (key === "ratingFormat") updateRatingOptions();
     if (key === "dashboardStatusFilter") dashboardStatusFilter = value || "all";
@@ -1435,19 +1637,10 @@
       backupSchedule: { never: "calendar-x", daily: "calendar-days" },
       backupRetention: { 3: "archive", 5: "archive-restore", 10: "boxes", 20: "warehouse" },
       folderSyncDelay: { 0: "zap", 30: "timer", 60: "alarm-clock", 300: "hourglass" },
-      maximumBackupSize: { 250: "hard-drive-download", 1000: "hard-drive", 5000: "server", 0: "infinity" },
       metadataMode: { online: "globe", offline: "wifi-off" },
       metadataRefreshInterval: { daily: "calendar-check", weekly: "calendar-range", monthly: "calendar-days", never: "calendar-x" },
-      metadataRetryLimit: { 1: "rotate-cw", 3: "repeat", 5: "refresh-ccw-dot" },
       offlineFallback: { cached: "database", none: "ban" },
-      metadataSyncFrequency: { immediate: "zap", hourly: "clock-3", daily: "calendar-days", manual: "hand" },
-      metadataWorkers: { 1: "cpu", 2: "server", 5: "workflow", 10: "network" },
-      thumbnailCleanup: { never: "image", daily: "calendar-check", weekly: "calendar-range" },
       thumbnailSize: { small: "image", medium: "images", large: "gallery-horizontal" },
-      thumbnailQuality: { low: "battery-low", balanced: "circle-gauge", high: "scan-eye" },
-      imageCacheMaxEntries: { 100: "image", 250: "images", 500: "gallery-horizontal", 1000: "album", 0: "infinity" },
-      storageWarningLimitMb: { 250: "triangle-alert", 500: "badge-alert", 1000: "siren", 2000: "octagon-alert" },
-      backupStorageLimitMb: { 500: "archive", 1000: "archive-restore", 5000: "warehouse", 0: "infinity" },
     };
     list.replaceChildren();
     options.forEach(option => {
@@ -1516,13 +1709,36 @@
       row.append(copy, color); list.appendChild(row);
     });
     const save = document.createElement("button"); save.type = "button"; save.className = "setting-picker-save"; save.textContent = "Save colors";
-    save.addEventListener("click", () => { prefs.categoryColors = draft; persist(); render(); closePopup(dialog); toast("Category colors updated."); });
+    save.addEventListener("click", () => { prefs.categoryColors = draft; persist({ meta: true }); render(); closePopup(dialog); toast("Category colors updated."); });
     list.appendChild(save);
     showPopup(dialog);
   }
-  function exportList() {
-    const blob = new Blob([JSON.stringify({ app: config.name, version: 1, exportedAt: new Date().toISOString(), items, history, preferences: prefs }, null, 2)], { type: "application/json" });
-    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); toast("Export ready.");
+  // Native: stream the library in small chunks to a file the user picks with Android's "Save as" screen
+  // (silent: straight into the backup folder, used before destructive actions). Browsers get a normal download.
+  let exportRunning = false;
+  async function exportList({ silent = false } = {}) {
+    if (exportRunning) { toast("An export is already running."); return; }
+    const backend = window.SplitAppBackend;
+    if (nativeAndroid && backend?.exportLibrary) {
+      exportRunning = true;
+      let lastToast = 0;
+      try {
+        if (!silent) toast("Choose where to save your library…");
+        const result = await backend.exportLibrary({ items, history, preferences: prefs }, { mode: silent ? "folder" : "ask", onProgress: (done, total) => {
+          if (Date.now() - lastToast > 700 && done < total) { lastToast = Date.now(); toast(`Exporting… ${Math.round(done / total * 100)}%`); }
+        } });
+        toast(silent ? `Backup saved: ${result.fileName}` : `Exported ${items.length} games.`);
+      } catch (error) {
+        const message = String(error?.message || error);
+        if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Export failed: ${message}`); }
+      } finally { exportRunning = false; }
+      return;
+    }
+    const fileName = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const parts = [`{"app":${JSON.stringify(config.name)},"version":1,"exportedAt":${JSON.stringify(new Date().toISOString())},"items":[`];
+    items.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify(item)));
+    parts.push(`],"history":${JSON.stringify(history)},"preferences":${JSON.stringify(prefs)}}`);
+    const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(parts, { type: "application/json" })); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); toast("Export ready.");
   }
   async function importList(file) {
     if (!file) return;
@@ -1536,11 +1752,11 @@
   }
   function resetDashboard() {
     Object.assign(prefs, { dashboardView: "list", dashboardDefaultCategory: "remember", dashboardStatusFilter: "all", dashboardSort: "alphabetical-asc", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardRowActions: "menu", showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars", oneHandedMode: "off", tabletTwoColumn: true });
-    dashboardStatusFilter = "all"; activeCategory = "all"; persist(); applyPreferences(); render(); toast("Dashboard preferences restored.");
+    dashboardStatusFilter = "all"; activeCategory = "all"; persist({ meta: true }); applyPreferences(); render(); toast("Dashboard preferences restored.");
   }
   function resetAnimations() {
     ["reduceMotion", "animationSpeed", "animationCustom", "animationEasing", "pageTransition", "cardEntrance", "animationStagger", "sheetAnimation", "pressEffect", "hoverLift", "navBounce", "progressAnimation", "skeletonShimmer"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
-    persist(); applyPreferences(); render(); toast("Animation settings restored.");
+    persist({ meta: true }); applyPreferences(); render(); toast("Animation settings restored.");
   }
   function previewAnimations() {
     const content = $("#page-content"); if (!content) return;
@@ -1552,7 +1768,7 @@
     prefs.categoryColors = {};
     prefs.navIcons = { ...prefsDefaults.navIcons };
     prefs.navBar = { order: [...navKeys], visible: { ...prefsDefaults.navBar.visible } };
-    persist(); applyPreferences(); render(); toast("Appearance settings restored.");
+    persist({ meta: true }); applyPreferences(); render(); toast("Appearance settings restored.");
   }
 
   $("#page-content").addEventListener("click", event => {
@@ -1589,7 +1805,7 @@
     const dashboardSortChoice = event.target.closest("button[data-dashboard-sort]");
     if (dashboardSortChoice) { setPreference("dashboardSort", dashboardSortChoice.dataset.dashboardSort); return; }
     if (event.target.closest("[data-close-dashboard-filter]")) { closePopup($("#dashboard-filter-dialog")); return; }
-    if (event.target.closest("[data-reset-dashboard-filter]")) { dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; persist(); closePopup($("#dashboard-filter-dialog")); render(); return; }
+    if (event.target.closest("[data-reset-dashboard-filter]")) { dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; persist({ meta: true }); closePopup($("#dashboard-filter-dialog")); render(); return; }
     const dashboardLoader = event.target.closest("[data-dashboard-load-more]");
     if (dashboardLoader) { dashboardLazyObserver?.unobserve(dashboardLoader); loadDashboardMore(dashboardLoader); if (dashboardLoader.isConnected) dashboardLazyObserver?.observe(dashboardLoader); return; }
     const detailImage = event.target.closest("[data-detail-image-src]");
@@ -1636,7 +1852,7 @@
         if (!stepEpisodes(item, Number(adjust.dataset.adjustProgress))) item.progress = Math.max(0, (Number(item.progress) || 0) + Number(adjust.dataset.adjustProgress));
         item.updatedAt = Date.now();
         if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic" && item.status !== roles.done) { item.status = roles.done; history.unshift({ itemId: item.id, title: item.title, action: roles.done, status: roles.done, at: Date.now() }); toast(`Marked as ${roles.done}.`); }
-        persist(); render();
+        persist({ ids: [item.id] }); render();
       }
       return;
     }
@@ -1663,7 +1879,7 @@
       if (!item) return;
       item.rating = Number(detailRating.dataset.detailRating) || 0;
       item.updatedAt = Date.now();
-      persist();
+      persist({ ids: [item.id] });
       $$("[data-detail-rating]").forEach(button => {
         const active = Number(button.dataset.detailRating) <= item.rating;
         button.setAttribute("aria-checked", String(Number(button.dataset.detailRating) === item.rating));
@@ -1689,7 +1905,7 @@
       if (prefs.sourceOptions[key]) { delete prefs.sourceOptions[key].cookies; if (!Object.keys(prefs.sourceOptions[key]).length) delete prefs.sourceOptions[key]; }
       const host = window.SplitAppMetadata.cleanDomain(prefs.sourceOptions[key]?.domain) || provider?.domain;
       try { window.Capacitor?.Plugins?.CapacitorCookies?.clearCookies?.({ url: `https://${host}` }); } catch (_) {}
-      persist(); render(); toast("Cookies cleared."); return;
+      persist({ meta: true }); render(); toast("Cookies cleared."); return;
     }
     const domainPick = event.target.closest("[data-source-domain-pick]");
     if (domainPick) {
@@ -1697,16 +1913,16 @@
       const next = { ...(prefs.sourceOptions[key] || {}) };
       if (host === provider?.domain) delete next.domain; else next.domain = host;
       if (Object.keys(next).length) prefs.sourceOptions[key] = next; else delete prefs.sourceOptions[key];
-      persist(); render(); return;
+      persist({ meta: true }); render(); return;
     }
     const resetOptions = event.target.closest("[data-source-reset-options]");
-    if (resetOptions) { delete prefs.sourceOptions[resetOptions.dataset.sourceResetOptions]; persist(); render(); toast("Source options reset."); return; }
+    if (resetOptions) { delete prefs.sourceOptions[resetOptions.dataset.sourceResetOptions]; persist({ meta: true }); render(); toast("Source options reset."); return; }
     const go = event.target.closest("[data-go]"); if (go) { goto(go.dataset.go); return; }
     if (event.target.closest("[data-category-colors-picker]")) { openCategoryColorsPicker(); return; }
     const navMove = event.target.closest("[data-nav-move]");
-    if (navMove) { prefs.navBar.order = moveInOrder([...prefs.navBar.order], navMove.dataset.navKey, navMove.dataset.navMove); persist(); applyPreferences(); render(); return; }
+    if (navMove) { prefs.navBar.order = moveInOrder([...prefs.navBar.order], navMove.dataset.navKey, navMove.dataset.navMove); persist({ meta: true }); applyPreferences(); render(); return; }
     const sourceMove = event.target.closest("[data-source-move]");
-    if (sourceMove) { prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], sourceMove.dataset.sourceKey, sourceMove.dataset.sourceMove); persist(); render(); return; }
+    if (sourceMove) { prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], sourceMove.dataset.sourceKey, sourceMove.dataset.sourceMove); persist({ meta: true }); render(); return; }
     const sourceFilter = event.target.closest("[data-source-filter]");
     if (sourceFilter) {
       metadataSourceFilter = sourceFilter.dataset.sourceFilter;
@@ -1755,7 +1971,7 @@
       const info = window.SplitAppLibrary.episodeInfo(item);
       if (kind === "watch-next") { if (info?.next) toggleEpisodeWatched(item.id, info.next.id, `${info.mark(info.next)} ${info.next.title}`); else updateProgress(item.id); }
       else if (kind === "mark-all-watched") { if (info) { const undo = info.done === info.total; appConfirm(`${undo ? "Uncheck" : "Mark as watched"} all ${info.total} episodes of “${item.title}”?`, { title: undo ? "Uncheck all" : "Mark all watched", confirmLabel: undo ? "Uncheck" : "Mark watched" }).then(ok => { if (ok) toggleSeason(item.id, info.eps.map(entry => String(entry.id)), undo); }); } }
-      else { item.favorite = !item.favorite; item.updatedAt = Date.now(); persist(); render(); toast(item.favorite ? "Added to favorites." : "Removed from favorites."); }
+      else { item.favorite = !item.favorite; item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); toast(item.favorite ? "Added to favorites." : "Removed from favorites."); }
       return;
     }
     const tabButton = event.target.closest("[data-detail-tab]");
@@ -1779,7 +1995,7 @@
       if (rateEpisode) { const score = Number(rateEpisode.dataset.episodeRate); if (note.rating === score) delete note.rating; else note.rating = score; }
       else { if (note.reaction === reactEpisode.dataset.episodeReact) delete note.reaction; else note.reaction = reactEpisode.dataset.episodeReact; }
       if (Object.keys(note).length) item.episodeNotes[button.dataset.episodeId] = note; else delete item.episodeNotes[button.dataset.episodeId];
-      item.updatedAt = Date.now(); persist(); render(); return;
+      item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); return;
     }
     const layoutToggle = event.target.closest("[data-ratings-layout]");
     if (layoutToggle) {
@@ -1814,12 +2030,12 @@
       item.status = input.value;
       item.updatedAt = Date.now();
       if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
-      persist();
+      persist({ ids: [item.id] });
       return;
     }
     if (input.matches("[data-detail-rating-select]")) {
       const item = items.find(row => row.id === detailItemId);
-      if (item) { item.rating = Number(input.value) || 0; item.updatedAt = Date.now(); persist(); }
+      if (item) { item.rating = Number(input.value) || 0; item.updatedAt = Date.now(); persist({ ids: [item.id] }); }
       return;
     }
     if (input.matches("[data-custom-picker]")) {
@@ -1833,17 +2049,17 @@
       if (input.type === "number" || input.type === "range") value = Number(value);
       setPreference(key, value); if (input.type === "range") input.nextElementSibling.value = `${value}%`;
     }
-    if (input.matches("[data-category-color]")) { prefs.categoryColors[input.dataset.categoryColor] = input.value; persist(); render(); }
-    if (input.matches("[data-api-key]")) { prefs.apiKeys[input.dataset.apiKey] = input.value.trim(); persist(); }
-    if (input.matches("[data-source]")) { window.SplitAppSources.setEnabled(prefs, input.dataset.source, input.checked); persist(); }
+    if (input.matches("[data-category-color]")) { prefs.categoryColors[input.dataset.categoryColor] = input.value; persist({ meta: true }); render(); }
+    if (input.matches("[data-api-key]")) { prefs.apiKeys[input.dataset.apiKey] = input.value.trim(); persist({ meta: true }); }
+    if (input.matches("[data-source]")) { window.SplitAppSources.setEnabled(prefs, input.dataset.source, input.checked); persist({ meta: true }); }
     if (input.matches("[data-nav-visible]")) {
       const key = input.dataset.navVisible;
       if (key !== "dashboard" && key !== "settings") prefs.navBar.visible[key] = input.checked;
-      persist(); applyPreferences(); render();
+      persist({ meta: true }); applyPreferences(); render();
     }
     if (input.matches("[data-source-enabled]")) {
       window.SplitAppSources.setEnabled(prefs, input.dataset.sourceEnabled, input.checked);
-      persist(); render();
+      persist({ meta: true }); render();
     }
     if (input.matches("[data-source-option]")) {
       const [key, field] = input.dataset.sourceOption.split("|");
@@ -1851,14 +2067,14 @@
       if (value) next[field] = value; else delete next[field];
       if (Object.keys(next).length) prefs.sourceOptions[key] = next; else delete prefs.sourceOptions[key];
       if (field === "domain") input.value = value;
-      persist(); return;
+      persist({ meta: true }); return;
     }
     if (input.matches("[data-source-api-key]")) {
       const key = input.dataset.sourceApiKey, value = input.value.trim();
       prefs.apiKeys[key] = value;
       // Pasting a key into a source that is switched off turns it on, so the key is not silently ignored.
       if (value && !window.SplitAppSources.isEnabled(key, prefs)) { window.SplitAppSources.setEnabled(prefs, key, true); toast(`${window.SplitAppSources.list().find(row => row.key === key)?.name || "Source"} turned on.`); persist(); render(); return; }
-      persist();
+      persist({ meta: true });
     }
     if (input.matches("[data-setting-action=import]")) { const file = input.files?.[0]; input.value = ""; importList(file); }
   });
@@ -1881,15 +2097,15 @@
     event.preventDefault();
     const [kind, key] = event.dataTransfer.getData("text/plain").split(":");
     if (kind === "nav" && targetRow.dataset.navRow) {
-      prefs.navBar.order = moveInOrder([...prefs.navBar.order], key, null, targetRow.dataset.navRow); persist(); applyPreferences(); render();
+      prefs.navBar.order = moveInOrder([...prefs.navBar.order], key, null, targetRow.dataset.navRow); persist({ meta: true }); applyPreferences(); render();
     } else if (kind === "source" && targetRow.dataset.sourceRow) {
-      prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], key, null, targetRow.dataset.sourceRow); persist(); render();
+      prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], key, null, targetRow.dataset.sourceRow); persist({ meta: true }); render();
     }
   });
   document.addEventListener("input", event => {
     if (event.target.matches("[data-detail-notes]")) {
       const item = items.find(row => row.id === detailItemId);
-      if (item) { item.notes = event.target.value; item.updatedAt = Date.now(); persist(); }
+      if (item) { item.notes = event.target.value; item.updatedAt = Date.now(); persist({ ids: [item.id] }); }
       return;
     }
     if (event.target.matches("[data-settings-index-search]")) {
@@ -1955,7 +2171,7 @@
     dashboardStatusFilter = event.target.elements.status.value || "all";
     prefs.dashboardStatusFilter = dashboardStatusFilter;
     prefs.dashboardView = event.target.elements.view?.value || prefs.dashboardView;
-    persist();
+    persist({ meta: true });
     applyPreferences();
     closePopup($("#dashboard-filter-dialog"));
     render();
@@ -2028,7 +2244,8 @@
     if (next === "search") { page = "dashboard"; settingsGroup = null; historyPush(); render(); syncPageNavigation(); return; }
     if (!(next in titles)) return;
     if (next !== "discover") { discoverQuery = ""; discoverRequestId++; }
-    if (next !== "add") { addMetadataQuery = ""; addMetadataRequestId++; }
+    if (next !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
+    else if (page !== "add") { entryDraftId = null; addMetadataQuery = ""; } // opening Add from a link/back is a new entry
     if (next === "details" && detailStack.length) { detailBack(); return; }
     if (next !== "details" || (detailIdFromQuery(hashQuery) || null) !== detailItemId) clearDetailStack();
     discoverSource = next === "discover" ? new URLSearchParams(hashQuery).get("source") || "" : "";
@@ -2061,16 +2278,18 @@
   });
   window.addEventListener("hashchange", syncRouteFromHash);
   window.addEventListener("storage", event => { if (event.key === storageKey) toast("Library changed in another tab."); });
-  window.addEventListener("beforeunload", persist);
+  window.addEventListener("beforeunload", flushPersist);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushPersist(); });
   window.addEventListener("error", event => recordLog("error", event.message || "Unknown page error"));
   window.addEventListener("unhandledrejection", event => recordLog("error", event.reason?.message || event.reason || "Unhandled promise rejection"));
-  async function restoreNativeData() {
+  async function restoreNativeData({ fast = false } = {}) {
     if (!window.SplitAppBackend?.load) return;
     const initialRevision = localMutationRevision;
     const initialItems = new Map(items.map(item => [String(item.id), JSON.stringify(item)]));
     const initialPreferences = JSON.parse(JSON.stringify(prefs));
     try {
-      const restored = await window.SplitAppBackend.load();
+      const restored = await window.SplitAppBackend.load({ fast });
+      if (!restored) return null; // nothing stored locally yet: the caller runs the full restore
       const nativeItems = Array.isArray(restored.items) ? restored.items.filter(item => config.categories.some(category => category.key === item.category)) : items;
       const nativeHistory = Array.isArray(restored.history) ? restored.history : history;
       const nativePreferences = restored.preferences && typeof restored.preferences === "object" ? restored.preferences : {};
@@ -2102,7 +2321,7 @@
       delete prefs.appDisplayName;
       refreshSourceRegistry();
       normalizeNavigationPrefs();
-      await window.SplitAppBackend.save({ items, history, preferences: prefs });
+      if (!restored.fast) await window.SplitAppBackend.save({ items, history, preferences: prefs });
       return true;
     } catch (error) {
       recordLog("error", `App data restore failed: ${error.message || error}`);
@@ -2119,9 +2338,11 @@
     try {
       const selected = await window.SplitAppBackend.chooseFolder({ items, history, preferences: prefs });
       applySelectedFolderData(selected);
-      await window.SplitAppBackend.save({ items, history, preferences: prefs });
       if (storageFolderGate) storageFolderGate.hidden = true;
       applyPreferences(); render(); syncBackupSchedule();
+      // The first full save of a large library is slow; do it in the background instead of holding the gate open.
+      Promise.resolve(window.SplitAppBackend.save({ items, history, preferences: prefs })).catch(error => recordLog("error", `App data save failed: ${error?.message || error}`));
+      setTimeout(fillThumbCache, 3000);
     } catch (error) {
       const message = $("#storage-folder-gate-message");
       if (message) message.textContent = `${error.message || "ScreenMark could not open that folder."} Choose a folder to continue.`;
@@ -2141,7 +2362,7 @@
     else loadDetails();
   }
   requestAnimationFrame(() => requestAnimationFrame(() => window.ScreenMarkSplash?.ready?.()));
-  restoreNativeData().then(success => {
+  const finishStartup = success => {
     if (!success) {
       if (nativeFolderStorage && storageFolderGate) storageFolderGate.hidden = false;
       return;
@@ -2149,8 +2370,23 @@
     if (storageFolderGate) storageFolderGate.hidden = true;
     applyPreferences(); render(); syncBackupSchedule();
     if (page === "details" && detailItemId && !detailPreview) loadDetails();
-    // Covers saved in the chosen folder: load them so they show without the cache or a connection.
-    let repaint = 0; const repaintSoon = () => { clearTimeout(repaint); repaint = setTimeout(() => { if (["dashboard", "details", "timeline"].includes(page)) render(); }, 400); };
-    window.SplitAppBackend?.hydrateThumbnails?.(items, repaintSoon).then(count => { if (count) repaintSoon(); }).catch(() => {});
+  };
+  // Phase 1: paint the library straight from IndexedDB (instant). Phase 2: reconcile with the saved folder /
+  // encrypted store in the background, then fill the device artwork cache.
+  restoreNativeData({ fast: true }).then(async fastResult => {
+    if (fastResult === true) {
+      finishStartup(true);
+      await new Promise(resolve => setTimeout(resolve, 2500));
+      const libraryStamp = () => `${items.length}:${items.reduce((sum, item) => sum + (Number(item.updatedAt) || 0), 0)}`;
+      const before = libraryStamp();
+      const full = await restoreNativeData();
+      if (full === false) finishStartup(false);
+      else if (full && libraryStamp() !== before) { applyPreferences(); render(); } // keep scroll position when nothing changed
+      setTimeout(fillThumbCache, 1500);
+      return;
+    }
+    const full = await restoreNativeData();
+    finishStartup(full);
+    setTimeout(fillThumbCache, 3000);
   });
 })();
