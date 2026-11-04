@@ -209,15 +209,6 @@ APP_NAME = "ScreenMark"
 def build_app(env, version_name="1.0", release=True):
     log("Installing Capacitor and setting up wrapper...")
 
-    # frontend/ is the only thing Capacitor packages into the app — CHANGELOG.md
-    # lives at repo root for GitHub/README visibility, so it must be mirrored
-    # in here on every build or the in-app Changelog page silently goes stale.
-    changelog_src = os.path.join(BASE_DIR, "CHANGELOG.md")
-    changelog_dest = os.path.join(BASE_DIR, "frontend", "CHANGELOG.md")
-    if os.path.exists(changelog_src):
-        log("Copying CHANGELOG.md into frontend/...")
-        shutil.copyfile(changelog_src, changelog_dest)
-
     # Run npm install
     log("Running npm install...")
     subprocess.run(["npm", "install"], check=True, env=env, cwd=BASE_DIR)
