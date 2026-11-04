@@ -2,7 +2,7 @@
 (() => {
   window.SplitAppPages = window.SplitAppPages || {};
   window.SplitAppPages.settings = context => {
-    const { config, prefs, items, history, logEntries = [], settingsParam = "", settingsFrom = "", esc, safeLucideName = value => value, settingsGroup, navItems, metadataSourceFilter = "all" } = context;
+    const { config, prefs, items, history, logEntries = [], settingsParam = "", settingsFrom = "", esc, safeLucideName = value => value, settingsGroup, navItems, metadataSourceFilter = "all", libraryBytes = 0 } = context;
     const themeOptions = [["light", "Light"], ["dark", "Dark"], ["grey", "Grey"], ["amoled", "AMOLED"], ["flashbang", "Flashbang"], ["material-you", "Material You"], ["ocean", "Ocean"], ["forest", "Forest"], ["sunset", "Sunset"], ["rose", "Rose"], ["lavender", "Lavender"], ["nord", "Nord"], ["sand", "Sand"], ["mint", "Mint"], ["system", "System"]].map(([value, label]) => `${value}|${label}`);
     const fontOptions = ["system|System Default", "inter|Inter", "outfit|Outfit", "serif|Serif", "monospace|Monospace", "rounded|Rounded", "poppins|Poppins", "roboto|Roboto", "nunito|Nunito", "lato|Lato", "merriweather|Merriweather", "jetbrains-mono|JetBrains Mono", "open-sans|Open Sans", "montserrat|Montserrat", "oswald|Oswald", "raleway|Raleway", "ubuntu|Ubuntu", "playfair-display|Playfair Display", "fira-sans|Fira Sans", "rubik|Rubik", "quicksand|Quicksand", "caveat|Caveat"];
     const mainColors = [["#6366f1", "Indigo"], ["#f472b6", "Carnation Pink"], ["#16a34a", "Dark Green"], ["#b91c1c", "Maroon"], ["#2563eb", "Navy Blue"], ["#64748b", "Grey"], ["#e2e8f0", "White"], ["#a16207", "Brown"], ["#06b6d4", "Cool Cyan"], ["#f97316", "Fire"], ["#7c3aed", "Burple"], ["#22c55e", "Green"], ["#65a30d", "Apple"], ["#eab308", "Banan"], ["#f43f5e", "Party"], ["#fb7185", "Pink"], ["#8b5cf6", "Material You"]].map(([value, label]) => `${value}|${label}`);
@@ -46,21 +46,16 @@
         ["Automatic Completion", "automaticCompletion", "select", ["automatic|Automatic", "ask|Ask me", "manual|Manual"]], ["Default Status", "defaultStatus", "select", [...new Set(config.categories.flatMap(cat => cat.statuses))].map(status => `${status}|${status}`)]
       ]},
       { id: "backups", title: "Backups & sync", description: "Import, export, and protect your library data.", icon: "database-backup", settings: [
-        ["Export List", "export", "action", "Export your list as a file."], ["Import List", "import", "file", "Import your library from a file."],
+        ["Export List", "export", "action"], ["Import List", "import", "file"],
         ["Backup Schedule", "backupSchedule", "select", ["never|Never", "daily|Daily"]], ["Backup Retention", "backupRetention", "select", ["3|Keep 3 backups", "5|Keep 5 backups", "10|Keep 10 backups", "20|Keep 20 backups"]],
         ["Backup Before Destructive Actions", "backupBeforeDestructive", "toggle"], ["Storage", "storageInfo", "page", { page: "storage-details", value: "View details" }], ["Folder Sync Delay", "folderSyncDelay", "select", ["0|Immediately", "30|30 seconds", "60|1 minute", "300|5 minutes"]],
-        ["Backup Password Reminder", "backupPasswordReminder", "toggle"], ["Maximum Backup Size", "maximumBackupSize", "select", ["250|250 MB", "1000|1000 MB", "5000|5000 MB", "0|Unlimited"]], ["Validate Backup Location", "validateBackupLocation", "toggle"], ["Restore Preview", "restorePreview", "toggle"]
       ]},
       { id: "metadata", title: "Metadata", description: "Manage online sources, refresh, and artwork.", icon: "database", settings: [
-        ["Metadata Mode", "metadataMode", "select", ["online|Online", "offline|Offline"]], ["Metadata Sources", "metadataSources", "page", { page: "metadata-sources", value: "Manage" }], ["Metadata Refresh Interval", "metadataRefreshInterval", "select", ["daily|Daily", "weekly|Weekly", "monthly|Monthly", "never|Never"]],
-        ["Metadata Retry Limit", "metadataRetryLimit", "select", ["1|1 attempt", "3|3 attempts", "5|5 attempts"]], ["Offline Fallback", "offlineFallback", "select", ["cached|Use cached metadata", "none|Show no metadata"]],
-        ["Metadata Sync Frequency", "metadataSyncFrequency", "select", ["immediate|Immediately", "hourly|Hourly", "daily|Daily", "manual|Manually"]], ["Metadata Sync Workers", "metadataWorkers", "select", ["1|1 worker", "2|2 workers", "5|5 workers", "10|10 workers"]],
-        ["Automatic Thumbnail Cleanup", "thumbnailCleanup", "select", ["never|Never", "daily|Daily", "weekly|Weekly"]], ["Metadata Thumbnails", "metadataThumbnails", "toggle"], ["Thumbnail Size", "thumbnailSize", "select", ["small|Small", "medium|Medium", "large|Large"]], ["Thumbnail Quality", "thumbnailQuality", "select", ["low|Storage saver", "balanced|Balanced", "high|High quality"]]
+        ["Metadata Mode", "metadataMode", "select", ["online|Online", "offline|Offline"]], ["Metadata Sources", "metadataSources", "page", { page: "metadata-sources", value: "Manage" }], ["Metadata Refresh Interval", "metadataRefreshInterval", "select", ["daily|Daily", "weekly|Weekly", "monthly|Monthly", "never|Never"]], ["Offline Fallback", "offlineFallback", "select", ["cached|Use cached metadata", "none|Show no metadata"]], ["Thumbnail Size", "thumbnailSize", "select", ["small|Small", "medium|Medium", "large|Large"]],
       ]},
-      { id: "storage", title: "Metadata & Storage", description: "Manage cached images and device storage limits.", icon: "hard-drive", settings: [
+      { id: "storage", title: "Metadata & Storage", description: "Manage cached images and clear caches.", icon: "hard-drive", settings: [
         ["Image storage", "imageStorage", "select", ["all|Save all images", "posters|Posters and covers only", "online|Online only"]],
         ["Clear All Temporary Cache", "clear-cache", "action"], ["Clear Image Cache", "clear-images", "action", "Remove cached thumbnails."], ["Clear Metadata Cache", "clear-metadata", "action", "Tracked data is not affected."],
-        ["Limit Image Cache", "imageCacheMaxEntries", "select", ["100|100 images", "250|250 images", "500|500 images", "1000|1000 images", "0|Unlimited"]], ["Storage Warning Limit", "storageWarningLimitMb", "select", ["250|250 MB", "500|500 MB", "1000|1000 MB", "2000|2000 MB"]], ["Backup Storage Limit", "backupStorageLimitMb", "select", ["500|500 MB", "1000|1000 MB", "5000|5000 MB", "0|Unlimited"]]
       ]},
       { id: "info", title: "App Info", description: "View app details and diagnostic logs.", icon: "info", settings: [["App Info", "appInfo", "page", { page: "app-info", value: "View details" }], ["Logcat", "logcat", "page", { page: "logcat", value: "View logs" }]] }
     ];
@@ -78,7 +73,7 @@
       if (type === "number") return `<div class="toolbar"><input class="setting-control" style="max-width:125px" type="number" min="0" data-pref="${key}" value="${esc(prefs[key])}"><span class="muted">${esc(options)}</span></div>`;
       if (type === "range") return `<div class="toolbar"><input class="setting-control" type="range" min="${options}" max="${max}" data-pref="${key}" value="${esc(prefs[key])}"><output>${esc(prefs[key])}%</output></div>`;
       if (type === "page") {
-        const bytes = new Blob([JSON.stringify({ items, history, preferences: prefs })]).size;
+        const bytes = libraryBytes;
         const value = options.page === "storage-details" ? `${items.length} ${items.length === 1 ? "entry" : "entries"} · ${formatBytes(bytes)} used` : options.value || "Manage";
         return `<a class="setting-page-link" href="#settings/${esc(options.page)}"><span>${esc(value)}</span><span class="settings-chevron" aria-hidden="true">›</span></a>`;
       }
@@ -89,7 +84,7 @@
       }
       if (type === "file") return `<label class="button secondary small file-button">Choose file<input type="file" accept=".json,application/json" data-setting-action="import" hidden></label>`;
       if (type === "info") {
-        const used = new Blob([JSON.stringify({ items, history })]).size;
+        const used = libraryBytes;
         const size = used < 1024 * 1024 ? `${(used / 1024).toFixed(1)} KB` : `${(used / 1024 / 1024).toFixed(1)} MB`;
         return `<span class="muted setting-value">${esc(key === "storageInfo" ? `${items.length} entries · ${size} used` : options)}</span>`;
       }
@@ -219,7 +214,7 @@ ${native ? "" : `<p class="source-note">Browsers cannot send a custom user agent
     }
     function formatBytes(bytes) { return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
     function renderStorageDetails() {
-      const jsonBytes = new Blob([JSON.stringify({ items, history, preferences: prefs })]).size;
+      const jsonBytes = libraryBytes;
       const categoryRows = config.categories.map(category => {
         const count = items.filter(item => item.category === category.key).length;
         return `<div class="storage-breakdown-row"><span>${esc(category.label)}</span><strong>${count} ${count === 1 ? "entry" : "entries"}</strong></div>`;
@@ -232,9 +227,19 @@ ${native ? "" : `<p class="source-note">Browsers cannot send a custom user agent
       const providers = window.SplitAppMetadata?.providers || [];
       const enabled = providers.filter(source => window.SplitAppMetadata.isEnabled?.(source.key, prefs)).length;
       const native = Boolean(window.Capacitor?.isNativePlatform?.());
-      const row = (icon, label, value) => `<div class="app-info-row"><span class="app-info-row-icon" aria-hidden="true"><i data-lucide="${icon}"></i></span><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
-      const feature = (icon, title, text) => `<section class="storage-card app-info-card"><span class="app-info-feature-icon" aria-hidden="true"><i data-lucide="${icon}"></i></span><div><h2>${title}</h2><p>${text}</p></div></section>`;
-      return `<section class="settings-page settings-detail-page app-info-page">${pageHeader("App Info", "info", "About ScreenMark.")}<section class="app-info-hero"><img class="app-info-logo" src="icons/screenmark.svg" alt=""><h2>${esc(config.name)}</h2><p>Version ${esc(config.version || "1.0.0")}</p><strong>${esc(config.tagline || "Keep track of your movies and series.")}</strong></section><section class="storage-card app-info-list"><h2>Details</h2>${row("smartphone", "Platform", native ? "Android app" : "Web preview")}${row("library", "Titles in library", String(items.length))}${row("database", "Metadata sources", `${enabled} of ${providers.length} enabled`)}${row("lock", "Data location", "Stored on this device")}</section>${feature("clapperboard", "What ScreenMark does", "Keeps your movies, series, watch progress, and ratings organized on this device.")}${feature("shield-check", "Privacy and storage", "Your library is stored locally. Online metadata search is optional and can be managed from Metadata settings.")}${feature("target", "Watch tracking", "Track your watchlist, what you are watching, finished titles, and episode progress in one place.")}</section>`;
+      const tile = (icon, value, label) => `<div class="ai-tile"><span class="ai-tile-icon" aria-hidden="true"><i data-lucide="${icon}"></i></span><strong>${esc(value)}</strong><small>${esc(label)}</small></div>`;
+      const row = (icon, label, value) => `<div class="ai-row"><span class="ai-row-icon" aria-hidden="true"><i data-lucide="${icon}"></i></span><span class="ai-row-label">${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+      const feature = (icon, title, text) => `<article class="ai-feature"><span class="ai-feature-icon" aria-hidden="true"><i data-lucide="${icon}"></i></span><div><h3>${esc(title)}</h3><p>${esc(text)}</p></div></article>`;
+      const used = libraryBytes < 1024 * 1024 ? `${(libraryBytes / 1024).toFixed(0)} KB` : `${(libraryBytes / 1024 / 1024).toFixed(1)} MB`;
+      const metaMode = prefs.metadataMode === "offline" ? "Offline" : "Online";
+      return `<section class="settings-page settings-detail-page app-info-page ai-page">${pageHeader("App Info", "info", `About ${config.name}.`)}
+        <section class="ai-hero"><img class="ai-logo" src="icons/screenmark.svg" alt=""><h2>${esc(config.name)}</h2><span class="ai-version">Version ${esc(config.version || "1.0.0")}</span><p>${esc(config.tagline || "Keep track of your games.")}</p></section>
+        <div class="ai-tiles">${tile("library", String(items.length), items.length === 1 ? "Title" : "Titles")}${tile("database", `${enabled}/${providers.length}`, "Sources")}${tile("hard-drive", used, "Library data")}</div>
+        <h3 class="ai-heading">Details</h3>
+        <section class="ai-list">${row("smartphone", "Platform", native ? "Android app" : "Web preview")}${row("wifi", "Metadata mode", metaMode)}${row("lock", "Data location", "Stored on this device")}${row("tag", "Version", config.version || "1.0.0")}</section>
+        <h3 class="ai-heading">About</h3>
+        <section class="ai-list ai-features">${feature("clapperboard", `What ${config.name} does`, "Keeps your movies and TV series, watch progress, episodes and ratings organized on this device.")}${feature("shield-check", "Privacy and storage", "Your library is stored locally. Online metadata search is optional and can be managed from Metadata settings.")}${feature("target", "Game tracking", "Track your watchlist, what you are watching, completed titles and episode progress in one place.")}</section>
+      </section>`;
     }
 
     function renderLogcat() {
@@ -284,7 +289,7 @@ ${native ? "" : `<p class="source-note">Browsers cannot send a custom user agent
     const more = settingGroups.slice(6);
     const card = (icon, title, description, href) => `<a class="settings-category-card" href="${href}"><span class="settings-category-icon"><i data-lucide="${icon}"></i></span><span class="settings-category-copy"><strong>${esc(title)}</strong><small>${esc(description)}</small></span><span class="settings-chevron">›</span></a>`;
     const indexGroup = (title, groups, extra = "") => `<section class="settings-index-group"><h2 class="settings-overline">${esc(title)}</h2><div class="settings-category-list">${groups.map(group => card(group.icon, group.title, group.description, `#settings/${group.id}`)).join("")}${extra}</div></section>`;
-    const storageBytes = new Blob([JSON.stringify({ items, history, preferences: prefs })]).size;
+    const storageBytes = libraryBytes;
     const storageCard = card("hard-drive", "Storage", `${items.length} ${items.length === 1 ? "entry" : "entries"} · ${formatBytes(storageBytes)} used`, "#settings/storage-details");
     const moreCards = card("info", "App Info", "About ScreenMark and its features.", "#settings/app-info") + card("terminal", "Logcat", "Read or clear diagnostic logs.", "#settings/logcat");
     const indexResults = settingGroups.flatMap(group => group.settings.map(setting => {

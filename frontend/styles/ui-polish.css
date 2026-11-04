@@ -1,0 +1,39 @@
+/* ScreenMark UI polish layer (loaded after ios-ui.css / motion.css). */
+
+/* App Info — compact hero, stat tiles, grouped lists. */
+.ai-page { display:grid; gap:14px; align-content:start; }
+.ai-hero { display:grid; justify-items:center; gap:6px; padding:26px 18px 22px; border:1px solid var(--line); border-radius:24px; background:linear-gradient(165deg,color-mix(in srgb,var(--accent) 16%,var(--surface)),var(--surface) 70%); text-align:center; }
+.ai-logo { width:76px; height:76px; border-radius:22px; box-shadow:0 10px 26px -8px color-mix(in srgb,var(--accent) 55%,transparent); }
+.ai-hero h2 { margin:8px 0 0; font:800 1.55rem var(--font-heading,inherit); letter-spacing:-.03em; color:var(--text,var(--legacy-text)); }
+.ai-version { padding:3px 11px; border-radius:99px; background:var(--accent-soft); color:var(--accent-text,var(--accent)); font-size:.72rem; font-weight:700; }
+.ai-hero p { margin:4px 0 0; max-width:30ch; color:var(--muted); font-size:.85rem; line-height:1.45; }
+.ai-tiles { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.ai-tile { display:grid; justify-items:center; gap:2px; padding:14px 6px; border:1px solid var(--line); border-radius:18px; background:var(--surface); text-align:center; }
+.ai-tile-icon { display:grid; place-items:center; width:34px; height:34px; margin-bottom:4px; border-radius:11px; background:var(--accent-soft); color:var(--accent-text,var(--accent)); }
+.ai-tile-icon svg { width:18px; height:18px; }
+.ai-tile strong { font:800 1.15rem var(--font-heading,inherit); color:var(--text,var(--legacy-text)); }
+.ai-tile small { color:var(--muted); font-size:.68rem; font-weight:600; }
+.ai-heading { margin:6px 4px -4px; color:var(--muted); font-size:.68rem; font-weight:750; letter-spacing:.12em; text-transform:uppercase; }
+.ai-list { display:grid; border:1px solid var(--line); border-radius:20px; background:var(--surface); overflow:hidden; }
+.ai-row { display:grid; grid-template-columns:34px minmax(0,1fr) auto; align-items:center; gap:12px; padding:13px 14px; }
+.ai-row + .ai-row, .ai-feature + .ai-feature { border-top:1px solid var(--line); }
+.ai-row-icon, .ai-feature-icon { display:grid; place-items:center; width:34px; height:34px; border-radius:11px; background:var(--accent-soft); color:var(--accent-text,var(--accent)); }
+.ai-row-icon svg, .ai-feature-icon svg { width:17px; height:17px; }
+.ai-row-label { color:var(--muted); font-size:.84rem; }
+.ai-row strong { font-size:.84rem; color:var(--text,var(--legacy-text)); text-align:right; }
+.ai-feature { display:grid; grid-template-columns:34px minmax(0,1fr); gap:12px; padding:14px; }
+.ai-feature h3 { margin:0 0 3px; font-size:.92rem; color:var(--text,var(--legacy-text)); }
+.ai-feature p { margin:0; color:var(--muted); font-size:.8rem; line-height:1.45; }
+
+/* Home filter sheet — flat sections divided by hairlines, compact header (no dead space under the grabber). */
+.dashboard-filter-dialog .choice-dialog-grabber { margin:8px auto 4px; }
+.dashboard-filter-dialog .choice-dialog-header { margin:0; padding:8px 18px 12px; min-height:0; }
+.dashboard-filter-dialog #dashboard-filter-form, .dashboard-filter-dialog .ios-sheet-body { background:var(--surface); }
+.dashboard-filter-dialog .ios-sheet-body { gap:0; padding:2px 18px 14px; }
+.dashboard-filter-dialog .ios-card { padding:16px 0; border:0; border-bottom:1px solid var(--line); border-radius:0; background:transparent; box-shadow:none; }
+.dashboard-filter-dialog .ios-card:last-child { border-bottom:0; }
+.dashboard-filter-dialog .ios-pills { gap:8px; }
+.dashboard-filter-dialog .ios-pill { min-height:38px; padding:0 14px; border-radius:999px; font-size:.78rem; box-shadow:none; }
+.dashboard-filter-dialog .ios-pill.active { box-shadow:none; }
+.dashboard-filter-dialog .choice-dialog-actions { padding:12px 18px max(14px,env(safe-area-inset-bottom)); background:var(--surface); border-top:1px solid var(--line); }
+.dashboard-filter-dialog #dashboard-filter-form { padding-top:0; } .dashboard-filter-dialog .choice-dialog-header { padding-top:0; }
