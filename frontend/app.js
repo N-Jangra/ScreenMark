@@ -2,7 +2,7 @@
   "use strict";
 
   const config = window.APP_CONFIG;
-  const titles = { dashboard: "Collection", discover: "Discover", explore: "Explore", mix: "Mix fetch", details: "Details", add: "Add title", timeline: "Timeline", statistics: "Statistics", settings: "Settings" };
+  const titles = { dashboard: "Collection", discover: "Discover", explore: "Explore", mix: "Mix fetch", details: "Details", add: "Add title", timeline: "Timeline", statistics: "Statistics", settings: "Settings", sync: "Metadata Sync" };
   const navItems = [
     { key: "dashboard", label: "Home", icon: "⌂", locked: true },
     { key: "discover", label: "Discover", icon: "✧" },
@@ -19,6 +19,7 @@
     metadataSourceOrder: ["tvmaze", "anilist", "omdb"], customSources: [],
     dashboardView: "list", dashboardDefaultCategory: "remember", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1,
+    metadataSyncWorkers: 2, syncTimeout: 25, syncRetries: 1, syncRetryDelay: 2, syncMaxSources: 0, syncRequestDelay: 0, syncScope: "needed",
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30,
     metadataMode: "online", metadataSources: { tvmaze: true, anilist: true, omdb: false }, metadataRefreshInterval: "weekly", offlineFallback: "cached", thumbnailSize: "medium",
     backgroundBackups: false,
@@ -55,6 +56,8 @@
     return window.lucide?.icons?.[exportName] ? name : fallback;
   }
   const storageKey = window.SplitAppBackend?.storageKey || `splitapp_${config.key}_v1`;
+  const librarySnapshotKey = `${storageKey}_snapshot`;
+  let librarySnapshotTimer = 0;
   let stored = {};
   try { stored = JSON.parse(localStorage.getItem(storageKey) || "{}"); } catch (_) { stored = {}; }
   const prefs = { ...prefsDefaults, ...(stored.preferences || {}) };
@@ -116,7 +119,13 @@
   let libraryQuery = new URLSearchParams(location.search).get("q") || "";
   let discoverQuery = "";
   let addMetadataQuery = "";
-  let timelineFilter = "all", timelineSearch = "", timelineMonth = "", timelineYear = "";
+  let timelineFilter = "all", timelineSearch = "", timelineMonth = "", timelineYear = "", timelineFrom = "", timelineTo = "";
+  let logQuery = "", logFrom = "", logTo = "";
+  let historyQuery = "", historyFrom = "", historyTo = "";
+  let metadataSyncState = null;
+  let historyJournalLoaded = false, logJournalLoaded = false;
+  try { metadataSyncState = JSON.parse(localStorage.getItem(`${storageKey}_metadata_sync`) || "null"); } catch (_) {}
+  if (metadataSyncState?.entries) { let recovered = false; metadataSyncState.entries.forEach(entry => { if (entry.status === "running") { entry.status = "queued"; recovered = true; } }); if (recovered) { try { localStorage.setItem(`${storageKey}_metadata_sync`, JSON.stringify(metadataSyncState)); } catch (_) {} } }
   let dashboardStatusFilter = prefs.dashboardStatusFilter || "all";
   if (prefs.dashboardView === "cards") prefs.dashboardView = "grid";
   if (!["list", "compact-list", "grid", "detailed-grid", "compact-grid", "large-grid", "timeline"].includes(prefs.dashboardView)) prefs.dashboardView = "list";
@@ -226,13 +235,53 @@
     try {
       const key = `${storageKey}_log`;
       const entries = JSON.parse(localStorage.getItem(key) || "[]");
-      entries.unshift({ level, message: String(message), at: new Date().toISOString() });
+      const entry = { level, message: String(message), at: new Date().toISOString() };
+      entries.unshift(entry);
       localStorage.setItem(key, JSON.stringify(entries.slice(0, 200)));
+      window.SplitAppBackend?.appendJournal?.("logcat", entry);
     } catch (_) {}
   }
+  function recordLibraryChange(action, detail, ids = []) {
+    const key = `${storageKey}_history`;
+    const entry = { at: Date.now(), action, detail: String(detail || "").slice(0, 400), ids: ids.slice(0, 60).map(String) };
+    try { const rows = JSON.parse(localStorage.getItem(key) || "[]"); rows.unshift(entry); localStorage.setItem(key, JSON.stringify(rows.slice(0, 2000))); } catch (_) {}
+    window.SplitAppBackend?.appendJournal?.("history", entry);
+    saveLibrarySnapshot();
+  }
+  function saveLibrarySnapshot() {
+    clearTimeout(librarySnapshotTimer);
+    librarySnapshotTimer = setTimeout(() => {
+      try { localStorage.setItem(librarySnapshotKey, JSON.stringify(Object.fromEntries(items.map(item => [String(item.id), String(item.title || "")])))); } catch (_) {}
+    }, 4000);
+  }
+  function checkLibraryDrift() {
+    try {
+      const previous = JSON.parse(localStorage.getItem(librarySnapshotKey) || "null");
+      if (previous && items.length) {
+        const current = new Set(items.map(item => String(item.id)));
+        const changes = JSON.parse(localStorage.getItem(`${storageKey}_history`) || "[]");
+        const explained = new Set(changes.flatMap(entry => entry.ids || []).map(String));
+        const lost = Object.entries(previous).filter(([id]) => !current.has(String(id)) && !explained.has(String(id)));
+        if (lost.length) {
+          const names = lost.map(([, title]) => title).filter(Boolean);
+          const detail = `${lost.length} ${lost.length === 1 ? "title is" : "titles are"} missing without a recorded removal${names.length ? `: ${names.slice(0, 6).join(", ")}${names.length > 6 ? ` and ${names.length - 6} more` : ""}` : ""}.`;
+          recordLibraryChange("missing", detail, lost.map(([id]) => id));
+          recordLog("warning", detail);
+        }
+      }
+    } catch (_) {}
+    saveLibrarySnapshot();
+  }
   function toast(message) {
-    const node = $("#toast"); node.textContent = message; node.classList.add("show");
+    const node = $("#toast"); node.classList.remove("has-action"); node.textContent = message; node.classList.add("show");
     clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove("show"), 2300);
+  }
+  function toastUndo(message, undo, ms = 8000) {
+    const node = $("#toast"); node.textContent = "";
+    const label = document.createElement("span"); label.textContent = message;
+    const button = document.createElement("button"); button.type = "button"; button.className = "toast-undo"; button.textContent = "Undo";
+    button.addEventListener("click", async event => { event.stopPropagation(); node.classList.remove("show", "has-action"); try { await undo(); } catch (error) { recordLog("error", `Undo failed: ${error?.message || error}`); toast("Could not undo that."); } });
+    node.append(label, button); node.classList.add("show", "has-action"); clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove("show", "has-action"), ms);
   }
   function applyPreferences() {
     document.body.dataset.page = page;
@@ -345,7 +394,8 @@
       button.setAttribute("aria-current", String(active ? "page" : "false"));
     });
   }
-  function goto(next, updateHistory = true) {
+  function goto(next, updateHistory = true, back = false) {
+    if (!back) rememberScroll();
     if (next === "search") next = "dashboard";
     const [nextPage, nextSection] = String(next).split("/");
     page = nextPage in titles ? nextPage : "dashboard";
@@ -355,9 +405,19 @@
     if (page !== "details") clearDetailStack();
     if (page !== "settings") settingsGroup = null;
     if (updateHistory) historyPush();
-    document.body.dataset.navDir = "forward";
-    render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" });
+    document.body.dataset.navDir = back ? "back" : "forward";
+    render(); syncPageNavigation();
+    if (back) restoreScroll(); else window.scrollTo({ top: 0, behavior: "auto" });
   }
+  // Keep the reading position for each page and settings subsection when browser Back is used.
+  const scrollMemory = new Map();
+  const scrollKey = () => page === "settings" ? `settings/${settingsGroup || ""}` : page === "details" ? `details/${detailItemId || ""}` : page === "statistics" ? `statistics/${statsSubpage || ""}` : page;
+  const rememberScroll = () => scrollMemory.set(scrollKey(), window.scrollY);
+  const restoreScroll = () => {
+    const top = scrollMemory.get(scrollKey()) || 0;
+    window.scrollTo({ top, behavior: "auto" });
+    if (top) requestAnimationFrame(() => window.scrollTo({ top, behavior: "auto" }));
+  };
   const slugOf = text => String(text || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "title";
   // details?id=<uuid> for library titles, details/<source>/<id>/<name> for Discover/Explore previews; &ref= adds the open cast/character/episode page.
   function detailRoute() {
@@ -396,7 +456,17 @@
   function pageContext() {
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
-    return { statsLimits, statsSubpage, statsActivityDate, statsRange, dataRevision: localMutationRevision, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, history, logEntries, roles, trackedStatuses, statusIcon, activeCategory, addCategory, discoverCategory: currentDiscoverCategory(), libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", mixCategory: mixCategory || (activeCategory !== "all" ? activeCategory : "all"), statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+    if (settingsGroup === "logcat" && !logJournalLoaded) {
+      logJournalLoaded = true;
+      window.SplitAppBackend?.readJournal?.("logcat").then(rows => { if (page === "settings" && settingsGroup === "logcat" && Array.isArray(rows)) { logEntries = rows; try { localStorage.setItem(`${storageKey}_log`, JSON.stringify(rows.slice(0, 200))); } catch (_) {} render(); } }).catch(() => {});
+    }
+    let changeLog = [];
+    try { const saved = JSON.parse(localStorage.getItem(`${storageKey}_history`) || "[]"); if (Array.isArray(saved)) changeLog = saved; } catch (_) {}
+    if (settingsGroup === "history" && !historyJournalLoaded) {
+      historyJournalLoaded = true;
+      window.SplitAppBackend?.readJournal?.("history").then(rows => { if (page === "settings" && settingsGroup === "history" && Array.isArray(rows)) { const local = changeLog; const keys = row => `${row.action}|${row.at}|${row.detail || ""}`; changeLog = [...new Map([...rows, ...local].map(row => [keys(row), row])).values()].sort((a, b) => (Number(b.at) || Date.parse(b.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0)); try { localStorage.setItem(`${storageKey}_history`, JSON.stringify(changeLog.slice(0, 2000))); } catch (_) {} render(); } }).catch(() => {});
+    }
+    return { statsLimits, statsSubpage, statsActivityDate, statsRange, metadataSyncState, changeLog, logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, history, logEntries, roles, trackedStatuses, statusIcon, activeCategory, discoverCategory: currentDiscoverCategory(), libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", mixCategory: mixCategory || (activeCategory !== "all" ? activeCategory : "all"), statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
       detailData, detailError, detailLoading, detailReturnPage, detailRef, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, refItem: detailRef?.type === "episode" ? items.find(entry => entry.category === "series" && (entry.cachedDetails?.sections || []).some(section => section.kind === "episodes" && section.items.some(row => String(row.id) === String(detailRef.id)))) || null : null, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardGroupItems(groupKey) {
@@ -425,15 +495,22 @@
   const thumbUrlCache = new Map(); // "key|sig" -> blob: URL
   const thumbKeyOf = item => `${item.id}:p`;
   const thumbSigOf = item => String(item.localImageFingerprint || item.thumbnailPath || "");
+  function rememberThumbUrl(key, sig, url) {
+    const cacheKey = `${key}|${sig}`;
+    for (const [oldKey, oldUrl] of thumbUrlCache) if (oldKey.startsWith(`${key}|`) && oldKey !== cacheKey) { URL.revokeObjectURL(oldUrl); thumbUrlCache.delete(oldKey); }
+    if (thumbUrlCache.has(cacheKey)) URL.revokeObjectURL(thumbUrlCache.get(cacheKey));
+    thumbUrlCache.delete(cacheKey); thumbUrlCache.set(cacheKey, url);
+    while (thumbUrlCache.size > 200) { const [oldKey, oldUrl] = thumbUrlCache.entries().next().value; URL.revokeObjectURL(oldUrl); thumbUrlCache.delete(oldKey); }
+  }
   async function cachedThumbUrls(entries) {
     const found = new Map(), need = [];
-    entries.forEach(([key, sig]) => { const url = thumbUrlCache.get(`${key}|${sig}`); if (url) found.set(key, url); else need.push([key, sig]); });
+    entries.forEach(([key, sig]) => { const cacheKey = `${key}|${sig}`, url = thumbUrlCache.get(cacheKey); if (url) { thumbUrlCache.delete(cacheKey); thumbUrlCache.set(cacheKey, url); found.set(key, url); } else need.push([key, sig]); });
     if (need.length && window.SplitAppIDB?.getThumbs) {
       try {
         const sigByKey = new Map(need);
         (await window.SplitAppIDB.getThumbs(need)).forEach(([key, blob]) => {
           const url = URL.createObjectURL(blob);
-          thumbUrlCache.set(`${key}|${sigByKey.get(key)}`, url);
+          rememberThumbUrl(key, sigByKey.get(key), url);
           found.set(key, url);
         });
       } catch (_) {}
@@ -499,6 +576,7 @@
         const cached = await cachedThumbUrls(batch.map(record => [thumbKeyOf(record.item), thumbSigOf(record.item)]));
         const slow = [];
         for (const record of batch) {
+          if (record.image.dataset.customCover) { finishDeferredImage(record.image, record.image.dataset.customCover); continue; }
           const hit = cached.get(thumbKeyOf(record.item));
           if (hit) finishDeferredImage(record.image, hit);
           else if (/^https?:/i.test(record.online)) finishDeferredImage(record.image, record.online); // not cached yet: online straight away
@@ -521,6 +599,7 @@
     const item = image.dataset.localItemId && itemById(image.dataset.localItemId);
     const online = image.dataset.lazySrc || "";
     if (!item) { finishDeferredImage(image, online); return; }
+    if (image.dataset.customCover) { finishDeferredImage(image, image.dataset.customCover); return; }
     const warm = thumbUrlCache.get(`${thumbKeyOf(item)}|${thumbSigOf(item)}`);
     if (warm) { finishDeferredImage(image, warm); return; }
     deferredQueue.push({ item, image, online });
@@ -578,6 +657,7 @@
     loaders.forEach(button => dashboardLazyObserver.observe(button));
   }
   function render() {
+    if (!metadataSync && metadataSyncState?.entries?.some(entry => ["queued", "running"].includes(entry.status)) && navigator.onLine && prefs.metadataMode !== "offline" && !document.hidden) queueMicrotask(() => startMetadataSync(null, true));
     document.body.dataset.page = page;
     $("#page-title").textContent = titles[page];
     $("#header-filter").hidden = page !== "dashboard";
@@ -614,6 +694,8 @@
       renderedRoute = route;
     }
     content.innerHTML = window.SplitAppPages[page](pageContext());
+    if (selectMode && page === "dashboard") applySelectionUI();
+    else if (selectMode) exitSelectMode();
     if (page === "discover" && discoverCache && discoverCache.source === discoverSource && discoverCache.query === discoverQuery) paintDiscoverResults(discoverCache.results, discoverSource);
     else if (page === "discover" && !discoverQuery) loadDiscoverSuggestions();
     if (page === "mix") paintMixResults();
@@ -665,7 +747,7 @@
     content.querySelectorAll("[data-save-item]").forEach(saveButton => saveButton.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); saveAddForm($("#item-form")); }));
     content.querySelector("[data-discover-submit]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); submitDiscover(); });
     content.querySelector("#discover-query")?.addEventListener("keydown", event => {
-      if (event.key !== "Enter") return;
+      if (event.key !== "Enter" && event.keyCode !== 13) return;
       event.preventDefault(); event.stopPropagation();
       submitDiscover();
     });
@@ -755,13 +837,16 @@
     content.querySelector("[data-close-dashboard-filter]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#dashboard-filter-dialog")); });
     content.querySelector("[data-reset-dashboard-filter]")?.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
-      dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; persist({ meta: true }); closePopup($("#dashboard-filter-dialog")); render();
+      dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; activeCategory = "all"; prefs.favoritesOnly = false; libraryQuery = "";
+      prefs.dashboardView = "list"; prefs.dashboardSort = "alphabetical-asc"; prefs.dashboardGroupBy = "status";
+      persist({ meta: true }); applyPreferences(); historyPush(); closePopup($("#dashboard-filter-dialog")); render();
     });
     const dashboardFilterForm = content.querySelector("#dashboard-filter-form");
     const applyDashboardFilter = () => {
       if (!dashboardFilterForm) return;
       dashboardStatusFilter = dashboardFilterForm?.elements.status.value || "all";
       prefs.dashboardStatusFilter = dashboardStatusFilter;
+      activeCategory = dashboardFilterForm?.elements.category?.value || "all";
       prefs.dashboardView = dashboardFilterForm?.elements.view?.value || prefs.dashboardView;
       prefs.dashboardSort = dashboardFilterForm.elements.sort?.value || prefs.dashboardSort;
       prefs.theme = dashboardFilterForm.elements.theme?.value || prefs.theme;
@@ -781,7 +866,7 @@
     content.querySelector("[data-open-timeline-filters]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showPopup($("#timeline-filter-dialog")); });
     content.querySelector("[data-clear-timeline-filters]")?.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
-      timelineSearch = ""; timelineMonth = ""; timelineYear = ""; timelineFilter = "all";
+      timelineSearch = ""; timelineMonth = ""; timelineYear = ""; timelineFrom = ""; timelineTo = ""; timelineFilter = "all";
       closePopup($("#timeline-filter-dialog")); render();
     });
     content.querySelector("#timeline-filter-dialog form")?.addEventListener("submit", event => {
@@ -789,6 +874,7 @@
       timelineSearch = event.currentTarget.elements["timeline-search"].value.trim();
       timelineMonth = event.currentTarget.elements["timeline-month"].value;
       timelineYear = event.currentTarget.elements["timeline-year"].value;
+      timelineFrom = event.currentTarget.elements["timeline-from"]?.value || ""; timelineTo = event.currentTarget.elements["timeline-to"]?.value || "";
       closePopup($("#timeline-filter-dialog")); render();
     });
     content.querySelectorAll("[data-source-filter]").forEach(button => button.addEventListener("click", event => {
@@ -826,6 +912,12 @@
     content.querySelectorAll("[data-log-action]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
       if (button.dataset.logAction === "clear") { localStorage.removeItem(`${storageKey}_log`); render(); toast("Logs cleared."); }
+      else if (button.dataset.logAction === "clear-history") { localStorage.removeItem(`${storageKey}_history`); window.SplitAppBackend?.clearJournal?.("history"); render(); toast("History cleared."); }
+    }));
+    content.querySelectorAll("[data-metadata-sync-action]").forEach(button => button.addEventListener("click", event => {
+      event.preventDefault(); event.stopPropagation();
+      if (button.dataset.metadataSyncAction === "retry") retryMetadataSync(button.dataset.id || null);
+      else if (button.dataset.metadataSyncAction === "clear") clearMetadataSyncState();
     }));
     content.querySelectorAll("[data-setting-action]").forEach(button => button.addEventListener("click", event => {
       if (button.type === "file") return; // let the file picker open
@@ -836,6 +928,10 @@
       else if (key === "previewAnimations") previewAnimations();
       else if (key === "resetAppearance") resetAppearance();
       else if (key === "export") exportList();
+      else if (key === "export-txt") exportNames("txt");
+      else if (key === "export-csv") exportNames("csv");
+      else if (key === "sync-metadata") syncMetadataNow();
+      else if (key.startsWith("syncRun")) runMetadataSyncAction(key);
       else if (key.startsWith("clear-")) {
         clearAppCaches(key === "clear-images" ? "images" : key === "clear-metadata" ? "metadata" : "temporary")
           .then(() => toast("Temporary cache cleared."))
@@ -919,7 +1015,9 @@
       if (result.unsupported) status.textContent = "Folder storage is available in the Android app.";
       else if (!result.configured) status.textContent = "No database folder selected";
       else if (!result.valid) status.textContent = "Folder access is unavailable. Choose a folder again.";
-      else status.textContent = result.databaseExists ? "Database found in the selected folder." : "Folder is available. A database will be created there.";
+      else if (result.databaseExists && result.mediaFoldersReady) status.textContent = "Database found. Movies and shows are stored separately.";
+      else if (result.databaseExists) status.textContent = "Database found. Separating movies and shows in the background…";
+      else status.textContent = "Folder is available. A database will be created there.";
     } catch (error) {
       if (status.isConnected) status.textContent = `Could not check folder: ${error.message || error}`;
     }
@@ -952,6 +1050,12 @@
     }
   }
   async function clearAppCaches(kind) {
+    if (kind === "images" || kind === "temporary") {
+      for (const url of thumbUrlCache.values()) URL.revokeObjectURL(url);
+      thumbUrlCache.clear();
+      await window.SplitAppIDB?.clearThumbs?.().catch(() => {});
+      await window.SplitAppIDB?.clearShareCache?.().catch(() => {});
+    }
     if (!window.caches) return;
     const prefix = `splitapp_${config.key}`;
     const names = (await caches.keys()).filter(name => name.startsWith(prefix) && (kind === "temporary" || name.includes(kind === "images" ? "image" : "metadata")));
@@ -1101,7 +1205,8 @@
     const image = String(data.get("image") || "");
     const entry = { ...old, id: id || crypto.randomUUID(), title: String(data.get("title")).trim(), category: key, status: data.get("status") || defaultStatus(key), progress: Math.max(0, Number(data.get("progress")) || 0), rating: Number(data.get("rating")) || 0, goal: Math.max(0, Number(data.get("goal")) || 0), image, ...(image.startsWith("data:image/") ? { localThumbnailData: image } : {}), description: String(data.get("description") || "").trim(), metadataSource: String(data.get("metadataSource") || ""), providerId: String(data.get("providerId") || ""), url: String(data.get("url") || ""), year: String(data.get("year") || ""), createdAt: old?.createdAt || Date.now(), updatedAt: Date.now() };
     if (!entry.title) return;
-    if (old) items[items.indexOf(old)] = entry; else items.unshift(entry);
+    if (old) items[items.indexOf(old)] = entry; else { items.unshift(entry); recordLibraryChange("added", `Added ${entry.title}.`, [entry.id]); }
+    if (old && JSON.stringify(old) !== JSON.stringify(entry)) recordLibraryChange("edited", `Updated ${entry.title}.`, [entry.id]);
     if (entry.status !== roles.queued && entry.status !== old?.status) history.unshift({ itemId: entry.id, title: entry.title, action: entry.status, status: entry.status, at: Date.now() });
     persist({ ids: [entry.id] }); entryDraftId = null; goto(addReturnPage); toast(old ? "Entry updated." : "Added to your library.");
   }
@@ -1122,7 +1227,7 @@
     const item = items.find(entry => entry.id === id); if (!item) return;
     if (!(await appConfirm(`Delete “${item.title}” from your library?`, { title: "Delete title", confirmLabel: "Delete", danger: true }))) return;
     if (prefs.backupBeforeDestructive) exportList({ silent: true });
-    items = items.filter(entry => entry.id !== id);
+    recordLibraryChange("removed", `Deleted ${item.title}.`, [id]); items = items.filter(entry => entry.id !== id);
     persist({ removed: [id] }); entryDraftId = null; goto(addReturnPage); toast("Entry deleted.");
   }
   // ⋮ → Edit entry opens the title's details page in edit mode (same as its Edit button).
@@ -1144,8 +1249,12 @@
     persist({ ids: [item.id] }); render(); toast("Entry updated.");
   }
 
+  let discoverSubmitted = "", discoverSubmittedAt = 0;
   function submitDiscover() {
     discoverQuery = $("#discover-query")?.value || discoverQuery;
+    // Some Android keyboards emit both Enter and the search action for one submission.
+    if (discoverQuery === discoverSubmitted && Date.now() - discoverSubmittedAt < 500) return;
+    discoverSubmitted = discoverQuery; discoverSubmittedAt = Date.now();
     discover();
   }
   // Discover / Explore / Mix search one type at a time; a single source only offers the types it supports.
@@ -1267,7 +1376,7 @@
       toast("That entry is already in your library."); return existing;
     }
     const item = { ...result, metadataSource: result.source, id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
-    items.unshift(item); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist({ ids: [item.id] }); toast("Added to your library."); hydrateSavedItem(item); return item;
+    items.unshift(item); recordLibraryChange("added", `Added ${item.title} from ${origin}.`, [item.id]); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist({ ids: [item.id] }); toast("Added to your library."); hydrateSavedItem(item); return item;
   }
   // Keep the best value per fact across providers (a later source never blanks out earlier data).
   function mergeFacts(previous = {}, next = {}) {
@@ -1277,6 +1386,20 @@
       if (!empty || merged[key] == null) merged[key] = value;
     }
     return merged;
+  }
+  function applyMixMatchState(item, loaded) {
+    if (loaded.sourceMeta) item.sourceMeta = { ...(item.sourceMeta || {}), ...loaded.sourceMeta };
+    if (loaded.noMatchSources || loaded.sourceMeta) {
+      const noMatch = { ...(item.mixNoMatch || {}) };
+      Object.keys(loaded.sourceMeta || {}).forEach(key => delete noMatch[key]);
+      (loaded.noMatchSources || []).forEach(key => { noMatch[key] = noMatch[key] || Date.now(); });
+      item.mixNoMatch = noMatch;
+    }
+    if (loaded.reviewFlags) {
+      const review = loaded.reviewFlags.filter(flag => String((item.matchOk || {})[flag.key] ?? "") !== String(flag.providerId));
+      if (review.length) item.matchReview = review.map(({ key, title, providerId }) => ({ key, title, providerId })); else delete item.matchReview;
+    }
+    return item.matchReview?.length || 0;
   }
   // ---- Mix fetch (experimental) ----
   const mixChips = keys => (keys || []).map(key => window.SplitAppSources.list().find(source => source.key === key)?.name || key).map(name => `<span class="mix-chip">${esc(name)}</span>`).join("");
@@ -1307,7 +1430,12 @@
     try {
       const loaded = await window.SplitAppDetails.load(saved, detailSettings());
       saved.metadataSource = "mix"; saved.source = "mix"; saved.mixSources = loaded.mixSources || [];
-      saved.cachedDetails = loaded; saved.facts = mergeFacts(saved.facts, loaded.facts);
+      // Keep provider IDs on the saved title so refreshes can load known matches directly.
+      if (loaded.sourceIds) saved.sourceIds = { ...(saved.sourceIds || {}), ...loaded.sourceIds };
+      const primary = loaded.mixPrimary || (saved.mixPrimary?.key ? saved.mixPrimary : null);
+      if (primary) saved.mixPrimary = primary;
+      saved.mixSourceKeys = [...new Set([...(saved.mixSourceKeys || []), ...(loaded.facts?.sources || []), ...Object.keys(loaded.sourceIds || {})])];
+      saved.cachedDetails = loaded; saved.facts = mergeFacts(saved.facts, loaded.facts); applyMixMatchState(saved, loaded);
       saved.description = loaded.description || saved.description; saved.year = loaded.year || saved.year; saved.image = loaded.portraitImage || loaded.image || saved.image;
       saved.updatedAt = Date.now(); persist({ ids: [saved.id] }); toast(`Merged details from ${loaded.mixSources?.length || 0} sources.`);
     } catch (error) { recordLog("warning", `Mix fetch could not merge details for ${saved.title}: ${error?.message || error}`); toast("Added. Details could not be merged yet."); }
@@ -1317,13 +1445,22 @@
     if (factsRunning) return; factsRunning = true; button.disabled = true;
     const hasRuntime = item => Number(item.facts?.totalMinutes) || Number(item.facts?.runtimeMinutes);
     const pending = items.filter(item => !hasRuntime(item));
+    const visible = new Set(pending.slice(0, 8).map(item => item.id));
+    const setLookupState = (item, state) => {
+      if (!visible.has(item.id)) return;
+      const row = document.querySelector(`[data-runtime-item="${CSS.escape(item.id)}"]`);
+      const label = row?.querySelector("[data-runtime-state]");
+      if (label) { label.textContent = state; row.dataset.state = state === "Found" ? "found" : state === "Looking up…" ? "looking" : "missing"; }
+    };
     let found = 0;
     for (const [index, item] of pending.entries()) {
       button.textContent = `Looking up ${index + 1} of ${pending.length}…`;
+      setLookupState(item, "Looking up…");
       try {
         const runtime = await window.SplitAppMix.runtime(item, detailSettings());
-        if (runtime) { item.facts = mergeFacts(item.facts, runtime); if (!Number(item.goal)) item.goal = category(item.category)?.unit === "minutes" ? runtime.runtimeMinutes : runtime.episodeCount || 0; item.updatedAt = Date.now(); found += 1; persist(); }
-      } catch (error) { recordLog("warning", `Runtime lookup failed for ${item.title}: ${error?.message || error}`); }
+        if (runtime) { item.facts = mergeFacts(item.facts, runtime); if (!Number(item.goal)) item.goal = category(item.category)?.unit === "minutes" ? runtime.runtimeMinutes : runtime.episodeCount || 0; item.updatedAt = Date.now(); found += 1; setLookupState(item, "Found"); persist(); }
+        else setLookupState(item, "No runtime found");
+      } catch (error) { setLookupState(item, "Lookup failed"); recordLog("warning", `Runtime lookup failed for ${item.title}: ${error?.message || error}`); }
       await new Promise(resolve => setTimeout(resolve, 300));
     }
     factsRunning = false; render(); toast(found ? `Found runtimes for ${found} of ${pending.length} titles.` : "No runtimes found. Enable TVmaze or AniList, or add an OMDb key.");
@@ -1337,10 +1474,10 @@
     for (const item of pending) {
       button.textContent = `Fetching ${done + 1} of ${pending.length}…`;
       try {
-        const loaded = await window.SplitAppDetails.load(item, detailSettings());
-        item.cachedDetails = loaded; item.facts = mergeFacts(item.facts, loaded.facts);
+    const loaded = await window.SplitAppDetails.load(item, detailSettings());
+        item.cachedDetails = loaded; item.metadataFetchedAt = Number(loaded.fetchedAt || loaded.facts?.fetchedAt) || Date.now(); item.facts = mergeFacts(item.facts, loaded.facts);
         item.description = loaded.description || item.description; item.year = loaded.year || item.year;
-        item.image = loaded.portraitImage || loaded.image || item.image;
+        item.image = item.customCover || loaded.portraitImage || loaded.image || item.image;
         done += 1; persist({ ids: [item.id] });
       } catch (error) { recordLog("warning", `Could not fetch details for ${item.title}: ${error?.message || error}`); }
       await new Promise(resolve => setTimeout(resolve, 350));
@@ -1386,9 +1523,9 @@
     delete prefs.metadataSources[`custom:${id}`]; refreshSourceRegistry();
     persist({ meta: true }); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast("Custom source deleted.");
   }
-  function detailSettings() { return { metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions, offlineFallback: prefs.offlineFallback }; }
-  async function loadDetails() {
-    const item = detailPreview || items.find(row => row.id === detailItemId);
+  function detailSettings() { return { syncTimeout: prefs.syncTimeout || 25, syncRetries: prefs.syncRetries ?? 1, syncRetryDelay: prefs.syncRetryDelay || 2, syncMaxSources: prefs.syncMaxSources || 0, metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions, offlineFallback: prefs.offlineFallback }; }
+  async function loadDetails(targetId = null) {
+    const item = detailPreview || items.find(row => String(row.id) === String(targetId ?? detailItemId));
     const requestId = ++detailRequest; detailData = item?.cachedDetails || null; detailError = "";
     if (!item) { detailLoading = false; render(); return; }
     if (!detailPreview && window.SplitAppBackend?.loadItemImages) {
@@ -1397,7 +1534,7 @@
         if (requestId === detailRequest && Object.keys(localImageData).length) item.localImageData = localImageData;
       } catch (_) {}
     }
-    if (!item.metadataSource || !item.providerId) { detailLoading = false; detailError = ""; render(); return; }
+    if (item.metadataSource === "mix" ? !window.SplitAppMix?.load : (!item.metadataSource || !item.providerId)) { detailLoading = false; detailError = ""; render(); return; }
     detailLoading = true; render();
     try {
       const loaded = await window.SplitAppDetails.load(item, detailSettings());
@@ -1405,13 +1542,19 @@
         detailData = loaded;
         if (detailPreview) { detailPreview.image ||= loaded.portraitImage || loaded.image || ""; detailPreview.year ||= loaded.year || ""; detailPreview.description ||= loaded.description || ""; detailPreview.title = loaded.title || detailPreview.title; }
         if (!detailPreview) {
-          item.cachedDetails = loaded;
+          item.cachedDetails = loaded; item.metadataFetchedAt = Number(loaded.fetchedAt || loaded.facts?.fetchedAt) || Date.now();
           if (item.metadataSource === "mix") item.mixSources = loaded.mixSources || item.mixSources;
-          item.facts = mergeFacts(item.facts, loaded.facts);
+          if (loaded.sourceIds) item.sourceIds = { ...(item.sourceIds || {}), ...loaded.sourceIds };
+          if (loaded.mixPrimary?.key) item.mixPrimary = loaded.mixPrimary;
+          if (loaded.mixSources?.length) item.mixSources = [...new Set([...(item.mixSources || []), ...loaded.mixSources])];
+          if (loaded.facts?.sources?.length) item.mixSourceKeys = [...new Set([...(item.mixSourceKeys || []), ...loaded.facts.sources])];
+          applyMixMatchState(item, loaded);
+          item.facts = item.relinkFresh ? { ...(loaded.facts || {}) } : mergeFacts(item.facts, loaded.facts);
+          delete item.relinkFresh;
           if (!Number(item.goal)) item.goal = category(item.category)?.unit === "minutes" ? Number(loaded.facts?.runtimeMinutes) || 0 : Number(loaded.goal) || Number(loaded.facts?.episodeCount) || 0;
           item.description = loaded.description || item.description;
           item.year = loaded.year || item.year;
-          item.image = loaded.portraitImage || loaded.image || item.image;
+          item.image = item.customCover || loaded.portraitImage || loaded.image || item.image;
           item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop;
           item.updatedAt = Date.now();
           persist({ ids: [item.id] });
@@ -1459,14 +1602,165 @@
     try {
       const loaded = await window.SplitAppDetails.load(item, detailSettings());
       if (!items.includes(item)) return;
-      item.cachedDetails = loaded; item.facts = mergeFacts(item.facts, loaded.facts);
+      item.cachedDetails = loaded; item.metadataFetchedAt = Number(loaded.fetchedAt || loaded.facts?.fetchedAt) || Date.now(); item.facts = mergeFacts(item.facts, loaded.facts);
+      if (loaded.sourceIds) item.sourceIds = { ...(item.sourceIds || {}), ...loaded.sourceIds };
+      if (loaded.mixPrimary?.key) item.mixPrimary = loaded.mixPrimary;
+      if (loaded.mixSources?.length) item.mixSources = [...new Set([...(item.mixSources || []), ...loaded.mixSources])];
+      if (loaded.facts?.sources?.length) item.mixSourceKeys = [...new Set([...(item.mixSourceKeys || []), ...loaded.facts.sources])];
       if (!Number(item.goal)) item.goal = category(item.category)?.unit === "minutes" ? Number(loaded.facts?.runtimeMinutes) || 0 : Number(loaded.goal) || Number(loaded.facts?.episodeCount) || 0;
       item.description = loaded.description || item.description; item.year = loaded.year || item.year;
-      item.image = loaded.portraitImage || loaded.image || item.image; item.backdrop = loaded.landscapeImage || item.backdrop;
+      item.image = item.customCover || loaded.portraitImage || loaded.image || item.image; item.backdrop = loaded.landscapeImage || item.backdrop;
       item.updatedAt = Date.now(); persist({ ids: [item.id] }); if (page === "details" && detailItemId === item.id) render();
     } catch (error) { recordLog("warning", `Could not save details for ${item.title}: ${error?.message || error}`); }
     finally { hydrating.delete(item.id); }
   }
+  let selectMode = false;
+  const selectedIds = new Set();
+  let lastBulkBackupAt = 0;
+  function backupBeforeBulk() {
+    if (!prefs.backupBeforeDestructive || Date.now() - lastBulkBackupAt < 60000) return;
+    lastBulkBackupAt = Date.now(); try { exportList({ silent: true }); } catch (_) {}
+  }
+  async function removeItemsWithUndo(list) {
+    const removed = list.map(item => ({ item: JSON.parse(JSON.stringify(item)), index: items.indexOf(item) })).filter(row => row.index >= 0);
+    if (!removed.length) return;
+    backupBeforeBulk(); const ids = new Set(removed.map(row => String(row.item.id)));
+    recordLibraryChange("removed", `Removed ${removed.length} ${removed.length === 1 ? "title" : "titles"}: ${removed.slice(0, 6).map(row => row.item.title).join(", ")}`, [...ids]);
+    items = items.filter(item => !ids.has(String(item.id))); await persist({ removed: [...ids] }); render();
+    toastUndo(`Removed ${removed.length} ${removed.length === 1 ? "title" : "titles"}.`, async () => {
+      recordLibraryChange("restored", `Undo: restored ${removed.length} ${removed.length === 1 ? "title" : "titles"}.`, [...ids]);
+      removed.sort((a, b) => a.index - b.index).forEach(row => items.splice(Math.min(row.index, items.length), 0, row.item));
+      await persist({ ids: [...ids] }); render(); toast("Restored.");
+    });
+  }
+  function enterSelectMode(id) { selectMode = true; selectedIds.clear(); if (id != null) selectedIds.add(String(id)); document.body.classList.add("select-mode"); applySelectionUI(); navigator.vibrate?.(15); }
+  function exitSelectMode() { selectMode = false; selectedIds.clear(); document.body.classList.remove("select-mode"); applySelectionUI(); }
+  function applySelectionUI() {
+    document.querySelectorAll(".item-card[data-item]").forEach(card => card.classList.toggle("is-selected", selectMode && selectedIds.has(card.dataset.item)));
+    let bar = $("#select-bar");
+    if (!selectMode) { bar?.remove(); $("#select-toggle")?.classList.remove("is-active"); $("#select-toggle")?.setAttribute("aria-pressed", "false"); return; }
+    $("#select-toggle")?.classList.add("is-active"); $("#select-toggle")?.setAttribute("aria-pressed", "true");
+    if (!bar) { bar = document.createElement("div"); bar.id = "select-bar"; bar.className = "select-bar"; bar.setAttribute("role", "toolbar"); bar.innerHTML = '<span class="select-count" data-select-count></span><button type="button" data-select-act="status">Status</button><button type="button" data-select-act="favorite">♥ Favorite</button><button type="button" data-select-act="delete" class="danger">Delete</button><button type="button" data-select-act="merge" disabled>Merge</button><button type="button" data-select-act="all">All</button><button type="button" data-select-act="done">Done</button>'; document.body.appendChild(bar); bar.addEventListener("click", onSelectBarClick); }
+    const count = bar.querySelector("[data-select-count]"); count.textContent = `${selectedIds.size} ✓`; count.setAttribute("aria-label", `${selectedIds.size} selected`);
+    bar.querySelectorAll('[data-select-act="status"],[data-select-act="favorite"],[data-select-act="delete"]').forEach(button => { button.disabled = selectedIds.size === 0; });
+    const merge = bar.querySelector('[data-select-act="merge"]'); if (merge) merge.disabled = selectedIds.size !== 2 || selectedItems().some((item, _, list) => item.category !== list[0].category);
+  }
+  const selectedItems = () => items.filter(item => selectedIds.has(String(item.id)));
+  async function onSelectBarClick(event) {
+    const act = event.target.closest("[data-select-act]")?.dataset.selectAct; if (!act) return;
+    const list = selectedItems();
+    if (act === "done") { exitSelectMode(); return; }
+    if (act === "all") { let visible = window.SplitAppLibrary.create(pageContext()).filteredItems(libraryQuery); if (dashboardStatusFilter !== "all") visible = visible.filter(item => item.status === dashboardStatusFilter); visible.forEach(item => selectedIds.add(String(item.id))); applySelectionUI(); return; }
+    if (act === "merge") { if (list.length !== 2 || list[0].category !== list[1].category) { toast("Select two titles from the same category to merge."); return; } exitSelectMode(); await mergeLibraryItems(list[0].id, list[1].id); return; }
+    if (!list.length) return;
+    if (act === "favorite") {
+      const next = list.some(item => !item.favorite), before = list.map(item => [item, Boolean(item.favorite), item.updatedAt]);
+      recordLibraryChange("favorite", `${next ? "Favorited" : "Unfavorited"} ${list.length} ${list.length === 1 ? "title" : "titles"}.`, list.map(item => item.id));
+      list.forEach(item => { item.favorite = next; item.updatedAt = Date.now(); }); await persist({ ids: list.map(item => item.id) }); exitSelectMode(); render();
+      toastUndo(`${next ? "Added" : "Removed"} ${list.length} ${list.length === 1 ? "title" : "titles"} ${next ? "to" : "from"} favorites.`, async () => { before.forEach(([item, favorite, updatedAt]) => { item.favorite = favorite; item.updatedAt = updatedAt; }); await persist({ ids: list.map(item => item.id) }); render(); });
+    } else if (act === "delete") {
+      if (!(await appConfirm(`Remove ${list.length} ${list.length === 1 ? "title" : "titles"} from your collection?`, { title: "Remove titles", confirmLabel: "Remove", danger: true }))) return;
+      exitSelectMode(); await removeItemsWithUndo(list);
+    } else if (act === "status") {
+      const statuses = [...new Set(list.flatMap(item => category(item.category)?.statuses || []))];
+      let dialog = $("#bulk-status-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "bulk-status-dialog"; dialog.className = "ios-action-sheet"; document.body.appendChild(dialog); }
+      dialog.innerHTML = `<div class="ios-action-group"><p>Set ${list.length} ${list.length === 1 ? "title" : "titles"} to…</p>${statuses.map(status => `<button type="button" data-bulk-status="${esc(status)}">${esc(status)}</button>`).join("")}</div><div class="ios-action-group"><button type="button" data-bulk-status="">Cancel</button></div>`;
+      dialog.onclick = async event2 => { if (event2.target === dialog) { closePopup(dialog); return; } const button = event2.target.closest("[data-bulk-status]"); if (!button) return; const status = button.dataset.bulkStatus; closePopup(dialog); if (!status) return; backupBeforeBulk(); const before = list.map(item => ({ item, status: item.status, progress: item.progress, updatedAt: item.updatedAt })), added = [];
+        list.forEach(item => { if (item.status === status) return; item.status = status; item.updatedAt = Date.now(); if (status === roles.done && Number(item.goal) > 0) item.progress = Math.max(Number(item.progress) || 0, Number(item.goal)); if (trackedStatuses.includes(status)) { const entry = { itemId: item.id, title: item.title, action: status, status, at: Date.now() }; history.unshift(entry); added.push(entry); } });
+        recordLibraryChange("status", `Marked ${list.length} ${list.length === 1 ? "title" : "titles"} as ${status}.`, list.map(item => item.id));
+        await persist({ ids: list.map(item => item.id) }); exitSelectMode(); render(); toastUndo(`Marked ${list.length} ${list.length === 1 ? "title" : "titles"} as ${status}.`, async () => { before.forEach(row => { row.item.status = row.status; row.item.progress = row.progress; row.item.updatedAt = row.updatedAt; }); history = history.filter(entry => !added.includes(entry)); await persist({ ids: list.map(item => item.id) }); render(); });
+      }; showPopup(dialog);
+    }
+  }
+  document.addEventListener("click", event => { if (!selectMode || page !== "dashboard") return; const card = event.target.closest?.(".item-card[data-item]"); if (!card || event.target.closest("button, a, input, select, textarea")) return; event.preventDefault(); event.stopPropagation(); selectedIds.has(card.dataset.item) ? selectedIds.delete(card.dataset.item) : selectedIds.add(card.dataset.item); applySelectionUI(); }, true);
+  document.addEventListener("click", event => {
+    const toggle = event.target.closest?.("#select-toggle");
+    if (toggle) { event.preventDefault(); event.stopPropagation(); selectMode ? exitSelectMode() : enterSelectMode(); return; }
+    const share = event.target.closest?.("[data-share-all]");
+    if (share) { let selected = window.SplitAppLibrary.create(pageContext()).filteredItems(libraryQuery); if (dashboardStatusFilter !== "all") selected = selected.filter(item => item.status === dashboardStatusFilter); openShareList("Collection", selected); }
+  }, true);
+  document.addEventListener("keydown", event => { if (event.key === "Escape" && selectMode) exitSelectMode(); });
+
+  let metadataSync = null;
+  function saveMetadataSyncState() {
+    try { if (metadataSyncState) localStorage.setItem(`${storageKey}_metadata_sync`, JSON.stringify(metadataSyncState)); else localStorage.removeItem(`${storageKey}_metadata_sync`); } catch (_) {}
+  }
+  const metadataStamp = item => Number(item?.metadataFetchedAt || item?.cachedDetails?.fetchedAt || item?.cachedDetails?.facts?.fetchedAt || item?.facts?.fetchedAt) || (item?.cachedDetails ? Number(item.updatedAt) || 0 : 0);
+  const syncCounts = () => ({ total: metadataSyncState?.entries?.length || 0, done: metadataSyncState?.entries?.filter(row => row.status === "done").length || 0, failed: metadataSyncState?.entries?.filter(row => row.status === "failed").length || 0, remaining: metadataSyncState?.entries?.filter(row => ["queued", "running"].includes(row.status)).length || 0 });
+  async function waitForSyncResume() {
+    if (navigator.onLine && prefs.metadataMode !== "offline" && !document.hidden) return;
+    await new Promise(resolve => {
+      const done = () => { window.removeEventListener("online", done); document.removeEventListener("visibilitychange", onVisible); resolve(); };
+      const onVisible = () => { if (!document.hidden) done(); };
+      window.addEventListener("online", done, { once: true }); document.addEventListener("visibilitychange", onVisible);
+    });
+  }
+  async function startMetadataSync(ids = null, retry = false, scope = "all") {
+    if (metadataSync) { toast("Metadata refresh is already running."); return metadataSync; }
+    if (prefs.metadataMode === "offline" || !navigator.onLine) { toast("Connect to the internet and enable online metadata to refresh."); return; }
+    const wanted = ids ? new Set(ids.map(String)) : null;
+    if (retry && metadataSyncState) metadataSyncState.entries.forEach(entry => { if ((entry.status === "failed" || entry.status === "running") && (!wanted || wanted.has(String(entry.id)))) { entry.status = "queued"; entry.error = ""; } });
+    else {
+      const intervalMs = { daily: 86400000, weekly: 7 * 86400000, monthly: 30 * 86400000, never: Infinity }[prefs.metadataRefreshInterval] ?? 7 * 86400000;
+      const entries = items.filter(item => {
+        if ((wanted && !wanted.has(String(item.id))) || !item.metadataSource || !(item.providerId || item.metadataSource === "mix") || !window.SplitAppSources.available(item.category, prefs).length) return false;
+        const stamp = metadataStamp(item);
+        if (scope === "missing") return !item.cachedDetails || !stamp;
+        if (scope === "needed") return !stamp || (Number.isFinite(intervalMs) && Date.now() - stamp >= intervalMs);
+        return true;
+      }).map(item => ({ id: String(item.id), title: item.title, status: "queued", error: "" }));
+      metadataSyncState = { startedAt: Date.now(), scope, entries };
+    }
+    saveMetadataSyncState();
+    const queue = metadataSyncState?.entries?.filter(row => row.status === "queued") || [];
+    if (!queue.length) { toast(retry ? "No failed metadata requests to retry." : scope === "needed" ? "No saved titles need a metadata refresh." : "No saved titles can be refreshed from the enabled sources."); render(); return; }
+    const total = metadataSyncState.entries.length;
+    toast(`Refreshing metadata · ${syncCounts().done + syncCounts().failed} of ${total}`); render();
+    metadataSync = (async () => {
+      let nextStartAt = 0;
+      const workers = Array.from({ length: Math.min(3, Math.max(1, Number(prefs.metadataSyncWorkers) || 2), queue.length) }, async () => {
+        while (queue.length) {
+          if (!navigator.onLine || prefs.metadataMode === "offline" || document.hidden) { await waitForSyncResume(); continue; }
+          await yieldToUser();
+          const requestDelay = Math.max(0, Number(prefs.syncRequestDelay) || 0);
+          if (requestDelay) { const startAt = Math.max(Date.now(), nextStartAt); nextStartAt = startAt + requestDelay; if (startAt > Date.now()) await new Promise(resolve => setTimeout(resolve, startAt - Date.now())); }
+          if (!navigator.onLine || prefs.metadataMode === "offline" || document.hidden) continue;
+          const entry = queue.shift(), item = itemById(entry.id); if (!item || !items.includes(item)) { entry.status = "failed"; entry.error = "Title was removed."; saveMetadataSyncState(); continue; }
+          entry.status = "running"; entry.error = ""; saveMetadataSyncState(); render();
+          try {
+            const loaded = await window.SplitAppDetails.load(item, { ...detailSettings(), forceRefresh: true, background: true, recheckNoMatch: !retry && scope !== "needed" });
+            if (!items.includes(item)) throw new Error("Title was removed.");
+            item.cachedDetails = loaded; item.metadataFetchedAt = Number(loaded.fetchedAt || loaded.facts?.fetchedAt) || Date.now(); item.facts = item.relinkFresh ? { ...(loaded.facts || {}) } : mergeFacts(item.facts, loaded.facts); delete item.relinkFresh;
+            if (loaded.sourceIds) item.sourceIds = { ...(item.sourceIds || {}), ...loaded.sourceIds };
+            if (loaded.mixPrimary?.key) item.mixPrimary = loaded.mixPrimary;
+            if (loaded.mixSources?.length) item.mixSources = [...new Set([...(item.mixSources || []), ...loaded.mixSources])];
+            if (loaded.facts?.sources?.length) item.mixSourceKeys = [...new Set([...(item.mixSourceKeys || []), ...loaded.facts.sources])];
+            entry.reviewCount = applyMixMatchState(item, loaded);
+            item.description = loaded.description || item.description; item.year = loaded.year || item.year;
+            item.image = item.customCover || item.localThumbnailData || loaded.portraitImage || loaded.image || item.image;
+            item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop; item.updatedAt = Date.now();
+            await persist({ ids: [item.id] }); entry.status = "done"; entry.error = "";
+          } catch (error) { entry.status = "failed"; entry.error = error?.message || "Metadata refresh failed."; recordLog("warning", `Metadata refresh failed for ${item.title}: ${entry.error}`); }
+          saveMetadataSyncState(); render(); const counts = syncCounts(); toast(`Refreshing metadata · ${counts.done + counts.failed} of ${total}`);
+        }
+      });
+      try { await Promise.all(workers); }
+      finally {
+        metadataSync = null; if (!syncCounts().remaining) metadataSyncState.finishedAt = Date.now(); else delete metadataSyncState.finishedAt; saveMetadataSyncState(); render();
+        const counts = syncCounts(); toast(`Metadata refresh: ${counts.done} updated${counts.failed ? ` · ${counts.failed} failed` : ""}.`);
+      }
+    })();
+    return metadataSync;
+  }
+  async function syncMetadataNow() { return startMetadataSync(null, false, prefs.syncScope || "needed"); }
+  async function runMetadataSyncAction(action) {
+    if (action === "syncRunFailed") return retryMetadataSync();
+    if (action === "syncRunMissing") return startMetadataSync(null, false, "missing");
+    if (action === "syncRunAll") return startMetadataSync(null, false, "all");
+    return startMetadataSync(null, false, "needed");
+  }
+  async function retryMetadataSync(id = null) { return startMetadataSync(id == null ? null : [id], true); }
+  function clearMetadataSyncState() { if (metadataSync) return; metadataSyncState = null; saveMetadataSyncState(); render(); }
   // Watch progress and the episode checklist are one thing: for a series with a saved episode guide the watched episodes are the truth and `progress` is their count.
   function reconcileEpisodes(item) {
     const info = item?.category === "series" ? window.SplitAppLibrary.episodeInfo(item) : null; if (!info) return false;
@@ -1528,6 +1822,7 @@
   }
   function deleteFromDetails(id) {
     const item = items.find(entry => entry.id === id); if (!item) return;
+    recordLibraryChange("removed", `Deleted ${item.title}.`, [id]);
     if (prefs.backupBeforeDestructive) exportList({ silent: true });
     items = items.filter(entry => entry.id !== id);
     detailItemId = null; detailData = null; detailPreview = null;
@@ -1542,6 +1837,160 @@
     item.status = status; item.updatedAt = Date.now();
     if (trackedStatuses.includes(status)) history.unshift({ itemId: item.id, title: item.title, action: status, status, at: Date.now() });
     persist({ ids: [item.id] });
+  }
+  function resetMixCheck(item) { delete item.mixCheckedAt; delete item.mixCheckedSources; delete item.mixFailedAt; }
+  async function mergeLibraryItems(sourceId, targetId, { confirmed = false } = {}) {
+    const source = itemById(String(sourceId)), target = itemById(String(targetId));
+    if (!source || !target || source === target) return;
+    if (source.category !== target.category) { toast("Merge titles from the same category."); return; }
+    const keep = async () => {
+      const sourceCopy = JSON.parse(JSON.stringify(source)), targetCopy = JSON.parse(JSON.stringify(target));
+      const sourceIndex = items.indexOf(source);
+      const movedHistory = history.filter(entry => String(entry.itemId) === String(source.id)).map(entry => ({ ...entry }));
+      const primaryKey = target.metadataSource === "mix" ? target.mixPrimary?.key : target.metadataSource;
+      const primaryId = target.metadataSource === "mix" ? target.mixPrimary?.providerId : target.providerId;
+      const sourceKeys = [source.metadataSource, ...Object.keys(source.sourceIds || {}), ...(source.mixSourceKeys || [])].filter(Boolean);
+      const incomingIds = { ...(source.sourceIds || {}) };
+      if (source.metadataSource && source.providerId) incomingIds[source.metadataSource] = source.providerId;
+      const sourceIds = { ...(target.sourceIds || {}), ...incomingIds };
+      const mixPins = { ...(target.mixPins || {}), ...incomingIds };
+      if (target.metadataSource && target.providerId) { sourceIds[target.metadataSource] = target.providerId; mixPins[target.metadataSource] = target.providerId; }
+      target.sourceIds = sourceIds;
+      target.mixPins = mixPins;
+      target.mixSourceKeys = [...new Set([...(target.mixSourceKeys || []), ...sourceKeys])];
+      const primary = primaryKey && primaryId ? { key: primaryKey, providerId: String(primaryId) } : (source.metadataSource && source.providerId ? { key: source.metadataSource, providerId: String(source.providerId) } : null);
+      if (primary) target.mixPrimary = primary;
+      target.metadataSource = "mix"; target.source = "mix";
+      target.mixSkip = { ...(target.mixSkip || {}) };
+      sourceKeys.forEach(key => { delete target.mixSkip[key]; });
+      if (!target.description && source.description) target.description = source.description;
+      if (!target.year && source.year) target.year = source.year;
+      if (!target.image && source.image) target.image = source.image;
+      if (!target.backdrop && source.backdrop) target.backdrop = source.backdrop;
+      target.facts = mergeFacts(target.facts, source.facts);
+      if (source.cachedDetails && target.cachedDetails) {
+        target.cachedDetails = { ...target.cachedDetails, sections: [...(target.cachedDetails.sections || []), ...(source.cachedDetails.sections || [])] };
+      } else if (!target.cachedDetails && source.cachedDetails) target.cachedDetails = source.cachedDetails;
+      target.progress = Math.max(Number(target.progress) || 0, Number(source.progress) || 0);
+      target.rating = Number(target.rating) || Number(source.rating) || 0;
+      target.favorite = Boolean(target.favorite || source.favorite); target.updatedAt = Date.now();
+      history = history.map(entry => String(entry.itemId) === String(source.id) ? { ...entry, itemId: target.id, title: target.title } : entry);
+      items = items.filter(item => item !== source);
+      recordLibraryChange("merged", `Merged “${source.title}” into “${target.title}”.`, [source.id, target.id]);
+      await persist({ ids: [target.id], removed: [source.id] }); render(); toast(`Merged sources into “${target.title}”.`);
+      toastUndo(`Merged “${sourceCopy.title}” into “${targetCopy.title}”.`, async () => {
+        const currentTarget = itemById(String(targetCopy.id));
+        if (!currentTarget || items.some(item => String(item.id) === String(sourceCopy.id))) return;
+        Object.assign(currentTarget, targetCopy);
+        items.splice(Math.min(sourceIndex, items.length), 0, sourceCopy);
+        const movedIds = new Set(movedHistory.map(entry => `${entry.at}|${entry.action}|${entry.status || ""}`));
+        history = history.filter(entry => !(String(entry.itemId) === String(targetCopy.id) && movedIds.has(`${entry.at}|${entry.action}|${entry.status || ""}`)));
+        history.push(...movedHistory);
+        await persist({ ids: [sourceCopy.id, targetCopy.id] }); render(); toast("Merge undone.");
+      });
+      try {
+        const loaded = await window.SplitAppDetails.load(target, detailSettings());
+        if (items.includes(target)) { target.cachedDetails = loaded; target.facts = mergeFacts(target.facts, loaded.facts); if (loaded.sourceIds) target.sourceIds = { ...(target.sourceIds || {}), ...loaded.sourceIds }; if (loaded.mixSources) target.mixSources = loaded.mixSources; target.description = loaded.description || target.description; target.image = target.customCover || loaded.portraitImage || loaded.image || target.image; target.backdrop = loaded.landscapeImage || loaded.backgroundImage || target.backdrop; target.updatedAt = Date.now(); await persist({ ids: [target.id] }); if (page === "details" && detailItemId === target.id) { detailData = loaded; render(); } }
+      } catch (error) { recordLog("warning", `Could not refresh merged Mix title ${target.title}: ${error?.message || error}`); }
+    };
+    if (confirmed || await appConfirm(`Merge “${source.title}” into “${target.title}”? Their metadata sources and tracking progress will be combined.`, { title: "Merge titles", confirmLabel: "Merge" })) await keep();
+  }
+  (() => {
+    let timer = 0, start = null, drag = null, dragEndedAt = 0;
+    const clearTargets = () => document.querySelectorAll(".item-card.merge-target").forEach(card => card.classList.remove("merge-target"));
+    const finish = async (x, y, cancelled) => {
+      clearTimeout(timer);
+      if (!drag) { start = null; return; }
+      const current = drag; drag = null; start = null; current.ghost.remove(); current.source.style.opacity = ""; clearTargets(); dragEndedAt = Date.now();
+      if (cancelled) return;
+      const target = document.elementFromPoint(x, y)?.closest?.(".item-card[data-item]");
+      const from = itemById(current.id), to = target && itemById(target.dataset.item);
+      if (!from) return;
+      if (!to || from === to) { enterSelectMode(from.id); return; }
+      if (from.category !== to.category) { toast("Merge titles from the same category."); return; }
+      if (await appConfirm(`Merge “${from.title}” into “${to.title}” as one Mix title? Their source matches and tracking will be combined.`, { title: "Merge as Mix", confirmLabel: "Merge" })) await mergeLibraryItems(from.id, to.id, { confirmed: true });
+    };
+    document.addEventListener("pointerdown", event => {
+      if (page !== "dashboard" || selectMode || (event.pointerType === "mouse" && event.button !== 0)) return;
+      const card = event.target.closest?.(".item-card[data-item]"); if (!card || event.target.closest("button, a, input, select, textarea")) return;
+      start = { id: card.dataset.item, x: event.clientX, y: event.clientY };
+      timer = setTimeout(() => {
+        if (!start) return;
+        const rect = card.getBoundingClientRect(), ghost = card.cloneNode(true);
+        Object.assign(ghost.style, { position: "fixed", left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, margin: "0", zIndex: 9999, pointerEvents: "none", opacity: ".92", transform: "scale(.94)", boxShadow: "0 12px 30px rgba(0,0,0,.3)" });
+        document.body.appendChild(ghost); card.style.opacity = ".4"; drag = { id: card.dataset.item, source: card, ghost, dx: start.x - rect.left, dy: start.y - rect.top, x: start.x, y: start.y }; navigator.vibrate?.(25);
+      }, 500);
+    }, true);
+    document.addEventListener("pointermove", event => {
+      if (!drag) { if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) { clearTimeout(timer); start = null; } return; }
+      drag.x = event.clientX; drag.y = event.clientY; drag.ghost.style.left = `${event.clientX - drag.dx}px`; drag.ghost.style.top = `${event.clientY - drag.dy}px`; clearTargets(); document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".item-card[data-item]")?.classList.add("merge-target");
+    }, true);
+    document.addEventListener("pointerup", event => finish(event.clientX, event.clientY, false), true);
+    document.addEventListener("pointercancel", event => finish(event.clientX, event.clientY, true), true);
+    document.addEventListener("touchmove", event => { if (drag && event.cancelable) event.preventDefault(); }, { passive: false });
+    document.addEventListener("contextmenu", event => { if (drag || start) event.preventDefault(); }, true);
+    document.addEventListener("click", event => { if (Date.now() - dragEndedAt < 400) { event.preventDefault(); event.stopPropagation(); } }, true);
+  })();
+  function resyncAfterRelink(item, message, matchedSource = null) {
+    resetMixCheck(item);
+    item.relinkFresh = true;
+    delete item.sourceMeta; delete item.matchReview; delete item.matchOk; delete item.mixNoMatch;
+    if (matchedSource) item.sourceMeta = { [matchedSource.key]: matchedSource.meta };
+    ["localImageData", "localPortraitData", "localThumbnailData", "localLandscapeData", "thumbnailPath", "thumbnailMime", "localImageFiles", "localImageFingerprint"].forEach(key => delete item[key]);
+    item.updatedAt = Date.now(); persist({ ids: [item.id] }); detailData = null; loadDetails(item.id); toast(message);
+  }
+  function openFixMatch(id) {
+    const item = itemById(String(id)); if (!item) return;
+    const sources = window.SplitAppSources.available(item.category, prefs);
+    if (!sources.length) { toast("Enable a metadata source first."); return; }
+    let dialog = $("#fix-match-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "fix-match-dialog"; dialog.className = "choice-dialog fix-match-dialog"; document.body.appendChild(dialog); }
+    const state = { key: sources[0].key, rows: [], message: "", preview: null };
+    const paint = () => {
+      const current = itemById(String(id)); if (!current) return;
+      const preview = state.preview == null ? null : state.rows[state.preview];
+      const sourceName = sources.find(source => source.key === state.key)?.name || state.key;
+      if (preview) {
+        const fields = [["Source", sourceName], ["Year", preview.year], ["Runtime", preview.runtime || preview.runtimeMinutes], ["Genre", Array.isArray(preview.genres) ? preview.genres.join(", ") : preview.genre], ["Provider ID", preview.providerId]].filter(([, value]) => value);
+        dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">CHECK THIS MATCH</p><h2>${esc(current.title)}</h2></div><button class="choice-dialog-close" type="button" data-fix-close aria-label="Close">×</button></header><div class="fix-match-body fix-match-preview"><div class="fix-match-preview-head">${preview.image ? `<img src="${esc(preview.image)}" alt="" onerror="this.hidden=true">` : `<span class="fix-match-preview-noart">No poster</span>`}<div><small>${esc(sourceName)} result</small><h3>${esc(preview.title)}</h3><dl>${fields.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl></div></div>${preview.description ? `<p class="fix-match-preview-desc">${esc(preview.description)}</p>` : `<p class="fix-match-status">Check the title, year and poster before linking.</p>`}<div class="fix-match-preview-compare"><span>Your title</span><strong>${esc(current.title)}${current.year ? ` · ${esc(current.year)}` : ""}</strong></div><div class="fix-match-preview-actions">${/^https?:\/\//i.test(preview.url || "") ? `<a class="button secondary" href="${esc(preview.url)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>` : ""}<button type="button" class="button secondary" data-fix-back>Back</button><button type="button" class="button primary" data-fix-use="${state.preview}">Use this match</button></div></div>`;
+        return;
+      }
+      dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">FIX MATCH</p><h2>${esc(current.title)}</h2></div><button class="choice-dialog-close" type="button" data-fix-close aria-label="Close">×</button></header><div class="fix-match-body"><div class="fix-match-links">${sources.map(source => { const providerId = (current.sourceIds || {})[source.key] || (current.metadataSource === source.key ? current.providerId : ""), matchedTitle = current.sourceMeta?.[source.key]?.title; const summary = providerId ? `Linked${matchedTitle ? ` · ${matchedTitle}` : ""} · ${providerId}` : current.mixSkip?.[source.key] ? "Skipped" : current.mixNoMatch?.[source.key] ? "No match found recently" : "Not linked"; return `<div class="fix-match-link"><strong>${esc(source.name)}</strong><small>${esc(summary)}</small>${providerId && sources.length > 1 ? `<button type="button" class="button secondary small" data-fix-unlink="${esc(source.key)}">Unlink</button>` : current.mixSkip?.[source.key] ? `<button type="button" class="button secondary small" data-fix-unskip="${esc(source.key)}">Allow</button>` : ""}</div>`; }).join("")}</div><div class="fix-match-search"><select data-fix-source aria-label="Source">${sources.map(source => `<option value="${esc(source.key)}"${source.key === state.key ? " selected" : ""}>${esc(source.name)}</option>`).join("")}</select><input type="search" data-fix-query value="${esc(state.query ?? current.title)}" placeholder="Search this source"><button type="button" class="button primary small" data-fix-search>Search</button></div><p class="fix-match-status" role="status">${esc(state.message)}</p><ul class="fix-match-results">${state.rows.map((row, index) => `<li><span class="fix-match-art">${row.image ? `<img src="${esc(row.image)}" alt="" loading="lazy" onerror="this.hidden=true">` : ""}</span><span class="fix-match-copy"><strong>${esc(row.title)}</strong><small>${esc([row.year, row.description].filter(Boolean).join(" · ") || row.providerId)}</small></span><button type="button" class="button secondary small" data-fix-view="${index}">View</button><button type="button" class="button primary small" data-fix-use="${index}">Use</button></li>`).join("")}</ul></div>`;
+    };
+    const search = async () => { state.query = dialog.querySelector("[data-fix-query]")?.value.trim() || ""; state.key = dialog.querySelector("[data-fix-source]")?.value || state.key; if (!state.query) return; state.rows = []; state.preview = null; state.message = "Searching…"; paint(); try { state.rows = (await window.SplitAppDiscovery.searchSource(state.query, item.category, detailSettings(), state.key)).slice(0, 15); state.message = state.rows.length ? "Choose the correct title." : "No results from this source."; } catch (error) { state.message = error?.message || "Search failed."; } paint(); };
+    dialog.onclick = event => {
+      const current = itemById(String(id)); if (!current) return;
+      if (event.target === dialog || event.target.closest("[data-fix-close]")) { closePopup(dialog); return; }
+      if (event.target.closest("[data-fix-search]")) { search(); return; }
+      const view = event.target.closest("[data-fix-view]"); if (view) { state.preview = Number(view.dataset.fixView); paint(); return; }
+      if (event.target.closest("[data-fix-back]")) { state.preview = null; paint(); return; }
+      const use = event.target.closest("[data-fix-use]");
+      if (use) {
+        const row = state.rows[Number(use.dataset.fixUse)]; if (!row) return; const key = state.key, providerId = String(row.providerId);
+        if (current.metadataSource === "mix") { current.sourceIds = { ...(current.sourceIds || {}), [key]: providerId }; current.mixPins = { ...(current.mixPins || {}), [key]: providerId }; current.mixSkip = { ...(current.mixSkip || {}) }; delete current.mixSkip[key]; if (!current.mixPrimary?.key) current.mixPrimary = { key, providerId }; }
+        else { current.metadataSource = key; current.providerId = providerId; current.sourceIds = { ...(current.sourceIds || {}), [key]: providerId }; }
+        current.cachedDetails = null; closePopup(dialog); resyncAfterRelink(current, `Linked “${row.title}”.`, { key, meta: { title: row.title || "", year: row.year || "", url: row.url || "", image: row.image || "" } }); return;
+      }
+      const unlink = event.target.closest("[data-fix-unlink]");
+      if (unlink) { const key = unlink.dataset.fixUnlink; if (current.sourceIds) delete current.sourceIds[key]; if (current.mixPins) delete current.mixPins[key]; if (current.metadataSource === "mix") { current.mixSkip = { ...(current.mixSkip || {}), [key]: true }; if (current.mixPrimary?.key === key) delete current.mixPrimary; } else if (current.metadataSource === key) { current.metadataSource = ""; current.providerId = ""; current.cachedDetails = null; } closePopup(dialog); resyncAfterRelink(current, "Source unlinked."); }
+      const allow = event.target.closest("[data-fix-unskip]");
+      if (allow) { const key = allow.dataset.fixUnskip; current.mixSkip = { ...(current.mixSkip || {}) }; delete current.mixSkip[key]; closePopup(dialog); resyncAfterRelink(current, "Source enabled for this title."); }
+    };
+    dialog.onchange = event => { if (event.target.matches("[data-fix-source]")) { state.key = event.target.value; state.rows = []; state.preview = null; state.message = ""; paint(); } };
+    dialog.onkeydown = event => { if (event.key === "Enter" && event.target.matches("[data-fix-query]")) { event.preventDefault(); search(); } };
+    paint(); showPopup(dialog);
+  }
+  function coverCandidates(item) {
+    const details = item.cachedDetails || {}, urls = [details.portraitImage, details.image, details.landscapeImage, details.backgroundImage, item.image, item.backdrop];
+    (details.sections || []).filter(section => section.kind === "gallery").forEach(section => (section.items || []).slice(0, 8).forEach(row => urls.push(row.image)));
+    return [...new Set(urls.filter(url => /^https?:/i.test(url || "")))];
+  }
+  function openCoverPicker(id) {
+    const item = itemById(String(id)); if (!item) return;
+    let dialog = $("#cover-picker-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "cover-picker-dialog"; dialog.className = "choice-dialog cover-picker-dialog"; document.body.appendChild(dialog); }
+    const urls = coverCandidates(item);
+    dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">COVER</p><h2>${esc(item.title)}</h2></div><button class="choice-dialog-close" type="button" data-cover-close aria-label="Close">×</button></header><div class="cover-picker-body"><p class="fix-match-status">${item.customCover ? "Using your chosen cover." : "Pick a cover; it stays when metadata refreshes."}</p><div class="cover-picker-grid">${urls.map(url => `<button type="button" class="cover-choice${item.customCover === url ? " is-current" : ""}" data-cover-url="${esc(url)}"><img src="${esc(url)}" alt="" loading="lazy" onerror="this.closest('button').hidden=true"></button>`).join("")}</div>${item.customCover ? '<button type="button" class="button secondary" data-cover-auto>Use automatic cover</button>' : ""}</div>`;
+    dialog.onclick = event => { if (event.target === dialog || event.target.closest("[data-cover-close]")) { closePopup(dialog); return; } const choice = event.target.closest("[data-cover-url]"), automatic = event.target.closest("[data-cover-auto]"); if (!choice && !automatic) return; if (choice) { item.customCover = choice.dataset.coverUrl; item.image = item.customCover; } else delete item.customCover; item.updatedAt = Date.now(); persist({ ids: [item.id] }); closePopup(dialog); render(); toast(automatic ? "Automatic cover restored." : "Cover updated."); };
+    showPopup(dialog);
   }
   function openItemActions(id) {
     const item = items.find(entry => entry.id === id); if (!item) return;
@@ -1562,7 +2011,7 @@
         else if (action === "remove") {
           if (!(await appConfirm(`Remove “${target.title}” from your collection?`, { title: "Remove title", confirmLabel: "Remove", danger: true }))) return;
           if (prefs.backupBeforeDestructive) exportList({ silent: true });
-          items = items.filter(entry => entry.id !== target.id); persist({ removed: [target.id] }); render(); toast("Entry removed.");
+          recordLibraryChange("removed", `Removed ${target.title}.`, [target.id]); items = items.filter(entry => entry.id !== target.id); persist({ removed: [target.id] }); render(); toast("Entry removed.");
         } else if (action !== "cancel") { setItemStatus(target, action); render(); toast(`Marked as ${action}.`); }
       });
     }
@@ -1570,6 +2019,64 @@
     dialog.innerHTML = `<div class="ios-action-group"><p>${esc(item.title)}</p><button type="button" data-sheet-action="${esc(roles.active)}" class="accent"><i data-lucide="circle-play"></i>Mark as ${esc(roles.active)}</button><button type="button" data-sheet-action="${esc(roles.done)}" class="success"><i data-lucide="check-circle"></i>Mark as ${esc(roles.done)}</button><button type="button" data-sheet-action="edit"><i data-lucide="pencil"></i>Edit entry</button><button type="button" data-sheet-action="details"><i data-lucide="info"></i>View Full Details</button><button type="button" data-sheet-action="remove" class="danger"><i data-lucide="trash-2"></i>Remove from Collection</button></div><button type="button" class="ios-action-cancel" data-sheet-action="cancel">Cancel</button>`;
     window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
     showPopup(dialog);
+  }
+  function shareEntry(item, detail = null) {
+    const progress = Math.max(0, Number(item.progress) || 0), goal = Math.max(0, Number(item.goal) || 0);
+    const unit = config.categories.find(row => row.key === item.category)?.unit || "";
+    const fields = detail?.fields || item.cachedDetails?.fields || [];
+    const field = pattern => fields.find(row => pattern.test(String(row.label || "")))?.value || "";
+    const tags = detail?.tags || item.cachedDetails?.tags || item.cachedDetails?.genres || item.facts?.genres || field(/^genres?$/i) || [];
+    const tagList = Array.isArray(tags) ? tags : typeof tags === "string" ? tags.split(/,\s*/) : [tags];
+    const info = detail ? [field(/^director|directors|created by$/i), field(/^runtime$/i), field(/^network|studio$/i), field(/^language$/i)].filter(Boolean) : [];
+    const tagText = [...tagList.map(tag => typeof tag === "string" ? tag : tag?.name || tag?.title || ""), ...info].filter(Boolean).slice(0, 8).join(" · ");
+    return { id: String(item.id), title: item.title, subtitle: [category(item.category)?.label, item.year, tagText].filter(Boolean).join(" · "), status: item.status, rating: Number(item.rating) ? `★ ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}` : "", progressText: progress || goal ? `${progress}${goal ? ` / ${goal}` : ""}${unit ? ` ${unit}` : ""}` : "", percent: goal ? Math.min(100, Math.round(progress / goal * 100)) : null };
+  }
+  const shareCacheGet = (key, sig) => window.SplitAppIDB?.getShareCache?.(key, sig) || Promise.resolve(null);
+  const shareCachePut = (key, sig, blob) => window.SplitAppIDB?.putShareCache?.(key, sig, blob).catch(() => {});
+  async function shareLoadUrl(source, maxWidth = 720) {
+    if (!source) return null;
+    let blob = null;
+    if (/^data:image\//i.test(source)) { try { blob = await (await fetch(source)).blob(); } catch (_) {} }
+    else if (/^https?:/i.test(source)) { try { const response = await fetch(source, { mode: "cors", credentials: "omit" }); if (response.ok) blob = await response.blob(); } catch (_) {} }
+    if (!blob) return null;
+    if (window.createImageBitmap) { try { return await createImageBitmap(blob, { resizeWidth: maxWidth, resizeQuality: "medium" }); } catch (_) {} }
+    const url = URL.createObjectURL(blob);
+    return new Promise(resolve => { const image = new Image(); image.onload = () => { URL.revokeObjectURL(url); resolve(image); }; image.onerror = () => { URL.revokeObjectURL(url); resolve(null); }; image.src = url; });
+  }
+  async function shareImageFor(entry) {
+    const item = itemById(entry.id); if (!item) return null;
+    const source = item.customCover || item.localPortraitData || item.localThumbnailData || item.localImageData?.image || item.image || item.cachedDetails?.portraitImage || item.cachedDetails?.image;
+    return shareLoadUrl(source, 720);
+  }
+  function openShareList(title, selected) {
+    if (!selected.length) return;
+    const detail = selected.length === 1 && page === "details" ? detailData : null;
+    window.SplitAppShare?.open({ title, entries: selected.map(item => shareEntry(item, detail)), getImage: shareImageFor }, { showPopup, closePopup, toast, esc, cacheGet: shareCacheGet, cachePut: shareCachePut });
+  }
+  async function openShareDetail(id) {
+    const item = itemById(String(id)); if (!item) return;
+    const detail = detailData || item.cachedDetails || {};
+    const entry = shareEntry(item, detail);
+    const facts = { ...(detail.facts || {}), ...(item.facts || {}) };
+    const fields = [...(detail.fields || [])].filter(row => row?.label && String(row.value ?? "").trim());
+    const ensureField = (label, value) => { if (value && !fields.some(row => String(row.label).toLowerCase() === label.toLowerCase())) fields.push({ label, value }); };
+    ensureField("Runtime", facts.runtimeMinutes ? `${facts.runtimeMinutes} min` : "");
+    ensureField("Episodes", facts.episodeCount || ""); ensureField("Seasons", facts.seasonCount || "");
+    const sections = detail.sections || [];
+    const images = [...new Set(sections.filter(section => section.kind === "gallery").flatMap(section => (section.items || []).map(row => row.image || row.url)).filter(url => /^https?:|^data:image\//i.test(url || "")))];
+    const cast = sections.filter(section => /^(cast|characters)/i.test(section.title || "")).flatMap(section => section.items || []).slice(0, 24).map(row => `${row.title || row.name || ""}${row.meta ? ` (${row.meta})` : ""}`).filter(Boolean);
+    const episodes = sections.filter(section => section.kind === "episodes" || section.kind === "episodes-list").flatMap(section => (section.items || []).map(row => row.title || row.name || "")).filter(Boolean).slice(0, 36);
+    const overview = [String(detail.description || item.description || ""), cast.length ? `Cast\n${cast.join(" · ")}` : "", episodes.length ? `Episode guide\n${episodes.join("\n")}` : ""].filter(Boolean).join("\n\n");
+    const tags = detail.tags || facts.genres || [];
+    const languages = (detail.languages || []).map(row => typeof row === "string" ? row : row?.name).filter(Boolean);
+    const report = {
+      title: item.title, category: item.category, subtitle: [category(item.category)?.label, item.year, item.status].filter(Boolean).join(" · "),
+      status: item.status, rating: entry.rating, progressText: entry.progressText, percent: entry.percent,
+      fields, description: overview, requirements: null,
+      languages, tags: Array.isArray(tags) ? tags.map(row => typeof row === "string" ? row : row?.name).filter(Boolean) : String(tags).split(/,\s*/),
+      shotUrls: images, coverPromise: shareLoadUrl(item.customCover || item.localPortraitData || item.localThumbnailData || item.localImageData?.image || detail.portraitImage || item.image || detail.image, 720)
+    };
+    window.SplitAppShareTitle?.open(report, { showPopup, closePopup, toast, esc, loadImage: url => shareLoadUrl(url, 720) });
   }
   function openDetails(id, edit = false) { clearDetailStack(); detailReturnPage = page === "details" ? detailReturnPage : page; detailPreview = null; detailEditMode = edit; detailItemId = id; detailData = null; detailError = ""; goto("details"); loadDetails(); }
   function openDiscoverDetails(result) { if (!result) return; clearDetailStack(); detailReturnPage = "discover"; detailPreview = { ...result, metadataSource: result.source }; detailEditMode = false; detailItemId = null; detailData = null; detailError = ""; goto("details"); loadDetails(); }
@@ -1722,6 +2229,26 @@
   // Native: stream the library in small chunks to a file the user picks with Android's "Save as" screen
   // (silent: straight into the backup folder, used before destructive actions). Browsers get a normal download.
   let exportRunning = false;
+  async function exportNames(format) {
+    const columns = ["Title", "Category", "Year", "Status", "Rating", "Progress", "Goal", "Review"];
+    const quote = value => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const content = format === "txt"
+      ? items.map(item => String(item.title || "").trim()).filter(Boolean).join("\n") + "\n"
+      : [columns.map(quote).join(","), ...items.map(item => [item.title, item.category, item.year, item.status, item.rating, item.progress, item.goal, item.review || item.notes].map(quote).join(","))].join("\r\n");
+    const mime = format === "txt" ? "text/plain;charset=utf-8" : "text/csv;charset=utf-8";
+    const name = `${config.key}-titles-${new Date().toISOString().slice(0, 10)}`;
+    try {
+      const backend = window.SplitAppBackend;
+      if (nativeAndroid && backend?.exportTextFile) {
+        const saved = await backend.exportTextFile({ fileName: `${name}.${format}`, mimeType: mime, content });
+        toast(`Saved ${saved?.fileName || `${name}.${format}`}.`);
+      } else {
+        const url = URL.createObjectURL(new Blob([content], { type: mime }));
+        const link = document.createElement("a"); link.href = url; link.download = `${name}.${format}`; link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000); toast(`Exported ${items.length} titles as ${format.toUpperCase()}.`);
+      }
+    } catch (error) { toast(error?.message || "Could not export title names."); }
+  }
   async function exportList({ silent = false } = {}) {
     if (exportRunning) { toast("An export is already running."); return; }
     const backend = window.SplitAppBackend;
@@ -1749,7 +2276,40 @@
   async function importList(file) {
     if (!file) return;
     try {
-      const data = JSON.parse(await file.text()); const incoming = Array.isArray(data) ? data : data.items;
+      const text = await file.text();
+      const parseCsv = value => {
+        const rows = []; let row = [], cell = "", quoted = false;
+        for (let i = 0; i < value.length; i++) {
+          const char = value[i];
+          if (quoted && char === '"' && value[i + 1] === '"') { cell += '"'; i++; }
+          else if (char === '"') quoted = !quoted;
+          else if (!quoted && char === ",") { row.push(cell); cell = ""; }
+          else if (!quoted && (char === "\n" || char === "\r")) { if (char === "\r" && value[i + 1] === "\n") i++; row.push(cell); if (row.some(part => part.trim())) rows.push(row); row = []; cell = ""; }
+          else cell += char;
+        }
+        row.push(cell); if (row.some(part => part.trim())) rows.push(row); return rows;
+      };
+      let data, incoming;
+      if (/\.txt$/i.test(file.name)) {
+        const key = activeCategory !== "all" && config.categories.some(cat => cat.key === activeCategory) ? activeCategory : config.categories[0].key;
+        incoming = text.split(/\r?\n/).map(title => title.trim()).filter(Boolean).map(title => ({ title, category: key, status: defaultStatus(key) })); data = { items: incoming };
+      } else if (/\.csv$/i.test(file.name)) {
+        const rows = parseCsv(text); if (!rows.length) throw new Error("The CSV file has no title rows.");
+        const normalize = value => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+        const first = rows[0].map(normalize), hasHeader = first.some(value => ["title", "name"].includes(value));
+        const headers = hasHeader ? first : ["title", "category", "year", "status", "rating", "progress", "goal", "review"];
+        const records = (hasHeader ? rows.slice(1) : rows).map(row => Object.fromEntries(headers.map((header, index) => [header, row[index] || ""])));
+        const fallbackCategory = activeCategory !== "all" ? activeCategory : config.categories[0].key;
+        incoming = records.map(record => {
+          const title = String(record.title || record.name || Object.values(record)[0] || "").trim();
+          const categoryKey = config.categories.some(cat => cat.key === record.category) ? record.category : fallbackCategory;
+          const cat = config.categories.find(entry => entry.key === categoryKey);
+          return { ...record, title, category: categoryKey, status: cat?.statuses.includes(record.status) ? record.status : defaultStatus(categoryKey), year: record.year || "", rating: Number(record.rating) || 0, progress: Number(record.progress) || 0, goal: Number(record.goal) || 0 };
+        }).filter(item => item.title);
+        data = { items: incoming };
+      } else {
+        data = JSON.parse(text); incoming = Array.isArray(data) ? data : data.items;
+      }
       if (!Array.isArray(incoming)) throw new Error("No item list found in this file.");
       const now = Date.now(), idMap = new Map();
       const stamp = value => { const n = Number(value) || Date.parse(value) || 0; return n > 0 && n <= now ? n : now; };
@@ -1757,16 +2317,64 @@
       const normalized = incoming.filter(item => item && item.title).map(item => {
         const id = crypto.randomUUID();
         if (item.id != null) idMap.set(String(item.id), id);
-        return { ...item, id, category: config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key, createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
+        const categoryKey = config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key;
+        const statuses = config.categories.find(cat => cat.key === categoryKey)?.statuses || [];
+        return { ...item, id, category: categoryKey, status: item.status || defaultStatus(categoryKey), createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
       });
-      const known = new Set(items.map(item => `${item.category}:${item.title.toLowerCase()}`));
-      const fresh = normalized.filter(item => !known.has(`${item.category}:${item.title.toLowerCase()}`));
+      const identity = item => `${item.category}:${String(item.title || "").trim().toLocaleLowerCase()}`;
+      const byIdentity = new Map(items.map(item => [identity(item), item]));
+      const fresh = [], patches = [];
+      const fillFields = ["rating", "favorite", "progress", "goal", "metadataSource", "providerId", "sourceIds", "mixPrimary", "mixSources", "mixSourceKeys", "facts", "cachedDetails", "url", "description", "image", "backdrop", "year"];
+      const empty = value => value == null || value === "" || value === 0 || (Array.isArray(value) && !value.length) || (typeof value === "object" && !Array.isArray(value) && !Object.keys(value).length);
+      for (const imported of normalized) {
+        const existing = byIdentity.get(identity(imported));
+        if (!existing) { fresh.push(imported); continue; }
+        const patch = {};
+        for (const field of fillFields) if (empty(existing[field]) && !empty(imported[field])) patch[field] = imported[field];
+        // Keep ScreenMark's episode checklist and per-episode notes when filling an existing title.
+        if (Object.keys(patch).length) patches.push({ item: existing, patch });
+      }
+      const duplicateKey = title => String(title || "").toLocaleLowerCase().replace(/^the\s+/, "").replace(/\b(definitive|complete|ultimate|deluxe|enhanced|special|gold|standard|anniversary|remastered|remaster|edition|extended|director'?s cut|remake)\b/g, " ").replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
+      const nearDuplicate = (left, right) => {
+        if (left.category !== right.category) return false;
+        const a = duplicateKey(left.title), b = duplicateKey(right.title);
+        const yearA = String(left.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "", yearB = String(right.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
+        return Boolean(a && b && a === b && (yearA === yearB || !yearA || !yearB) && String(left.title).toLocaleLowerCase() !== String(right.title).toLocaleLowerCase());
+      };
+      const seenImports = [];
+      const collisions = fresh.map(item => {
+        const candidates = [...items.filter(existing => nearDuplicate(item, existing)), ...seenImports.filter(existing => nearDuplicate(item, existing))];
+        seenImports.push(item); return { item, candidates };
+      }).filter(row => row.candidates.length);
+      if (collisions.length) {
+        const accepted = new Set();
+        let dialog = $("#import-duplicate-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "import-duplicate-dialog"; dialog.className = "choice-dialog import-duplicate-dialog"; document.body.appendChild(dialog); }
+        let position = 0;
+        const paint = () => {
+          if (position >= collisions.length) { closePopup(dialog); dialog._finishDuplicateReview?.(); return; }
+          const row = collisions[position];
+          dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">POSSIBLE DUPLICATE · ${position + 1} OF ${collisions.length}</p><h2>${esc(row.item.title)}</h2></div></header><div class="ios-sheet-body"><p>These saved titles look similar:</p><ul>${row.candidates.map(candidate => `<li>${esc(candidate.title)}${candidate.year ? ` · ${esc(candidate.year)}` : ""}</li>`).join("")}</ul></div><footer class="choice-dialog-actions"><button type="button" class="button secondary" data-duplicate-skip>Skip title</button><button type="button" class="button primary" data-duplicate-keep>Import anyway</button></footer>`;
+        };
+      dialog.onclick = event => {
+        if (event.target === dialog) { closePopup(dialog); dialog._finishDuplicateReview?.(); return; }
+        if (event.target.closest("[data-duplicate-keep]")) accepted.add(rowItemId());
+        if (!event.target.closest("[data-duplicate-keep],[data-duplicate-skip]")) return;
+        position++; if (position >= collisions.length) { closePopup(dialog); dialog._finishDuplicateReview?.(); return; } paint();
+      };
+        const rowItemId = () => collisions[position]?.item.id;
+        paint(); showPopup(dialog);
+        await new Promise(resolve => { dialog._finishDuplicateReview = resolve; });
+        const keepIds = accepted;
+        for (const collision of collisions) if (!keepIds.has(collision.item.id)) fresh.splice(fresh.indexOf(collision.item), 1);
+      }
       const freshIds = new Set(fresh.map(item => item.id));
       let importedHistory = (Array.isArray(data.history) ? data.history : []).filter(entry => entry && idMap.has(String(entry.itemId)) && freshIds.has(idMap.get(String(entry.itemId)))).map(entry => ({ ...entry, itemId: idMap.get(String(entry.itemId)) }));
       if (!importedHistory.length) importedHistory = fresh.filter(item => trackedStatuses.includes(item.status)).map(item => ({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: item.updatedAt }));
       items = [...fresh, ...items];
+      for (const { item, patch } of patches) Object.assign(item, patch, { updatedAt: Date.now() });
       history = [...importedHistory, ...history].sort((a, c) => (Number(c.at) || Date.parse(c.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0));
-      persist(); render(); toast(`Imported ${fresh.length} ${fresh.length === 1 ? "entry" : "entries"}.`);
+      recordLibraryChange("imported", `Imported ${fresh.length} ${fresh.length === 1 ? "title" : "titles"}.`, fresh.map(item => item.id));
+      persist(); render(); toast(`Imported ${fresh.length} ${fresh.length === 1 ? "entry" : "entries"}${patches.length ? ` and restored details for ${patches.length} existing ${patches.length === 1 ? "title" : "titles"}` : ""}.`);
     } catch (error) { toast(error.message || "Could not import this file."); }
   }
   function resetDashboard() {
@@ -1806,6 +2414,20 @@
     if (addCategoryButton) { applyAddCategory(addCategoryButton.dataset.addCategory); return; }
     const categoryFilter = event.target.closest("[data-category-filter]");
     if (categoryFilter) { activeCategory = categoryFilter.dataset.categoryFilter || "all"; render(); return; }
+    const shareTitle = event.target.closest('[data-action="share-title"]');
+    if (shareTitle) {
+      const item = itemById(shareTitle.dataset.id);
+      if (item) openShareDetail(item.id);
+      return;
+    }
+    const shareGroup = event.target.closest("[data-share-group]");
+    if (shareGroup) {
+      let ids = [];
+      try { ids = JSON.parse(shareGroup.dataset.shareIds || "[]"); } catch (_) {}
+      const selected = ids.map(itemById).filter(Boolean);
+      openShareList(shareGroup.getAttribute("aria-label")?.replace(/^Share\s+/i, "") || "Collection", selected);
+      return;
+    }
     const quickStatus = event.target.closest("[data-quick-status]");
     if (quickStatus) { setPreference("dashboardStatusFilter", quickStatus.dataset.quickStatus); return; }
     const detailStatus = event.target.closest("[data-detail-status-btn]");
@@ -1819,12 +2441,16 @@
     }
     const itemMenu = event.target.closest("[data-open-item-actions]");
     if (itemMenu) { openItemActions(itemMenu.dataset.openItemActions); return; }
+    const fixMatch = event.target.closest("[data-fix-match]");
+    if (fixMatch) { event.preventDefault(); event.stopPropagation(); openFixMatch(fixMatch.dataset.fixMatch); return; }
+    const changeCover = event.target.closest("[data-change-cover]");
+    if (changeCover) { event.preventDefault(); event.stopPropagation(); openCoverPicker(changeCover.dataset.changeCover); return; }
     const dashboardViewChoice = event.target.closest("button[data-dashboard-view]");
     if (dashboardViewChoice) { setPreference("dashboardView", dashboardViewChoice.dataset.dashboardView); return; }
     const dashboardSortChoice = event.target.closest("button[data-dashboard-sort]");
     if (dashboardSortChoice) { setPreference("dashboardSort", dashboardSortChoice.dataset.dashboardSort); return; }
     if (event.target.closest("[data-close-dashboard-filter]")) { closePopup($("#dashboard-filter-dialog")); return; }
-    if (event.target.closest("[data-reset-dashboard-filter]")) { dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; persist({ meta: true }); closePopup($("#dashboard-filter-dialog")); render(); return; }
+    if (event.target.closest("[data-reset-dashboard-filter]")) { dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; activeCategory = "all"; prefs.favoritesOnly = false; libraryQuery = ""; prefs.dashboardView = "list"; prefs.dashboardSort = "alphabetical-asc"; prefs.dashboardGroupBy = "status"; persist({ meta: true }); applyPreferences(); historyPush(); closePopup($("#dashboard-filter-dialog")); render(); return; }
     const dashboardLoader = event.target.closest("[data-dashboard-load-more]");
     if (dashboardLoader) { dashboardLazyObserver?.unobserve(dashboardLoader); loadDashboardMore(dashboardLoader); if (dashboardLoader.isConnected) dashboardLazyObserver?.observe(dashboardLoader); return; }
     const detailImage = event.target.closest("[data-detail-image-src]");
@@ -1967,8 +2593,42 @@
       else refreshBackupFolderStatus();
       return;
     }
+    if (event.target.closest("[data-log-dates-clear]")) { if (settingsGroup === "history") { historyFrom = ""; historyTo = ""; } else { logFrom = ""; logTo = ""; } render(); return; }
+    if (event.target.closest("[data-open-log-filter]")) { showPopup($("#log-filter-dialog")); return; }
+    if (event.target.closest("[data-close-log-filter]")) { closePopup($("#log-filter-dialog")); return; }
+    const logRangeButton = event.target.closest("[data-log-range]");
+    if (logRangeButton) {
+      const now = new Date(), to = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      const fromDate = new Date(now); if (logRangeButton.dataset.logRange !== "today") fromDate.setDate(fromDate.getDate() - Number(logRangeButton.dataset.logRange) + 1);
+      const from = new Date(fromDate.getTime() - fromDate.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      $("[data-log-filter-from]").value = from; $("[data-log-filter-to]").value = to; return;
+    }
+    if (event.target.closest("[data-log-filter-apply]")) {
+      const from = $("[data-log-filter-from]")?.value || "", to = $("[data-log-filter-to]")?.value || "";
+      if (settingsGroup === "history") { historyFrom = from; historyTo = to; } else { logFrom = from; logTo = to; }
+      closePopup($("#log-filter-dialog")); render(); return;
+    }
+    if (event.target.closest("[data-log-filter-clear]")) {
+      if (settingsGroup === "history") { historyFrom = ""; historyTo = ""; } else { logFrom = ""; logTo = ""; }
+      closePopup($("#log-filter-dialog")); render(); return;
+    }
     const logAction = event.target.closest("[data-log-action]");
-    if (logAction?.dataset.logAction === "clear") { localStorage.removeItem(`${storageKey}_log`); render(); toast("Logs cleared."); return; }
+    if (logAction?.dataset.logAction === "clear") { localStorage.removeItem(`${storageKey}_log`); window.SplitAppBackend?.clearJournal?.("logcat"); logEntries = []; render(); toast("Logs cleared."); return; }
+    if (logAction?.dataset.logAction === "clear-history") { localStorage.removeItem(`${storageKey}_history`); window.SplitAppBackend?.clearJournal?.("history"); render(); toast("History cleared."); return; }
+    const syncAction = event.target.closest("[data-metadata-sync-action]");
+    if (syncAction) { if (syncAction.dataset.metadataSyncAction === "start") syncMetadataNow(); else if (syncAction.dataset.metadataSyncAction === "retry") retryMetadataSync(syncAction.dataset.id || null); else if (syncAction.dataset.metadataSyncAction === "clear") clearMetadataSyncState(); return; }
+    const matchReviewOk = event.target.closest("[data-match-review-ok]");
+    if (matchReviewOk) {
+      const item = itemById(String(matchReviewOk.dataset.matchReviewOk)); if (!item) return;
+      item.matchOk = { ...(item.matchOk || {}) };
+      (item.matchReview || []).forEach(flag => { item.matchOk[flag.key] = flag.providerId || item.sourceIds?.[flag.key] || ""; });
+      delete item.matchReview; persist({ ids: [item.id] }); render(); toast("Match marked as correct."); return;
+    }
+    if (event.target.closest("[data-match-review-ok-all]")) {
+      const reviewed = [];
+      items.forEach(item => { if (!item.matchReview?.length) return; item.matchOk = { ...(item.matchOk || {}) }; item.matchReview.forEach(flag => { item.matchOk[flag.key] = flag.providerId || item.sourceIds?.[flag.key] || ""; }); delete item.matchReview; reviewed.push(item.id); });
+      if (reviewed.length) { persist({ ids: reviewed }); render(); toast("Matches marked as correct."); } return;
+    }
     const settingPicker = event.target.closest("[data-setting-picker]");
     if (settingPicker) { openSettingPicker(settingPicker); return; }
     if (event.target.closest("[data-close-setting-picker]")) { closePopup($("#setting-picker-dialog")); return; }
@@ -2041,7 +2701,7 @@
     const settingAction = event.target.closest("[data-setting-action]");
     if (settingAction && settingAction.type !== "file") {
       const key = settingAction.dataset.settingAction;
-      if (key === "export") exportList(); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
+      if (key === "export") exportList(); else if (key === "export-txt") exportNames("txt"); else if (key === "export-csv") exportNames("csv"); else if (key === "sync-metadata") syncMetadataNow(); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
       else if (key.startsWith("clear-")) {
         clearAppCaches(key === "clear-images" ? "images" : key === "clear-metadata" ? "metadata" : "temporary");
         toast("Temporary cache cleared.");
@@ -2132,6 +2792,7 @@
     }
   });
   document.addEventListener("input", event => {
+    if (event.target.matches("[data-log-search]")) { if (settingsGroup === "history") historyQuery = event.target.value; else logQuery = event.target.value; const list = $(".logcat-list"); if (list) { const query = (settingsGroup === "history" ? historyQuery : logQuery).toLowerCase(); list.querySelectorAll(".logcat-entry").forEach(row => { row.hidden = !row.textContent.toLowerCase().includes(query); }); } return; }
     if (event.target.matches("[data-detail-notes]")) {
       const item = items.find(row => row.id === detailItemId);
       if (item) { item.notes = event.target.value; item.updatedAt = Date.now(); persist({ ids: [item.id] }); }
@@ -2212,6 +2873,7 @@
     timelineSearch = form.elements["timeline-search"].value.trim();
     timelineMonth = form.elements["timeline-month"].value;
     timelineYear = form.elements["timeline-year"].value;
+    timelineFrom = form.elements["timeline-from"]?.value || ""; timelineTo = form.elements["timeline-to"]?.value || "";
     closePopup($("#timeline-filter-dialog")); render();
   });
   $("#bottom-bar").addEventListener("click", event => {
@@ -2268,9 +2930,10 @@
   $("[data-close-setting-picker]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#setting-picker-dialog")); });
   $("#floating-add").addEventListener("click", () => openItem());
   function syncRouteFromHash() {
+    rememberScroll();
     const [hashPath, hashQuery = ""] = location.hash.slice(1).split("?");
     const route = hashPath.split("/"); const next = route[0];
-    if (next === "search") { page = "dashboard"; settingsGroup = null; historyPush(); render(); syncPageNavigation(); return; }
+    if (next === "search") { page = "dashboard"; settingsGroup = null; historyPush(); render(); syncPageNavigation(); restoreScroll(); return; }
     if (!(next in titles)) return;
     if (next !== "discover") { discoverQuery = ""; discoverRequestId++; }
     if (next !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
@@ -2283,7 +2946,7 @@
     statsSubpage = next === "statistics" && statsSections.includes(route[1]) ? normalizeStatsSection(route[1]) : "";
     document.body.dataset.navDir = "back";
     if (next === "details") { const id = detailIdFromQuery(hashQuery); if (id && id !== detailItemId) { detailItemId = id; detailPreview = null; detailData = null; detailError = ""; render(); syncPageNavigation(); loadDetails(); return; } }
-    render(); syncPageNavigation(); window.scrollTo({ top: 0, behavior: "auto" });
+    render(); syncPageNavigation(); restoreScroll();
   }
   document.addEventListener("keydown", event => { if (event.key === "Enter" && event.target?.id === "mix-query") { event.preventDefault(); runMixSearch(); } });
   window.addEventListener("popstate", event => {
@@ -2314,8 +2977,17 @@
   });
   window.addEventListener("hashchange", syncRouteFromHash);
   window.addEventListener("storage", event => { if (event.key === storageKey) toast("Library changed in another tab."); });
-  window.addEventListener("beforeunload", flushPersist);
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushPersist(); });
+  window.addEventListener("beforeunload", () => { flushPersist(); window.SplitAppBackend?.flushJournals?.(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { flushPersist(); window.SplitAppBackend?.flushJournals?.(); if (metadataSync) recordLog("info", "Metadata refresh pauses while the app is hidden and resumes when visible."); } else if (!metadataSync && metadataSyncState?.entries?.some(entry => ["queued", "running"].includes(entry.status))) startMetadataSync(null, true); });
+  window.addEventListener("online", () => { if (!metadataSync && metadataSyncState?.entries?.some(entry => ["queued", "running"].includes(entry.status))) startMetadataSync(null, true); });
+  document.addEventListener("input", event => {
+    if (!event.target.matches("[data-log-search]")) return;
+    logQuery = event.target.value; clearTimeout(searchRenderTimer); searchRenderTimer = setTimeout(render, 120);
+  });
+  document.addEventListener("change", event => {
+    if (event.target.matches("[data-log-from]")) { if (settingsGroup === "history") historyFrom = event.target.value; else logFrom = event.target.value; render(); }
+    else if (event.target.matches("[data-log-to]")) { if (settingsGroup === "history") historyTo = event.target.value; else logTo = event.target.value; render(); }
+  });
   window.addEventListener("error", event => recordLog("error", event.message || "Unknown page error"));
   window.addEventListener("unhandledrejection", event => recordLog("error", event.reason?.message || event.reason || "Unhandled promise rejection"));
   async function restoreNativeData({ fast = false } = {}) {
@@ -2404,6 +3076,7 @@
     }
     if (storageFolderGate) storageFolderGate.hidden = true;
     applyPreferences(); render(); syncBackupSchedule();
+    if (metadataSyncState?.entries?.some(entry => ["queued", "running"].includes(entry.status))) startMetadataSync(null, true);
     if (page === "details" && detailItemId && !detailPreview) loadDetails();
   };
   // Phase 1: paint the library straight from IndexedDB (instant). Phase 2: reconcile with the saved folder /
@@ -2417,11 +3090,13 @@
       const full = await restoreNativeData();
       if (full === false) finishStartup(false);
       else if (full && libraryStamp() !== before) { applyPreferences(); render(); } // keep scroll position when nothing changed
+      if (full) checkLibraryDrift();
       setTimeout(fillThumbCache, 1500);
       return;
     }
     const full = await restoreNativeData();
     finishStartup(full);
+    if (full) checkLibraryDrift();
     setTimeout(fillThumbCache, 3000);
   });
 })();

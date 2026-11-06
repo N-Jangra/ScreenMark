@@ -2,7 +2,7 @@
 (() => {
   window.SplitAppPages = window.SplitAppPages || {};
   window.SplitAppPages.settings = context => {
-    const { config, prefs, items, history, logEntries = [], settingsParam = "", settingsFrom = "", esc, safeLucideName = value => value, settingsGroup, navItems, metadataSourceFilter = "all", libraryBytes = 0 } = context;
+    const { config, prefs, items, history, changeLog = [], logEntries = [], metadataSyncState = null, logQuery = "", logFrom = "", logTo = "", historyQuery = "", historyFrom = "", historyTo = "", settingsParam = "", settingsFrom = "", esc, safeLucideName = value => value, settingsGroup, navItems, metadataSourceFilter = "all", libraryBytes = 0 } = context;
     const themeOptions = [["light", "Light"], ["dark", "Dark"], ["grey", "Grey"], ["amoled", "AMOLED"], ["flashbang", "Flashbang"], ["material-you", "Material You"], ["ocean", "Ocean"], ["forest", "Forest"], ["sunset", "Sunset"], ["rose", "Rose"], ["lavender", "Lavender"], ["nord", "Nord"], ["sand", "Sand"], ["mint", "Mint"], ["system", "System"]].map(([value, label]) => `${value}|${label}`);
     const fontOptions = ["system|System Default", "inter|Inter", "outfit|Outfit", "serif|Serif", "monospace|Monospace", "rounded|Rounded", "poppins|Poppins", "roboto|Roboto", "nunito|Nunito", "lato|Lato", "merriweather|Merriweather", "jetbrains-mono|JetBrains Mono", "open-sans|Open Sans", "montserrat|Montserrat", "oswald|Oswald", "raleway|Raleway", "ubuntu|Ubuntu", "playfair-display|Playfair Display", "fira-sans|Fira Sans", "rubik|Rubik", "quicksand|Quicksand", "caveat|Caveat"];
     const mainColors = [["#6366f1", "Indigo"], ["#f472b6", "Carnation Pink"], ["#16a34a", "Dark Green"], ["#b91c1c", "Maroon"], ["#2563eb", "Navy Blue"], ["#64748b", "Grey"], ["#e2e8f0", "White"], ["#a16207", "Brown"], ["#06b6d4", "Cool Cyan"], ["#f97316", "Fire"], ["#7c3aed", "Burple"], ["#22c55e", "Green"], ["#65a30d", "Apple"], ["#eab308", "Banan"], ["#f43f5e", "Party"], ["#fb7185", "Pink"], ["#8b5cf6", "Material You"]].map(([value, label]) => `${value}|${label}`);
@@ -46,18 +46,29 @@
         ["Automatic Completion", "automaticCompletion", "select", ["automatic|Automatic", "ask|Ask me", "manual|Manual"]], ["Default Status", "defaultStatus", "select", [...new Set(config.categories.flatMap(cat => cat.statuses))].map(status => `${status}|${status}`)]
       ]},
       { id: "backups", title: "Backups & sync", description: "Import, export, and protect your library data.", icon: "database-backup", settings: [
-        ["Export List", "export", "action"], ["Import List", "import", "file"],
+        ["Export List", "export", "action"], ["Export Names (TXT)", "export-txt", "action"], ["Export Names (CSV)", "export-csv", "action"], ["Import List", "import", "file"],
         ["Backup Schedule", "backupSchedule", "select", ["never|Never", "daily|Daily"]], ["Backup Retention", "backupRetention", "select", ["3|Keep 3 backups", "5|Keep 5 backups", "10|Keep 10 backups", "20|Keep 20 backups"]],
         ["Backup Before Destructive Actions", "backupBeforeDestructive", "toggle"], ["Storage", "storageInfo", "page", { page: "storage-details", value: "View details" }], ["Folder Sync Delay", "folderSyncDelay", "select", ["0|Immediately", "30|30 seconds", "60|1 minute", "300|5 minutes"]],
       ]},
       { id: "metadata", title: "Metadata", description: "Manage online sources, refresh, and artwork.", icon: "database", settings: [
-        ["Metadata Mode", "metadataMode", "select", ["online|Online", "offline|Offline"]], ["Metadata Sources", "metadataSources", "page", { page: "metadata-sources", value: "Manage" }], ["Metadata Refresh Interval", "metadataRefreshInterval", "select", ["daily|Daily", "weekly|Weekly", "monthly|Monthly", "never|Never"]], ["Offline Fallback", "offlineFallback", "select", ["cached|Use cached metadata", "none|Show no metadata"]], ["Thumbnail Size", "thumbnailSize", "select", ["small|Small", "medium|Medium", "large|Large"]],
+        ["Metadata Mode", "metadataMode", "select", ["online|Online", "offline|Offline"]], ["Metadata Sources", "metadataSources", "page", { page: "metadata-sources", value: "Manage" }], ["Sync controls", "metadata-sync", "page", { page: "metadata-sync", value: "Configure" }], ["Metadata Refresh Interval", "metadataRefreshInterval", "select", ["daily|Daily", "weekly|Weekly", "monthly|Monthly", "never|Never"]], ["Offline Fallback", "offlineFallback", "select", ["cached|Use cached metadata", "none|Show no metadata"]], ["Thumbnail Size", "thumbnailSize", "select", ["small|Small", "medium|Medium", "large|Large"]], ["Refresh Saved Metadata", "sync-metadata", "action", "Refresh details for every saved title from enabled sources."],
+      ]},
+      { id: "metadata-sync", title: "Metadata Sync", description: "Tune refresh speed, timeouts and retries.", icon: "refresh-cw", settings: [
+        ["Refresh status", "syncStatus", "page", { page: "sync", value: "View status" }],
+        ["Default refresh scope", "syncScope", "select", ["needed|Missing or stale metadata", "missing|Titles with missing details", "all|Every saved title"]],
+        ["Refresh needed titles", "syncRunNeeded", "action", "Refresh titles missing metadata or past the refresh interval."], ["Refresh titles with missing details", "syncRunMissing", "action"], ["Retry failed refreshes", "syncRunFailed", "action"], ["Refresh every saved title", "syncRunAll", "action"],
+        ["Titles at a time", "metadataSyncWorkers", "select", ["1|1 title", "2|2 titles", "3|3 titles"]],
+        ["Sources per title", "syncMaxSources", "select", ["0|All enabled sources", "1|1 source", "2|Up to 2 sources", "3|Up to 3 sources"]],
+        ["Wait between titles", "syncRequestDelay", "select", ["0|No wait", "250|0.25 seconds", "1000|1 second", "2000|2 seconds"]],
+        ["Request timeout", "syncTimeout", "select", ["10|10 seconds", "20|20 seconds", "25|25 seconds", "40|40 seconds"]],
+        ["Retries per source", "syncRetries", "select", ["0|None", "1|Once", "2|Twice"]],
+        ["Wait before retry", "syncRetryDelay", "select", ["1|1 second", "2|2 seconds", "5|5 seconds", "10|10 seconds"]]
       ]},
       { id: "storage", title: "Metadata & Storage", description: "Manage cached images and clear caches.", icon: "hard-drive", settings: [
         ["Image storage", "imageStorage", "select", ["all|Save all images", "posters|Posters and covers only", "online|Online only"]],
         ["Clear All Temporary Cache", "clear-cache", "action"], ["Clear Image Cache", "clear-images", "action", "Remove cached thumbnails."], ["Clear Metadata Cache", "clear-metadata", "action", "Tracked data is not affected."],
       ]},
-      { id: "info", title: "App Info", description: "View app details and diagnostic logs.", icon: "info", settings: [["App Info", "appInfo", "page", { page: "app-info", value: "View details" }], ["Logcat", "logcat", "page", { page: "logcat", value: "View logs" }]] }
+      { id: "info", title: "App Info", description: "View app details and diagnostic logs.", icon: "info", settings: [["App Info", "appInfo", "page", { page: "app-info", value: "View details" }], ["Library history", "history", "page", { page: "history", value: "View changes" }], ["Logcat", "logcat", "page", { page: "logcat", value: "View logs" }]] }
     ];
 
     function control(setting) {
@@ -75,14 +86,14 @@
       if (type === "page") {
         const bytes = libraryBytes;
         const value = options.page === "storage-details" ? `${items.length} ${items.length === 1 ? "entry" : "entries"} · ${formatBytes(bytes)} used` : options.value || "Manage";
-        return `<a class="setting-page-link" href="#settings/${esc(options.page)}"><span>${esc(value)}</span><span class="settings-chevron" aria-hidden="true">›</span></a>`;
+        return `<a class="setting-page-link" href="${options.page === "sync" ? "#sync" : `#settings/${esc(options.page)}`}" ><span>${esc(value)}</span><span class="settings-chevron" aria-hidden="true">›</span></a>`;
       }
       if (type === "action") {
         if (key === "resetDashboard" || key === "resetAppearance" || key === "resetAnimations") return `<button type="button" class="setting-reset-action" data-setting-action="${key}">Reset <span aria-hidden="true">↻</span></button>`;
         if (key.startsWith("clear-")) return `<button type="button" class="setting-cache-clear" data-setting-action="${key}">Clear</button>`;
-        return `<button class="button secondary small" data-setting-action="${key}">${key === "export" ? "Export" : key.startsWith("clear-") ? "Clear" : "Open"}</button>`;
+        return `<button class="button secondary small" data-setting-action="${key}">${key === "export" ? "Export" : key === "export-txt" ? "TXT" : key === "export-csv" ? "CSV" : key === "sync-metadata" ? "Refresh" : key.startsWith("syncRun") ? "Run" : key.startsWith("clear-") ? "Clear" : "Open"}</button>`;
       }
-      if (type === "file") return `<label class="button secondary small file-button">Choose file<input type="file" accept=".json,application/json" data-setting-action="import" hidden></label>`;
+      if (type === "file") return `<label class="button secondary small file-button">Choose file<input type="file" accept=".json,.txt,.csv,application/json,text/plain,text/csv" data-setting-action="import" hidden></label>`;
       if (type === "info") {
         const used = libraryBytes;
         const size = used < 1024 * 1024 ? `${(used / 1024).toFixed(1)} KB` : `${(used / 1024 / 1024).toFixed(1)} MB`;
@@ -99,6 +110,7 @@
         tracking: { "Automatic Completion": "PROGRESS", "Default Status": "PROGRESS" },
         backups: { "Export List": "BACKUP AND RESTORE", "Import List": "BACKUP AND RESTORE", "Backup Schedule": "BACKUP SCHEDULE", "Backup Retention": "BACKUP SCHEDULE", "Backup Before Destructive Actions": "BACKUP SCHEDULE", Storage: "BACKUP AND RESTORE", "Folder Sync Delay": "BACKUP SCHEDULE", "Backup Password Reminder": "BACKUP SCHEDULE", "Maximum Backup Size": "BACKUP SCHEDULE", "Validate Backup Location": "BACKUP SCHEDULE", "Restore Preview": "BACKUP AND RESTORE" },
         metadata: { "Metadata Mode": "SOURCES", "Metadata Sources": "SOURCES", "Metadata Refresh Interval": "UPDATES", "Metadata Retry Limit": "UPDATES", "Offline Fallback": "UPDATES", "Metadata Sync Frequency": "UPDATES", "Metadata Sync Workers": "UPDATES", "Automatic Thumbnail Cleanup": "ARTWORK", "Metadata Thumbnails": "ARTWORK", "Thumbnail Size": "ARTWORK", "Thumbnail Quality": "ARTWORK" },
+        "metadata-sync": { "Refresh status": "STATUS", "Default refresh scope": "RUN NOW", "Refresh needed titles": "RUN NOW", "Refresh titles with missing details": "RUN NOW", "Retry failed refreshes": "RUN NOW", "Refresh every saved title": "RUN NOW", "Titles at a time": "PERFORMANCE", "Sources per title": "PERFORMANCE", "Wait between titles": "PERFORMANCE", "Request timeout": "TIMEOUTS AND RETRIES", "Retries per source": "TIMEOUTS AND RETRIES", "Wait before retry": "TIMEOUTS AND RETRIES" },
         storage: { "Image storage": "IMAGES", "Clear All Temporary Cache": "CACHE MANAGEMENT", "Clear Image Cache": "CACHE MANAGEMENT", "Clear Metadata Cache": "CACHE MANAGEMENT", "Limit Image Cache": "CACHE MANAGEMENT", "Background Encrypted Backups": "STORAGE AND BACKUPS", "Storage Warning Limit": "STORAGE AND BACKUPS", "Backup Storage Limit": "STORAGE AND BACKUPS" },
         info: { "App Info": "APPLICATION", Logcat: "DIAGNOSTICS" }
       }[group.id] || {};
@@ -110,6 +122,8 @@
       Object.assign(descriptions, { reduceMotion: "Minimize transitions and animation.", animationSpeed: "How quickly things move.", animationCustom: "Scale every animation: 100% is normal.", animationEasing: "The motion curve: smooth, springy, bouncy or steady.", pageTransition: "How a screen appears when you open it.", cardEntrance: "How cards and rows appear on a screen.", animationStagger: "Let the first cards appear one after another.", sheetAnimation: "How menus and dialogs open.", pressEffect: "What buttons do when you tap them.", hoverLift: "Raise cards slightly under the mouse.", navBounce: "Bounce the selected navigation icon.", progressAnimation: "Animate progress bars when they change.", skeletonShimmer: "Shimmer on placeholders while content loads.", previewAnimations: "Replay the page transition and card entrance.", resetAnimations: "Restore the default animation settings." });
       icons.resetAppearance = "rotate-ccw";
       descriptions.resetAppearance = "Restore the default appearance and navigation settings.";
+      Object.assign(icons, { syncStatus: "list-checks", syncScope: "list-filter", syncRunNeeded: "list-checks", syncRunMissing: "database-zap", syncRunFailed: "rotate-cw", syncRunAll: "refresh-cw", metadataSyncWorkers: "layers-3", syncMaxSources: "network", syncRequestDelay: "timer", syncTimeout: "timer", syncRetries: "repeat", syncRetryDelay: "clock-3" });
+      Object.assign(descriptions, { syncStatus: "Review refresh progress, failures and uncertain provider matches.", syncScope: "Choose what the Metadata page refresh action checks.", syncRunNeeded: "Refresh titles missing metadata or past the refresh interval.", syncRunMissing: "Refresh only titles without saved details.", syncRunFailed: "Retry the failed titles from the last refresh.", syncRunAll: "Re-check every saved title using enabled sources.", metadataSyncWorkers: "Choose how many saved titles to refresh at once.", syncMaxSources: "Limit sources checked per title. Previously linked sources are kept.", syncRequestDelay: "Space out the start of refresh requests.", syncTimeout: "Stop waiting after this many seconds per provider request.", syncRetries: "Retry temporary provider failures before marking them failed.", syncRetryDelay: "Increase the wait between retry attempts." });
       const sectionRows = new Map();
       const resetSetting = group.settings.find(setting => ["resetAppearance", "resetDashboard", "resetAnimations"].includes(setting[1]));
       group.settings.forEach(setting => {
@@ -243,12 +257,41 @@ ${native ? "" : `<p class="source-note">Browsers cannot send a custom user agent
     }
 
     function renderLogcat() {
-      const rows = logEntries.map(entry => {
+      const activeRange = Boolean(logFrom || logTo);
+      const logSearch = `<div class="log-search-row"><label class="search-box log-search"><i data-lucide="search" aria-hidden="true"></i><input id="log-search" data-log-search type="search" value="${esc(logQuery)}" placeholder="Search all logs" autocomplete="off"></label><button type="button" class="log-filter-button${activeRange ? " active" : ""}" data-open-log-filter aria-label="Filter logs by date" aria-haspopup="dialog"><i data-lucide="calendar-range" aria-hidden="true"></i>${activeRange ? `<span class="log-filter-dot"></span>` : ""}</button></div>${activeRange ? `<div class="log-filter-chip">${esc(logFrom || "Any date")} – ${esc(logTo || "Today")}<button type="button" data-log-dates-clear aria-label="Clear date filter">×</button></div>` : ""}<dialog id="log-filter-dialog" class="choice-dialog log-filter-dialog"><div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">LOGCAT</p><h2>Filter by date</h2></div><button type="button" class="choice-dialog-close" data-close-log-filter aria-label="Close">×</button></header><div class="log-filter-body"><label>From<input type="date" data-log-filter-from value="${esc(logFrom)}"></label><label>To<input type="date" data-log-filter-to value="${esc(logTo)}"></label><div class="log-filter-quick"><button type="button" class="button secondary small" data-log-range="today">Today</button><button type="button" class="button secondary small" data-log-range="7">7 days</button><button type="button" class="button secondary small" data-log-range="30">30 days</button></div><footer class="log-filter-actions"><button type="button" class="button secondary" data-log-filter-clear>Clear</button><button type="button" class="button primary" data-log-filter-apply>Apply</button></footer></div></dialog>`;
+      const from = logFrom ? new Date(`${logFrom}T00:00:00`).getTime() : 0, to = logTo ? new Date(`${logTo}T23:59:59.999`).getTime() : Infinity;
+      const filteredLogs = logEntries.filter(entry => (!logQuery || `${entry.level} ${entry.message}`.toLowerCase().includes(logQuery.toLowerCase())) && (Date.parse(entry.at) || Number(entry.at) || 0) >= from && (Date.parse(entry.at) || Number(entry.at) || 0) <= to).slice(0, 300);
+      const rows = filteredLogs.map(entry => {
         const level = String(entry.level || "info"), when = entry.at ? new Date(entry.at).toLocaleString() : "Unknown time";
-        return `<article class="logcat-entry logcat-entry-${esc(level)}"><div class="logcat-entry-meta"><strong class="logcat-level logcat-level-${esc(level)}">${esc(level)}</strong><time>${esc(when)}</time></div><p>${esc(entry.message || "")}</p></article>`;
+        return `<article class="logcat-entry logcat-entry-${esc(level)}"><div class="logcat-entry-meta"><strong class="logcat-level logcat-level-${esc(level)}">${esc(level)}</strong><time datetime="${esc(entry.at || "")}">${esc(when)}</time></div><p>${esc(entry.message || "")}</p></article>`;
       }).join("");
       const errors = logEntries.filter(entry => entry.level === "error").length, warnings = logEntries.filter(entry => entry.level === "warn" || entry.level === "warning").length;
-      return `<section class="settings-page settings-detail-page logcat-page">${pageHeader("Logcat", "info")}<section class="logcat-summary"><span class="logcat-summary-icon" aria-hidden="true"><i data-lucide="terminal"></i></span><div class="logcat-summary-copy"><strong>${logEntries.length} ${logEntries.length === 1 ? "entry" : "entries"}</strong><small>${errors} ${errors === 1 ? "error" : "errors"} · ${warnings} ${warnings === 1 ? "warning" : "warnings"}</small></div><button type="button" class="logcat-clear-button" data-log-action="clear" ${logEntries.length ? "" : "disabled"}><i data-lucide="trash-2" aria-hidden="true"></i> Clear</button></section>${rows ? `<div class="logcat-list">${rows}</div>` : `<div class="logcat-empty"><span aria-hidden="true"><i data-lucide="check-circle-2"></i></span><strong>No logs yet</strong><p>New app diagnostics will appear here.</p></div>`}</section>`;
+      return `<section class="settings-page settings-detail-page logcat-page">${pageHeader("Logcat", "info")}<section class="logcat-summary"><span class="logcat-summary-icon" aria-hidden="true"><i data-lucide="terminal"></i></span><div class="logcat-summary-copy"><strong>${logEntries.length} ${logEntries.length === 1 ? "entry" : "entries"}</strong><small>${errors} ${errors === 1 ? "error" : "errors"} · ${warnings} ${warnings === 1 ? "warning" : "warnings"}</small></div><button type="button" class="logcat-clear-button" data-log-action="clear" ${logEntries.length ? "" : "disabled"}><i data-lucide="trash-2" aria-hidden="true"></i> Clear</button></section>${logSearch}${rows ? `<div class="logcat-list">${rows}</div>` : `<div class="logcat-empty"><span aria-hidden="true"><i data-lucide="check-circle-2"></i></span><strong>${logQuery || logFrom || logTo ? "No matching logs" : "No logs yet"}</strong><p>${logQuery || logFrom || logTo ? "Try a different search or date range." : "New app diagnostics will appear here."}</p></div>`}</section>`;
+    }
+
+    function renderHistory() {
+      const labels = { added: "Added", removed: "Removed", restored: "Restored", merged: "Merged", imported: "Imported", status: "Status", favorite: "Favorite", cleared: "Cleared", lost: "Missing" };
+      const activeRange = Boolean(historyFrom || historyTo);
+      const from = historyFrom ? new Date(`${historyFrom}T00:00:00`).getTime() : 0, to = historyTo ? new Date(`${historyTo}T23:59:59.999`).getTime() : Infinity;
+      const rows = history.filter(entry => {
+        const at = Number(entry.at) || Date.parse(entry.at) || 0;
+        return !entry.detail && (!historyQuery || `${entry.action || "status"} ${entry.title || ""} ${entry.status || ""}`.toLowerCase().includes(historyQuery.toLowerCase())) && at >= from && at <= to;
+      }).slice(0, 500).map(entry => {
+        const at = Number(entry.at) || Date.parse(entry.at) || 0;
+        const kind = entry.action || "status", label = labels[kind] || kind;
+        return `<article class="logcat-entry logcat-entry-info"><div class="logcat-entry-meta"><strong class="logcat-level">${esc(label)}</strong><time>${esc(at ? new Date(at).toLocaleString() : "Unknown time")}</time></div><p>${esc(entry.title || "Title")}${entry.status ? ` · ${esc(entry.status)}` : ""}</p></article>`;
+      }).join("");
+      const search = `<div class="log-search-row"><label class="search-box log-search"><i data-lucide="search" aria-hidden="true"></i><input data-log-search type="search" value="${esc(historyQuery)}" placeholder="Search history" autocomplete="off"></label><button type="button" class="log-filter-button${activeRange ? " active" : ""}" data-open-log-filter aria-label="Filter history by date" aria-haspopup="dialog"><i data-lucide="calendar-range" aria-hidden="true"></i>${activeRange ? `<span class="log-filter-dot"></span>` : ""}</button></div>${activeRange ? `<div class="log-filter-chip">${esc(historyFrom || "Any date")} – ${esc(historyTo || "Today")}<button type="button" data-log-dates-clear aria-label="Clear date filter">×</button></div>` : ""}<dialog id="log-filter-dialog" class="choice-dialog log-filter-dialog"><div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">HISTORY</p><h2>Filter by date</h2></div><button type="button" class="choice-dialog-close" data-close-log-filter aria-label="Close">×</button></header><div class="log-filter-body"><label>From<input type="date" data-log-filter-from value="${esc(historyFrom)}"></label><label>To<input type="date" data-log-filter-to value="${esc(historyTo)}"></label><div class="log-filter-quick"><button type="button" class="button secondary small" data-log-range="today">Today</button><button type="button" class="button secondary small" data-log-range="7">7 days</button><button type="button" class="button secondary small" data-log-range="30">30 days</button></div><footer class="log-filter-actions"><button type="button" class="button secondary" data-log-filter-clear>Clear</button><button type="button" class="button primary" data-log-filter-apply>Apply</button></footer></div></dialog>`;
+      const changeRows = changeLog.filter(entry => {
+        const at = Number(entry.at) || Date.parse(entry.at) || 0;
+        return (!historyQuery || `${entry.action} ${entry.detail}`.toLowerCase().includes(historyQuery.toLowerCase())) && at >= from && at <= to;
+      }).slice(0, 500).map(entry => {
+        const at = Number(entry.at) || Date.parse(entry.at) || 0, level = entry.action === "lost" || entry.action === "removed" ? "warning" : "info";
+        return `<article class="logcat-entry logcat-entry-${level}"><div class="logcat-entry-meta"><strong class="logcat-level">${esc(labels[entry.action] || entry.action || "Change")}</strong><time>${esc(at ? new Date(at).toLocaleString() : "Unknown time")}</time></div><p>${esc(entry.detail)}</p></article>`;
+      }).join("");
+      const allRows = [rows, changeRows].filter(Boolean).join("");
+      const total = history.length + changeLog.length;
+      return `<section class="settings-page settings-detail-page logcat-page">${pageHeader("Library history", "info")}<section class="logcat-summary"><span class="logcat-summary-icon" aria-hidden="true"><i data-lucide="history"></i></span><div class="logcat-summary-copy"><strong>${total} ${total === 1 ? "change" : "changes"}</strong><small>Search and filter saved activity by date.</small></div><button type="button" class="logcat-clear-button" data-log-action="clear-history" ${total ? "" : "disabled"}><i data-lucide="trash-2" aria-hidden="true"></i> Clear</button></section>${search}${allRows ? `<div class="logcat-list">${allRows}</div>` : `<div class="logcat-empty"><strong>${historyQuery || historyFrom || historyTo ? "No matching history" : "No history yet"}</strong><p>${historyQuery || historyFrom || historyTo ? "Try another search or date range." : "Library changes will appear here."}</p></div>`}</section>`;
     }
 
     if (settingsGroup === "nav-layout") return renderNavLayout();
@@ -259,6 +302,8 @@ ${native ? "" : `<p class="source-note">Browsers cannot send a custom user agent
     if (settingsGroup === "storage-details") return renderStorageDetails();
     if (settingsGroup === "app-info") return renderAppInfo();
     if (settingsGroup === "logcat") return renderLogcat();
+    if (settingsGroup === "history") return renderHistory();
+    if (settingsGroup === "metadata") return `<section class="settings-page settings-detail-page">${pageHeader("Metadata", "metadata")}<section class="settings-group-list">${renderGroup(settingGroups.find(group => group.id === "metadata"))}</section></section>`;
     const selected = settingGroups.find(group => group.id === settingsGroup);
     if (selected) {
       const globalResults = settingGroups.filter(group => group.id !== selected.id).flatMap(group => group.settings.map(setting => {
@@ -291,7 +336,7 @@ ${native ? "" : `<p class="source-note">Browsers cannot send a custom user agent
     const indexGroup = (title, groups, extra = "") => `<section class="settings-index-group"><h2 class="settings-overline">${esc(title)}</h2><div class="settings-category-list">${groups.map(group => card(group.icon, group.title, group.description, `#settings/${group.id}`)).join("")}${extra}</div></section>`;
     const storageBytes = libraryBytes;
     const storageCard = card("hard-drive", "Storage", `${items.length} ${items.length === 1 ? "entry" : "entries"} · ${formatBytes(storageBytes)} used`, "#settings/storage-details");
-    const moreCards = card("info", "App Info", "About ScreenMark and its features.", "#settings/app-info") + card("terminal", "Logcat", "Read or clear diagnostic logs.", "#settings/logcat");
+    const moreCards = card("info", "App Info", "About ScreenMark and its features.", "#settings/app-info") + card("history", "Library history", "Search saved activity by title and date.", "#settings/history") + card("terminal", "Logcat", "Read or clear diagnostic logs.", "#settings/logcat");
     const indexResults = settingGroups.flatMap(group => group.settings.map(setting => {
       const searchText = `${setting[0]} ${group.title} ${group.description}`.toLowerCase();
       return `<a class="setting-search-result" data-settings-index-result data-search-value="${esc(searchText)}" href="#settings/${group.id}"><span class="setting-search-result-icon"><i data-lucide="${group.icon}"></i></span><span><strong>${esc(setting[0])}</strong><small>${esc(group.title)} · ${esc(group.description)}</small></span><span class="settings-chevron" aria-hidden="true">›</span></a>`;

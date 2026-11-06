@@ -50,7 +50,7 @@
   async function requestJson(url, options = {}) {
     ({ url, options } = applySource(url, options));
     const method = String(options.method || "GET").toUpperCase();
-    const canCache = method === "GET" && !options.noCache && window.caches && !/[?&](?:key|apikey)=/i.test(url);
+    const canCache = method === "GET" && !options.noCache && !options.forceRefresh && window.caches && !/[?&](?:key|apikey)=/i.test(url);
     let cache = null, stale = null;
     if (canCache) {
       try {

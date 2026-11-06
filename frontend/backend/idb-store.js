@@ -2,7 +2,7 @@
 // so a save touches only changed games instead of rewriting one huge JSON blob
 // into localStorage (5 MB cap, synchronous, blocks the UI thread).
 (root => {
-  const DB_NAME = "screenmark_library", VERSION = 2;
+  const DB_NAME = "screenmark_library", VERSION = 3;
   let dbPromise = null;
   const known = new Map(); // id -> JSON snapshot last written/read
 
@@ -23,6 +23,7 @@
         if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
         // Device-local artwork cache: one small Blob per game/artwork kind, read in one fast batch.
         if (!db.objectStoreNames.contains("thumbs")) db.createObjectStore("thumbs", { keyPath: "key" });
+        if (!db.objectStoreNames.contains("share-cache")) db.createObjectStore("share-cache", { keyPath: "key" });
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -104,8 +105,25 @@
     const rows = await result(store.getAll());
     return rows.map(row => [row.key, row.sig]);
   }
+  async function clearThumbs() {
+    const db = await open();
+    const tx = db.transaction("thumbs", "readwrite");
+    tx.objectStore("thumbs").clear();
+    await done(tx);
+  }
+  async function getShareCache(key, sig) {
+    const db = await open(), row = await result(db.transaction("share-cache", "readonly").objectStore("share-cache").get(key));
+    return row?.sig === sig ? row.blob || null : null;
+  }
+  async function putShareCache(key, sig, blob) {
+    const db = await open(), tx = db.transaction("share-cache", "readwrite");
+    tx.objectStore("share-cache").put({ key, sig, blob, at: Date.now() }); await done(tx);
+  }
+  async function clearShareCache() {
+    const db = await open(), tx = db.transaction("share-cache", "readwrite"); tx.objectStore("share-cache").clear(); await done(tx);
+  }
 
-  const core = Object.freeze({ open, loadAll, save, saveSome, getThumbs, putThumbs, listThumbKeys });
+  const core = Object.freeze({ open, loadAll, save, saveSome, getThumbs, putThumbs, listThumbKeys, clearThumbs, getShareCache, putShareCache, clearShareCache });
   root.SplitAppIDBCore = core;
   if (typeof window === "undefined") return; // inside the data worker: expose the core only
 
@@ -128,14 +146,14 @@
         // Worker could not start (e.g. file:// preview): retry every pending call in-thread.
         usable = false; worker = null;
         const jobs = [...pending.values()]; pending.clear();
-        jobs.forEach(job => core[job.op](...job.args).then(job.resolve, job.reject));
+        jobs.forEach(job => (job.op === "merge" ? Promise.resolve().then(() => root.SplitAppMixMerge.merge(...job.args)) : core[job.op](...job.args)).then(job.resolve, job.reject));
       };
     } catch (_) { usable = false; worker = null; }
     return worker;
   }
   function call(op, ...args) {
     const target = ensureWorker();
-    if (!target) return core[op](...args);
+    if (!target) return op === "merge" ? Promise.resolve().then(() => root.SplitAppMixMerge.merge(...args)) : core[op](...args);
     return new Promise((resolve, reject) => {
       const id = nextId++;
       pending.set(id, { resolve, reject, op, args });
@@ -149,6 +167,12 @@
     saveSome: data => call("saveSome", data),
     getThumbs: entries => call("getThumbs", entries),
     putThumbs: entries => call("putThumbs", entries),
-    listThumbKeys: () => call("listThumbKeys")
+    listThumbKeys: () => call("listThumbKeys"),
+    clearThumbs: () => call("clearThumbs"),
+    getShareCache: (key, sig) => call("getShareCache", key, sig),
+    putShareCache: (key, sig, blob) => call("putShareCache", key, sig, blob),
+    clearShareCache: () => call("clearShareCache"),
+    // Merge providers' detail records in a worker so large episode and cast lists do not block scrolling.
+    merge: (entries, title, item) => call("merge", entries, title, item)
   });
 })(self);

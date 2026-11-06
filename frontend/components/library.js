@@ -20,13 +20,13 @@
     const cat = category(item.category), progress = Math.max(0, Number(item.progress) || 0), goal = Math.max(0, Number(item.goal) || 0);
     const percent = goal ? Math.min(100, Math.round(progress / goal * 100)) : 0;
     const rating = item.rating ? `★ ${esc(item.rating)}${prefs.ratingFormat === "10-point" ? "/10" : "/5"}` : "";
-    const thumbnail = item.localThumbnailData || item.image;
+    const thumbnail = item.customCover || item.localThumbnailData || item.image;
     // Covers saved on this device load via the artwork cache (see app.js); others straight from their URL.
-    const localPending = !item.localThumbnailData && Boolean(item.thumbnailPath);
+    const localPending = !item.customCover && !item.localThumbnailData && Boolean(item.thumbnailPath);
     const fallbackIcon = `<span${thumbnail || localPending ? " hidden" : ""}>${esc(cat?.icon || "✦")}</span>`;
     const art = prefs.showThumbnails && (thumbnail || localPending)
       ? (localPending
-        ? `<img data-deferred-image data-lazy-src="${esc(item.image || "")}" data-local-item-id="${esc(item.id)}" alt="" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">${fallbackIcon}`
+        ? `<img data-deferred-image data-lazy-src="${esc(item.image || "")}" data-local-item-id="${esc(item.id)}"${item.customCover ? ` data-custom-cover="${esc(item.customCover)}"` : ""} alt="" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">${fallbackIcon}`
         : `<img src="${esc(thumbnail)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false">${fallbackIcon}`)
       : `<span>${esc(cat?.icon || "✦")}</span>`;
     const accent = prefs.categoryColors[item.category] || cat?.color || prefs.mainColor;

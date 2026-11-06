@@ -105,6 +105,13 @@ public class BackupFolderPlugin extends Plugin {
                 closeExportStream();
                 exportStream = getContext().getContentResolver().openOutputStream(uri, "wt");
                 if (exportStream == null) throw new Exception("Could not open the chosen file");
+                // Small text exports pass their content up front, so saving still completes if
+                // Android discards the WebView while the system picker is open.
+                String inline = call.getString("content");
+                if (inline != null) {
+                    exportStream.write(inline.getBytes(StandardCharsets.UTF_8));
+                    closeExportStream();
+                }
                 JSObject out = new JSObject();
                 out.put("uri", uri.toString());
                 call.resolve(out);
@@ -288,9 +295,18 @@ public class BackupFolderPlugin extends Plugin {
 
         try {
             Uri treeUri = Uri.parse(treeUriStr);
+            String documentId;
+            try {
+                documentId = DocumentsContract.getDocumentId(treeUri);
+            } catch (IllegalArgumentException treeRootUri) {
+                // A picked SAF tree URI has no /document/<id> segment; its tree ID is
+                // the directory to list. Nested URIs have both segments and use their
+                // document ID so listing screenmark-db does not list the selected root.
+                documentId = DocumentsContract.getTreeDocumentId(treeUri);
+            }
             Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
                 treeUri,
-                DocumentsContract.getTreeDocumentId(treeUri)
+                documentId
             );
 
             JSObject result = new JSObject();
