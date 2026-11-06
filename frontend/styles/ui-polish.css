@@ -382,7 +382,6 @@ body[data-theme="dark"] .settings-page-heading h1,
 body[data-theme="dark"] .timeline-summary h2,
 body[data-theme="dark"] .stats-section-heading h2 { color: var(--legacy-text, #f5f5f7); }
 @media (min-width: 768px){
-body[data-sidebar="shown"][data-page="timeline"] .timeline-page > .analytics-page-heading > .detail-back,
   body[data-sidebar="shown"][data-page="statistics"] .stats-overview > .analytics-page-heading > .detail-back { display: none !important; }
 }
 @media (max-width: 560px){
