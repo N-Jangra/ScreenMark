@@ -41,8 +41,9 @@ button:active,[role=button]:active,a.demo-poster-open:active,.ios-pill:active,.f
 /* ---- Performance: skip layout/paint of off-screen groups & cards ---- */
 .dashboard-status-group{content-visibility:auto;contain-intrinsic-size:auto 220px}
 .item-card,.discover-card{contain:layout style}
-img{content-visibility:auto}
-#page-content{contain:layout style}
+/* Keep page-level fixed controls anchored to the viewport and let native scroll anchoring
+   compensate as images load; layout containment here can detach them on Android WebView. */
+#page-content{min-width:0}
 
 /* ---- Low-memory devices: drop blur/shadows, shorten everything ---- */
 html[data-lowend=true]{--speed:min(var(--speed,180ms),120ms)}
@@ -52,6 +53,7 @@ html[data-lowend=true] .topbar,html[data-lowend=true] .bottom-bar,html[data-lowe
 html[data-lowend=true] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section){animation:none}
 html[data-lowend=true] .floating-add-button,html[data-lowend=true] .nav-button.active .nav-icon{animation:none}
 html[data-lowend=true] .ios-hero-bg::after{backdrop-filter:none}
+html[data-lowend=true] body[data-nav-dir] #page-content.page-route-enter{animation-name:sp-fade;animation-duration:110ms}
 
 /* ---- Reduce motion / Animation speed Off ---- */
 body[data-reduced-motion=true] *,body[data-reduced-motion=true] *::before,body[data-reduced-motion=true] *::after,
@@ -82,3 +84,20 @@ body[data-hover-lift=true] .detail-carousel-card:hover{transform:translate3d(0,-
 body[data-nav-bounce=false] .nav-button.active .nav-icon{animation:none}
 body[data-progress-anim=false] :is(.progress-line span,.bar-track span,.demo-up-next-progress i,.stats-time-progress span,.stats-overview-progress i,.season-progress i){transition:none}
 body[data-shimmer=false] :is(.discover-suggest-loading span,[class*=skeleton],[class*=shimmer]){animation:none}
+
+/* Android touch scrolling: keep the document on the native viewport scroller, add momentum to
+   horizontal rails, and avoid blur layers while the finger is moving. */
+a,button,[role=button],input,select,label,summary{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+dialog,.setting-picker-list,.import-preview-list ul{overscroll-behavior:contain}
+@media(pointer:coarse){
+  :is(.chip-row,.timeline-filters,.detail-toolbar,.detail-carousel,.season-poster-deck,.tracking-episode-rail,.discover-rail,.discover-source-strip,.discover-genre-row,.detail-gallery,.icon-picker-carousel,.timeline-month-days,.detail-status-pills){
+    -webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;scroll-behavior:smooth;touch-action:pan-x pan-y
+  }
+  .topbar,.bottom-bar,.detail-page-heading,.settings-subpage-heading,.timeline-filters{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+}
+@media(max-width:767px){html{scrollbar-gutter:auto}}
+html[data-perf="low"] #page-content.page-route-enter{animation:none!important}
+html[data-perf="low"] :is(.floating-add-button,.nav-button.active .nav-icon,.discover-suggest-loading span,[class*=skeleton],[class*=shimmer]){animation:none!important}
+html[data-perf="low"] :is(.progress-line span,.bar-track span,.demo-up-next-progress i,.stats-time-progress span,.stats-overview-progress i,.season-progress i){transition:none!important}
+html[data-perf="low"] .item-card{transition:none!important}
+html[data-perf="low"] dialog::backdrop{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
