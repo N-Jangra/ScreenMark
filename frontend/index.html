@@ -31,6 +31,11 @@
   <link rel="stylesheet" href="styles/motion.css">
   <link rel="stylesheet" href="styles/ui-polish.css">
   <link rel="stylesheet" href="styles/demo-pages.css">
+  <script>
+    if (location.protocol === "file:") {
+      document.write('<script src="../local-secrets.js"><\/script>');
+    }
+  </script>
   <script defer src="lucide.min.js"></script>
   <script defer src="app-config.js"></script>
   <script defer src="backend/idb-store.js"></script>

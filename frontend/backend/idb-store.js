@@ -129,7 +129,9 @@
 
   // On the page, every call goes to the data worker so diffing, serialising and IndexedDB
   // transactions never block scrolling. If workers are unavailable, use the core in-thread.
-  let worker = null, nextId = 1, usable = typeof Worker === "function";
+  // Firefox and Chromium reject workers loaded from file:// because file URLs have opaque origins.
+  // Use the same IndexedDB implementation on the page in that preview mode.
+  let worker = null, nextId = 1, usable = typeof Worker === "function" && root.location?.protocol !== "file:";
   const pending = new Map();
   function ensureWorker() {
     if (!usable) return null;

@@ -13,15 +13,15 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "system", textSize: "normal", dateFormat: "auto", iconStyle: "tiles", imageStorage: "all", favoritesOnly: false, reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, mainColor: "#6366f1",
-    showSidebar: true, showScrollbars: false, bottomBarStyle: "box", bottomBarCorners: "round", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
+    theme: "amoled", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", favoritesOnly: false, reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, mainColor: "#6366f1",
+    showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
     navBar: { order: navKeys, visible: { dashboard: true, discover: true, explore: true, timeline: false, statistics: false, settings: true } },
     metadataSourceOrder: ["tvmaze", "anilist", "omdb"], customSources: [],
     dashboardView: "list", dashboardDefaultCategory: "series", cardCorners: "rounded", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true,
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1,
     metadataSyncWorkers: 2, syncTimeout: 25, syncRetries: 1, syncRetryDelay: 2, syncMaxSources: 0, syncRequestDelay: 0, syncScope: "needed",
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30,
-    metadataMode: "online", metadataSources: { tvmaze: true, anilist: true, omdb: false }, metadataRefreshInterval: "weekly", offlineFallback: "cached", thumbnailSize: "medium",
+    metadataMode: "online", metadataSources: { tvmaze: true, anilist: true, omdb: false, imdb: true, rottentomatoes: true }, metadataRefreshInterval: "weekly", offlineFallback: "cached", thumbnailSize: "medium",
     backgroundBackups: false,
     apiKeys: {}, sourceOptions: {}
   };
@@ -44,9 +44,22 @@
   delete prefs.appLook;
   delete prefs.recentlyAddedLimit;
   delete prefs.appDisplayName;
+  delete prefs.bottomBarCorners;
   prefs.apiKeys = { ...prefsDefaults.apiKeys, ...(stored.preferences?.apiKeys || {}) };
   prefs.sourceOptions = { ...(stored.preferences?.sourceOptions || {}) };
   prefs.metadataSources = { ...prefsDefaults.metadataSources, ...(stored.preferences?.metadataSources || {}) };
+  const migrateManualMetadataSources = Number(stored.preferences?.manualMetadataSourcesVersion) < 1;
+  if (migrateManualMetadataSources) {
+    prefs.metadataSources.imdb = true;
+    prefs.metadataSources.rottentomatoes = true;
+    prefs.manualMetadataSourcesVersion = 1;
+  }
+  const localSourceKeys = { omdb: window.ScreenMarkLocalConfig?.omdbApiKey, tmdb: window.ScreenMarkLocalConfig?.tmdbApiKey };
+  const localPreview = location.protocol === "file:" || /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  let seedLocalApiKeys = false;
+  if (localPreview) Object.entries(localSourceKeys).forEach(([source, key]) => {
+    if (key && !prefs.apiKeys[source]) { prefs.apiKeys[source] = key; prefs.metadataSources[source] = true; seedLocalApiKeys = true; }
+  });
   function refreshSourceRegistry() {
     prefs.customSources = Array.isArray(prefs.customSources) ? prefs.customSources.filter(config => config && config.id && /^https?:\/\//i.test(config.searchUrl || "")) : [];
     window.SplitAppMetadata.setCustom(prefs.customSources);
@@ -61,7 +74,6 @@
     if (prefs.bottomBarStyle === "soft") prefs.bottomBarStyle = "box";
     if (["icon", "icons-only", "pill"].includes(prefs.bottomBarStyle)) prefs.bottomBarStyle = "box";
     if (!["box", "icon-color", "underline"].includes(prefs.bottomBarStyle)) prefs.bottomBarStyle = prefsDefaults.bottomBarStyle;
-    if (!["round", "sharp"].includes(prefs.bottomBarCorners)) prefs.bottomBarCorners = prefsDefaults.bottomBarCorners;
     if (!["icons-labels", "icons-only"].includes(prefs.bottomBarLabels)) prefs.bottomBarLabels = prefsDefaults.bottomBarLabels;
     prefs.showSidebar = prefs.showSidebar !== false;
     prefs.showScrollbars = prefs.showScrollbars === true;
@@ -91,7 +103,7 @@
   const statsSections = ["watchtime", "library", "activity"];
   const normalizeStatsSection = section => section === "playtime" ? "watchtime" : section === "breakdown" ? "library" : section;
   let statsSubpage = page === "statistics" && statsSections.includes(initialRoute[1]) ? normalizeStatsSection(initialRoute[1]) : "";
-  let renderedRoute = null, inAppNav = false, mixCache = null, mixRequest = 0, mixCategory = "", statsRange = "week", statsActivityDate = "", statsWatchtimePage = 0, addCategory = "", discoverCategoryChoice = "";
+  let renderedRoute = null, inAppNav = false, mixCache = null, mixRequest = 0, mixCategory = "", statsRange = "week", statsCategory = "series", statsActivityDate = "", statsWatchtimePage = 0, addCategory = "", discoverCategoryChoice = "", discoverSort = "popular", discoverYearFilter = "", discoverGenreFilter = "";
   let metadataSourceFilter = "all";
   let entryDraftId = null, addReturnPage = "dashboard";
   let libraryQuery = new URLSearchParams(location.search).get("q") || "";
@@ -106,7 +118,8 @@
   if (metadataSyncState?.entries) { let recovered = false; metadataSyncState.entries.forEach(entry => { if (entry.status === "running") { entry.status = "queued"; recovered = true; } }); if (recovered) { try { localStorage.setItem(`${storageKey}_metadata_sync`, JSON.stringify(metadataSyncState)); } catch (_) {} } }
   let dashboardStatusFilter = prefs.dashboardStatusFilter || "all";
   if (prefs.dashboardView === "cards") prefs.dashboardView = "grid";
-  if (!["list", "compact-list", "grid", "detailed-grid", "compact-grid", "large-grid", "timeline"].includes(prefs.dashboardView)) prefs.dashboardView = "list";
+  if (["compact-list", "detailed-grid", "timeline"].includes(prefs.dashboardView)) prefs.dashboardView = "list";
+  if (!["list", "grid", "posters-plus", "compact-grid", "large-grid"].includes(prefs.dashboardView)) prefs.dashboardView = "list";
   if (prefs.dashboardSort === "title") prefs.dashboardSort = "alphabetical-asc";
   else if (prefs.dashboardSort === "recent") prefs.dashboardSort = "created-desc";
   else if (["rating", "rating-desc", "highest-rated"].includes(prefs.dashboardSort)) prefs.dashboardSort = "alphabetical-asc";
@@ -202,6 +215,7 @@
     persistTimer = setTimeout(flushPersist, 250);
     return promise;
   }
+  if (seedLocalApiKeys || migrateManualMetadataSources) persist({ meta: true });
   const migrateLocalRatings = items.some(item => Object.prototype.hasOwnProperty.call(item, "rating") || Object.values(item.episodeNotes || {}).some(note => Object.prototype.hasOwnProperty.call(note || {}, "rating")));
   const legacyPreferences = stored.preferences || {};
   const migrateRemovedPreferences = ["showRatings", "ratingFormat", "dashboardDensity", "font", "categoryColors", "showThumbnails", "showProgress"].some(key => Object.prototype.hasOwnProperty.call(legacyPreferences, key)) || ["rating", "rating-desc", "highest-rated"].includes(legacyPreferences.dashboardSort) || Boolean(legacyPreferences.theme && !["system", "light", "amoled"].includes(legacyPreferences.theme));
@@ -217,7 +231,7 @@
   };
   items.forEach(stripLocalScores);
   delete prefs.showRatings; delete prefs.ratingFormat; delete prefs.dashboardDensity; delete prefs.font; delete prefs.categoryColors; delete prefs.showThumbnails; delete prefs.showProgress;
-  if (!["system", "light", "amoled"].includes(prefs.theme)) prefs.theme = "system";
+  prefs.theme = "amoled";
   if (migrateLocalRatings) persist();
   else if (migrateDashboardCategory || migrateRemovedPreferences) persist({ meta: true });
   function flushPersist() {
@@ -323,10 +337,10 @@
     document.body.dataset.oneHanded = prefs.oneHandedMode || "off";
     document.body.dataset.tabletColumns = String(prefs.tabletTwoColumn !== false);
     document.body.dataset.barStyle = prefs.bottomBarStyle;
-    document.body.dataset.barCorners = prefs.bottomBarCorners;
     document.body.dataset.barLabels = prefs.bottomBarLabels;
     document.body.dataset.sidebar = prefs.showSidebar ? "shown" : "hidden";
     document.documentElement.dataset.showScrollbars = prefs.showScrollbars === true ? "true" : "false";
+    window.Capacitor?.Plugins?.ScrollbarControl?.setEnabled?.({ enabled: prefs.showScrollbars === true }).catch(() => {});
     document.body.dataset.barLayout = prefs.bottomBarLayout;
     document.body.dataset.iconStyle = prefs.iconStyle === "inline" ? "inline" : "tiles";
     window.SplitAppDates?.setFormat(prefs.dateFormat); window.SplitAppBackend?.setImageStorage?.(prefs.imageStorage);
@@ -462,8 +476,8 @@
       historyJournalLoaded = true;
       window.SplitAppBackend?.readJournal?.("history").then(rows => { if (page === "settings" && settingsGroup === "history" && Array.isArray(rows)) { const local = changeLog; const keys = row => `${row.action}|${row.at}|${row.detail || ""}`; changeLog = [...new Map([...rows, ...local].map(row => [keys(row), row])).values()].sort((a, b) => (Number(b.at) || Date.parse(b.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0)); try { localStorage.setItem(`${storageKey}_history`, JSON.stringify(changeLog.slice(0, 2000))); } catch (_) {} render(); } }).catch(() => {});
     }
-    return { statsSubpage, statsActivityDate, statsRange, statsWatchtimePage, metadataSyncState, changeLog, logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, history, logEntries, roles, trackedStatuses, statusIcon, activeCategory, discoverCategory: currentDiscoverCategory(), libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", mixCategory: mixCategory || (activeCategory !== "all" ? activeCategory : "all"), statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
-      detailData, detailError, detailLoading, detailReturnPage, detailRef, detailRefOffset, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, refItem: detailRef?.type === "episode" ? items.find(entry => entry.category === "series" && (entry.cachedDetails?.sections || []).some(section => section.kind === "episodes" && section.items.some(row => String(row.id) === String(detailRef.id)))) || null : null, category, labelCategory, defaultStatus, esc, safeLucideName };
+    return { statsSubpage, statsCategory, statsActivityDate, statsRange, statsWatchtimePage, metadataSyncState, changeLog, logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, history, logEntries, roles, trackedStatuses, statusIcon, activeCategory, discoverCategory: currentDiscoverCategory(), libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", mixCategory: mixCategory || (activeCategory !== "all" ? activeCategory : "all"), statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+      detailData, detailError, detailLoading, detailReturnPage, detailRef, detailRefOffset, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, refItem: detailRef?.type === "episode" ? items.find(entry => entry.category === "series" && (entry.cachedDetails?.sections || []).some(section => section.kind === "episodes" && section.items.some(row => String(row.id) === String(detailRef.id) || String(row.ref?.id) === String(detailRef.id)))) || null : null, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardGroupItems(groupKey) {
     const library = window.SplitAppLibrary.create(pageContext());
@@ -557,10 +571,33 @@
   }
   const deferredQueue = [];
   let deferredTimer = 0, deferredDrain = null, deferredObserver = null;
+  function routeRemoteImages(root = document) {
+    const resolveImage = window.SplitAppDiscovery?.imageUrl;
+    if (typeof resolveImage !== "function") return;
+    const images = [];
+    if (root.matches?.("img[src]")) images.push(root);
+    images.push(...(root.querySelectorAll?.("img[src]") || []));
+    images.forEach(image => {
+      const source = image.getAttribute("src");
+      if (!source || image.dataset.proxySource) return;
+      const resolved = resolveImage(source);
+      if (resolved !== source) {
+        const fallback = image.onerror;
+        image.dataset.proxySource = source;
+        image.onerror = function (event) {
+          if (this.dataset.proxySource && !this.dataset.proxyFallbackTried) {
+            this.dataset.proxyFallbackTried = "true"; this.hidden = false; this.src = this.dataset.proxySource; return;
+          }
+          if (fallback) fallback.call(this, event);
+        };
+        image.src = resolved;
+      }
+    });
+  }
   function finishDeferredImage(image, source) {
     if (!image?.isConnected) return;
     delete image.dataset.localItemId; delete image.dataset.lazySrc;
-    if (source) image.src = source;
+    if (source) image.src = window.SplitAppDiscovery?.imageUrl?.(source) || source;
     else { image.hidden = true; if (image.nextElementSibling) image.nextElementSibling.hidden = false; }
   }
   async function drainDeferredImages() {
@@ -602,6 +639,7 @@
     if (!deferredTimer) deferredTimer = setTimeout(() => { deferredTimer = 0; drainDeferredImages(); }, 0);
   }
   function observeDeferredImages(root = document) {
+    routeRemoteImages(root);
     const images = [...(root?.querySelectorAll?.("img[data-deferred-image]") || [])].filter(image => !image.hasAttribute("src"));
     if (!images.length) return;
     if (!window.IntersectionObserver) { images.forEach(activateDeferredImage); return; }
@@ -661,13 +699,13 @@
     headerType.hidden = page !== "dashboard" && page !== "discover";
     if (page === "dashboard") {
       const count = key => key === "all" ? items.length : items.filter(item => item.category === key).length;
-      headerType.innerHTML = [...config.categories].sort((x, y) => (y.key === "series") - (x.key === "series")).map(row => [row.key, row.key === "series" ? "Series" : row.label]).map(([key, label]) => `<button type="button" class="lens-tab${activeCategory === key ? " on" : ""}" data-category-filter="${esc(key)}" aria-pressed="${activeCategory === key}">${esc(label)} <span class="l-cnt">${count(key)}</span></button>`).join("");
+      headerType.innerHTML = [...config.categories].sort((x, y) => (y.key === "movie") - (x.key === "movie")).map(row => [row.key, row.key === "series" ? "Series" : row.label]).map(([key, label]) => `<button type="button" class="lens-tab${activeCategory === key ? " on" : ""}" data-category-filter="${esc(key)}" aria-pressed="${activeCategory === key}">${esc(label)} <span class="l-cnt">${count(key)}</span></button>`).join("");
     } else if (page === "discover") {
       const source = discoverSource ? window.SplitAppSources.list().find(row => row.key === discoverSource) : null;
       const categories = config.categories.filter(row => !source || source.categories.includes(row.key));
       headerType.hidden = categories.length < 2;
       headerType.innerHTML = categories.map(row => {
-        const label = row.key === "movie" ? "Movies" : row.key === "series" ? "TV series" : row.label;
+        const label = row.key === "movie" ? "Movies" : row.key === "series" ? "Series" : row.label;
         const selected = currentDiscoverCategory() === row.key;
         return `<button type="button" class="lens-tab${selected ? " on" : ""}" data-discover-category="${esc(row.key)}" aria-pressed="${selected}">${esc(label)}</button>`;
       }).join("");
@@ -699,8 +737,53 @@
       renderedRoute = route;
     }
     content.innerHTML = window.SplitAppPages[page](pageContext());
-    if (selectMode && page === "dashboard") applySelectionUI();
-    else if (selectMode) exitSelectMode();
+    const episodeRail = content.querySelector("[data-tracking-episode-rail]");
+    const focusEpisode = episodeRail?.querySelector('[data-current-episode="true"]');
+    if (episodeRail && focusEpisode) {
+      const railRect = episodeRail.getBoundingClientRect(), cardRect = focusEpisode.getBoundingClientRect();
+      episodeRail.scrollLeft = Math.max(0, episodeRail.scrollLeft + cardRect.left - railRect.left - (episodeRail.clientWidth - focusEpisode.clientWidth) / 2);
+    }
+    if (episodeRail) {
+      // Cheap settle-based highlight: no per-frame layout work, only one class swap after scrolling pauses.
+      const railCards = [...episodeRail.querySelectorAll(".tracking-episode-card")];
+      let settleTimer = 0, activeCard = null;
+      const settle = () => {
+        settleTimer = 0;
+        const center = episodeRail.scrollLeft + episodeRail.clientWidth / 2;
+        let best = null, bestDist = Infinity;
+        for (const card of railCards) {
+          const dist = Math.abs(card.offsetLeft + card.offsetWidth / 2 - center);
+          if (dist < bestDist) { best = card; bestDist = dist; } else if (best) break;
+        }
+        if (best === activeCard) return;
+        activeCard?.classList.remove("is-active");
+        best?.classList.add("is-active");
+        activeCard = best;
+      };
+      const queueSettle = () => { clearTimeout(settleTimer); settleTimer = setTimeout(settle, 24); };
+      episodeRail.addEventListener("scroll", queueSettle, { passive: true });
+      settle();
+    }
+    content.querySelectorAll(".ep-ratings-v[data-ratings-lazy]").forEach(rating => {
+      const grid = rating.querySelector(".ep-ratings-cols"), sentinel = rating.querySelector("[data-ratings-sentinel]");
+      if (!grid || !sentinel) return;
+      if (!window.IntersectionObserver) {
+        rating.querySelectorAll("template[data-ratings-chunk]").forEach(template => { grid.append(template.content); template.remove(); });
+        sentinel.remove();
+        return;
+      }
+      const observer = new IntersectionObserver(entries => {
+        if (!entries.some(entry => entry.isIntersecting)) return;
+        const template = rating.querySelector("template[data-ratings-chunk]");
+        if (!template) { observer.disconnect(); sentinel.remove(); return; }
+        grid.append(template.content);
+        template.remove();
+        if (!rating.querySelector("template[data-ratings-chunk]")) { observer.disconnect(); sentinel.remove(); return; }
+        observer.unobserve(sentinel);
+        requestAnimationFrame(() => observer.observe(sentinel));
+      }, { rootMargin: "700px 0px" });
+      observer.observe(sentinel);
+    });
     if (page === "discover" && discoverCache && discoverCache.source === discoverSource && discoverCache.query === discoverQuery) paintDiscoverResults(discoverCache.results, discoverSource);
     else if (page === "discover" && !discoverQuery) loadDiscoverSuggestions();
     if (page === "mix") paintMixResults();
@@ -773,13 +856,14 @@
     content.querySelector("#detail-edit-form")?.addEventListener("submit", saveDetailEdit);
     content.querySelectorAll(".detail-page [data-action]").forEach(button => button.addEventListener("click", event => {
       const action = button.dataset.action;
-      if (!["edit", "progress", "refresh-details", "delete-detail", "cancel-detail-edit", "save-detail-item"].includes(action)) return;
+      if (!["edit", "progress", "refresh-details", "delete-detail", "cancel-detail-edit", "save-detail-item", "open-library-item"].includes(action)) return;
       event.preventDefault(); event.stopPropagation();
       if (action === "edit") { detailEditMode = true; render(); }
       else if (action === "progress") updateProgress(button.dataset.id);
       else if (action === "refresh-details") loadDetails();
       else if (action === "delete-detail") requestDeleteDetails(button.dataset.id);
       else if (action === "cancel-detail-edit") { detailEditMode = false; render(); }
+      else if (action === "open-library-item") openDetails(button.dataset.id);
       else if (action === "save-detail-item") {
         const saved = addDiscoverResult(detailPreview);
         if (saved) { detailPreview = null; detailItemId = saved.id; detailData = null; loadDetails(); }
@@ -807,7 +891,7 @@
       if (button) selectAddMetadata(button.dataset.addMetadataIndex);
     });
     if (page === "settings" && settingsGroup === "backups") refreshBackupFolderStatus();
-    if (page === "settings" && settingsGroup === "storage-details") refreshStorageDetails();
+    if (page === "settings" && settingsGroup === "storage") refreshStorageDetails();
     content.querySelectorAll("[data-open-details]").forEach(button => {
       button.addEventListener("click", event => {
         event.preventDefault();
@@ -889,16 +973,6 @@
         const enabled = row.dataset.sourceEnabledState === "true";
         row.hidden = metadataSourceFilter === "enabled" ? !enabled : metadataSourceFilter === "disabled" ? enabled : false;
       });
-    }));
-    content.querySelectorAll("[data-nav-move]").forEach(button => button.addEventListener("click", event => {
-      event.preventDefault(); event.stopPropagation();
-      prefs.navBar.order = moveInOrder([...prefs.navBar.order], button.dataset.navKey, button.dataset.navMove);
-      persist({ meta: true }); applyPreferences(); render();
-    }));
-    content.querySelectorAll("[data-source-move]").forEach(button => button.addEventListener("click", event => {
-      event.preventDefault(); event.stopPropagation();
-      prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], button.dataset.sourceKey, button.dataset.sourceMove);
-      persist({ meta: true }); render();
     }));
     content.querySelectorAll("[data-backup-folder-action]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
@@ -1272,11 +1346,48 @@
     const sourceName = window.SplitAppSources.list().find(source => source.key === sourceKey)?.name;
     const currentMessage = $("#discover-message"), box = $("#discover-results"), empty = $("#discover-empty");
     if (!currentMessage || !box || !empty) return false;
-    currentMessage.textContent = results.length ? `${results.length} results found${sourceName ? ` from ${sourceName}` : ""}.${results.warnings?.length ? ` ${results.warnings.length} source(s) did not respond: ${results.warnings.join("; ")}` : ""}` : `No results found${sourceName ? ` from ${sourceName}` : ""}.`;
-    box.innerHTML = results.slice(0, 30).map((result, index) => `<article class="discover-card"><img src="${esc(result.image || "")}" alt="" loading="lazy" onerror="this.hidden=true"><div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.year || labelCategory(result.category || key))}${result.description ? ` · ${esc(result.description.slice(0, 85))}` : ""}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button><button class="button primary small" data-discover-add="${index}">Add</button></div></div></article>`).join("");
+    currentMessage.textContent = results.length ? (results.warnings?.length ? `${results.warnings.length} source(s) did not respond: ${results.warnings.join("; ")}` : "") : `No results found${sourceName ? ` from ${sourceName}` : ""}.`;
+    const visible = results.slice(0, 30);
+    box.innerHTML = `<div class="discover-catalog-grid">${visible.map(discoverCatalogCard).join("")}</div>`;
+    routeRemoteImages(box);
     empty.hidden = results.length > 0;
-    box._results = results;
+    box._results = visible;
     return true;
+  }
+  function discoverCatalogCard(result, index) {
+    const category = result.category || currentDiscoverCategory(), rating = Number(result.rating) || 0;
+    const saved = items.find(item => sameDiscoverTitle(item, result, category));
+    return `<article class="discover-catalog-card"><button type="button" class="discover-catalog-poster" data-discover-details="${index}" aria-label="Details for ${esc(result.title)}"><img src="${esc(result.image || "")}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true"><span class="discover-catalog-type">${category === "series" ? "SHOW" : "MOVIE"}</span>${rating > 0 ? `<span class="discover-catalog-rating">★ ${rating.toFixed(1)}</span>` : ""}</button><h3 title="${esc(result.title)}">${esc(result.title)}</h3><small>${esc(String(result.year || "").slice(0, 4))}</small><button type="button" class="discover-catalog-add${saved ? " is-saved" : ""}" data-discover-add="${index}"${saved ? " disabled aria-label=\"Already in library\"" : ""}>${saved ? "✓ Already in library" : "＋ Add"}</button></article>`;
+  }
+  function refreshDiscoverSavedActions() {
+    const box = $("#discover-results"), results = box?._results || [];
+    box?.querySelectorAll("[data-discover-add]").forEach(button => {
+      const result = results[Number(button.dataset.discoverAdd)];
+      if (!result || !items.some(item => sameDiscoverTitle(item, result, result.category || currentDiscoverCategory()))) return;
+      button.disabled = true; button.classList.add("is-saved"); button.textContent = "✓ Already in library"; button.setAttribute("aria-label", "Already in library");
+    });
+  }
+  function renderDiscoverCatalog(sections, box) {
+    const unique = new Map();
+    (sections || []).forEach(section => (section.items || []).forEach(result => {
+      if (!result?.title || !(result.image || "").trim()) return;
+      const key = `${result.source || ""}:${result.providerId || result.title.toLowerCase()}`;
+      if (!unique.has(key)) unique.set(key, result);
+    }));
+    const all = [...unique.values()];
+    const years = [...new Set(all.map(result => String(result.year || "").match(/(?:19|20)\d{2}/)?.[0]).filter(Boolean))].sort((a, b) => Number(b) - Number(a));
+    const genres = [...new Set(all.flatMap(result => Array.isArray(result.genres) ? result.genres : []))].filter(Boolean).sort((a, b) => a.localeCompare(b));
+    let filtered = all.filter(result => (!discoverYearFilter || String(result.year || "").startsWith(discoverYearFilter)) && (!discoverGenreFilter || result.genres?.includes(discoverGenreFilter)));
+    if (discoverSort === "rating") filtered.sort((a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0));
+    else if (discoverSort === "latest") filtered.sort((a, b) => Number(String(b.year || "").slice(0, 4)) - Number(String(a.year || "").slice(0, 4)));
+    else if (discoverSort === "az") filtered.sort((a, b) => a.title.localeCompare(b.title));
+    const items = filtered.slice(0, 90);
+    const yearOptions = years.map(year => `<option value="${year}"${discoverYearFilter === year ? " selected" : ""}>${year}</option>`).join("");
+    const genreButtons = ["", ...genres].map(genre => `<button type="button" class="discover-genre-chip${discoverGenreFilter === genre ? " active" : ""}" data-discover-genre="${esc(genre)}" aria-pressed="${discoverGenreFilter === genre}">${genre ? esc(genre) : "All"}</button>`).join("");
+    box.innerHTML = `<div class="discover-catalog-controls"><select data-discover-sort aria-label="Sort titles"><option value="popular"${discoverSort === "popular" ? " selected" : ""}>Popular</option><option value="rating"${discoverSort === "rating" ? " selected" : ""}>Top rated</option><option value="latest"${discoverSort === "latest" ? " selected" : ""}>Latest</option><option value="az"${discoverSort === "az" ? " selected" : ""}>A–Z</option></select><select data-discover-year aria-label="Filter by year"><option value="">Year</option>${yearOptions}</select></div><nav class="discover-genre-row" aria-label="Filter by genre">${genreButtons}</nav>${items.length ? `<div class="discover-catalog-grid">${items.map(discoverCatalogCard).join("")}</div>` : `<p class="discover-catalog-empty">No titles match these filters.</p>`}`;
+    routeRemoteImages(box);
+    box._results = items;
+    return all.length;
   }
   let suggestionsCache = null, suggestionsRequest = 0;
   async function loadDiscoverSuggestions() {
@@ -1288,7 +1399,7 @@
     if (empty) empty.hidden = true;
     let sections = suggestionsCache?.key === cacheKey ? suggestionsCache.sections : null;
     if (!sections) {
-      box.innerHTML = `<div class="discover-suggest-loading" aria-hidden="true">${"<span></span>".repeat(6)}</div>`;
+      box.innerHTML = `<div class="discover-catalog-grid discover-catalog-loading" aria-hidden="true">${"<span></span>".repeat(6)}</div>`;
       try { sections = await window.SplitAppDiscovery.trending(category, detailSettings(), sourceKey); }
       catch (error) {
         if (requestId !== suggestionsRequest || page !== "discover") return;
@@ -1299,13 +1410,8 @@
       suggestionsCache = { key: cacheKey, sections };
     }
     if (requestId !== suggestionsRequest || page !== "discover" || discoverQuery || $("#discover-query")?.value.trim()) return;
-    const flat = [];
-    const html = sections.map(section => `<section class="discover-suggest"><h2>${esc(section.title)}</h2><div class="discover-rail">${section.items.map(result => {
-      const index = flat.push(result) - 1;
-      return `<article class="discover-card discover-suggest-card"><img src="${esc(result.image || "")}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true"><div class="discover-card-body"><h3>${esc(result.title)}</h3><p>${esc(result.subtitle || result.year || "")}</p><div class="toolbar"><button class="button secondary small" data-discover-details="${index}">Details</button><button class="button primary small" data-discover-add="${index}">Add</button></div></div></article>`;
-    }).join("")}</div></section>`).join("");
-    box.innerHTML = html || ""; box._results = flat;
-    if (empty) empty.hidden = flat.length > 0;
+    const count = renderDiscoverCatalog(sections, box);
+    if (empty) empty.hidden = count > 0;
   }
   async function discover() {
     const query = String(discoverQuery || "").trim(); const key = currentDiscoverCategory();
@@ -1361,9 +1467,22 @@
     if (prefs.backgroundBackups && prefs.backupSchedule === "daily") plugin.schedule?.().catch(() => toast("Could not schedule encrypted backups."));
     else plugin.cancel?.().catch(() => {});
   }
+  // Same title is not enough: remakes and unrelated shows share names. Prefer provider ids, then the release year.
+  function sameDiscoverTitle(item, result, category) {
+    if (!item || !result || item.category !== (category || result.category)) return false;
+    if (String(item.title || "").toLowerCase() !== String(result.title || "").toLowerCase()) return false;
+    const src = result.source, pid = result.providerId;
+    if (src && pid && item.providerId && (item.metadataSource || item.source)) {
+      if (item.metadataSource === src || item.source === src) return String(item.providerId) === String(pid);
+      if (item.sourceIds?.[src] != null) return String(item.sourceIds[src]) === String(pid);
+    }
+    const year = value => String(value || "").match(/(?:19|20)\d{2}/)?.[0];
+    const a = year(item.year || item.releaseDate), b = year(result.year || result.releaseDate);
+    return !a || !b || a === b;
+  }
   function addDiscoverResult(result, origin = "Discover") {
     if (!result) return null;
-    const existing = items.find(item => item.category === result.category && item.title.toLowerCase() === result.title.toLowerCase());
+    const existing = items.find(item => sameDiscoverTitle(item, result));
     if (existing) {
       // A Mix add of a title that was saved from a single source upgrades that entry to a Mix entry.
       if (result.source === "mix" && existing.metadataSource !== "mix") {
@@ -1573,10 +1692,11 @@
     if (!id) return;
     if (!replace) detailStack.push(detailSnapshot());
     if (type === "show") {
-      const existing = items.find(row => row.metadataSource === "tvmaze" && String(row.providerId) === String(id));
+      const source = extra?.source || "tvmaze", showCategory = extra?.category || "series";
+      const existing = items.find(row => row.metadataSource === source && row.category === showCategory && String(row.providerId) === String(id));
       detailRef = null; refData = null; detailEditMode = false; detailError = ""; detailData = null; detailRequest++;
       if (existing) { detailPreview = null; detailItemId = existing.id; }
-      else { detailItemId = null; detailPreview = { id: `tvmaze:${id}`, title: title || "Series", category: "series", source: "tvmaze", metadataSource: "tvmaze", providerId: String(id), status: defaultStatus("series") }; }
+      else { detailItemId = null; detailPreview = { id: `${source}:${id}`, title: title || (showCategory === "movie" ? "Movie" : "Series"), category: showCategory, source, metadataSource: source, providerId: String(id), status: defaultStatus(showCategory) }; }
       render(); scrollPageTop(); historyPush(replace); loadDetails(); return;
     }
     if (!replace) detailRefOffset = 0;
@@ -1585,7 +1705,18 @@
   async function loadDetailRef() {
     const ref = detailRef, requestId = ++refRequest; if (!ref) return;
     refLoading = true; render();
-    try { const loaded = await window.SplitAppDetails.loadRef(ref, detailSettings()); if (requestId === refRequest) refData = loaded; }
+    try {
+      const parent = detailItemId ? items.find(row => String(row.id) === String(detailItemId)) : null;
+      const cachedEpisode = ref.type === "episode" && parent?.metadataSource === "omdb"
+        ? (parent.cachedDetails?.sections || []).filter(section => section.kind === "episodes").flatMap(section => section.items || []).find(row => String(row.id) === String(ref.id) || String(row.ref?.id) === String(ref.id))
+        : null;
+      let loaded;
+      if (cachedEpisode?.raw) {
+        const raw = cachedEpisode.raw, na = value => value && value !== "N/A" ? value : "", people = (value, meta) => String(na(value) || "").split(/,\s*/).filter(Boolean).map(title => ({ title, meta, image: "" }));
+        loaded = { type: "episode", source: "OMDb", title: na(raw.Title) || cachedEpisode.title, subtitle: `${parent.title} · S${cachedEpisode.season}E${cachedEpisode.number}`, image: na(raw.Poster) || cachedEpisode.image, description: na(raw.Plot) || cachedEpisode.description, url: raw.imdbID ? `https://www.imdb.com/title/${raw.imdbID}/` : "", facts: [["Aired", na(raw.Released) || cachedEpisode.airdate], ["Runtime", na(raw.Runtime) || (cachedEpisode.runtime ? `${cachedEpisode.runtime} min` : "")], ["Rating", na(raw.imdbRating) ? `★ ${raw.imdbRating}` : cachedEpisode.rating ? `★ ${cachedEpisode.rating}` : ""], ["Votes", na(raw.imdbVotes)], ["Rated", na(raw.Rated)]].filter(([, value]) => value), sections: [{ title: "Cast", kind: "people", items: people(raw.Actors, "Actor") }, { title: "Staff", kind: "people", items: [...people(raw.Director, "Director"), ...people(raw.Writer, "Writer")] }].filter(section => section.items.length), raw };
+      } else loaded = await window.SplitAppDetails.loadRef(ref, detailSettings());
+      if (requestId === refRequest) refData = loaded;
+    }
     catch (error) { if (requestId === refRequest) refError = error?.message || "Could not load this page."; }
     finally { if (requestId === refRequest) { refLoading = false; render(); scrollPageTop(); historyPush(true); } }
   }
@@ -1615,72 +1746,10 @@
     } catch (error) { recordLog("warning", `Could not save details for ${item.title}: ${error?.message || error}`); }
     finally { hydrating.delete(item.id); }
   }
-  let selectMode = false;
-  const selectedIds = new Set();
-  let lastBulkBackupAt = 0;
-  function backupBeforeBulk() {
-    if (!prefs.backupBeforeDestructive || Date.now() - lastBulkBackupAt < 60000) return;
-    lastBulkBackupAt = Date.now(); try { exportList({ silent: true }); } catch (_) {}
-  }
-  async function removeItemsWithUndo(list) {
-    const removed = list.map(item => ({ item: JSON.parse(JSON.stringify(item)), index: items.indexOf(item) })).filter(row => row.index >= 0);
-    if (!removed.length) return;
-    backupBeforeBulk(); const ids = new Set(removed.map(row => String(row.item.id)));
-    recordLibraryChange("removed", `Removed ${removed.length} ${removed.length === 1 ? "title" : "titles"}: ${removed.slice(0, 6).map(row => row.item.title).join(", ")}`, [...ids]);
-    items = items.filter(item => !ids.has(String(item.id))); await persist({ removed: [...ids] }); render();
-    toastUndo(`Removed ${removed.length} ${removed.length === 1 ? "title" : "titles"}.`, async () => {
-      recordLibraryChange("restored", `Undo: restored ${removed.length} ${removed.length === 1 ? "title" : "titles"}.`, [...ids]);
-      removed.sort((a, b) => a.index - b.index).forEach(row => items.splice(Math.min(row.index, items.length), 0, row.item));
-      await persist({ ids: [...ids] }); render(); toast("Restored.");
-    });
-  }
-  function enterSelectMode(id) { selectMode = true; selectedIds.clear(); if (id != null) selectedIds.add(String(id)); document.body.classList.add("select-mode"); applySelectionUI(); navigator.vibrate?.(15); }
-  function exitSelectMode() { selectMode = false; selectedIds.clear(); document.body.classList.remove("select-mode"); applySelectionUI(); }
-  function applySelectionUI() {
-    document.querySelectorAll(".item-card[data-item]").forEach(card => card.classList.toggle("is-selected", selectMode && selectedIds.has(card.dataset.item)));
-    let bar = $("#select-bar");
-    if (!selectMode) { bar?.remove(); $("#select-toggle")?.classList.remove("is-active"); $("#select-toggle")?.setAttribute("aria-pressed", "false"); return; }
-    $("#select-toggle")?.classList.add("is-active"); $("#select-toggle")?.setAttribute("aria-pressed", "true");
-    if (!bar) { bar = document.createElement("div"); bar.id = "select-bar"; bar.className = "select-bar"; bar.setAttribute("role", "toolbar"); bar.innerHTML = '<span class="select-count" data-select-count></span><button type="button" data-select-act="status">Status</button><button type="button" data-select-act="favorite">♥ Favorite</button><button type="button" data-select-act="delete" class="danger">Delete</button><button type="button" data-select-act="merge" disabled>Merge</button><button type="button" data-select-act="all">All</button><button type="button" data-select-act="done">Done</button>'; document.body.appendChild(bar); bar.addEventListener("click", onSelectBarClick); }
-    const count = bar.querySelector("[data-select-count]"); count.textContent = `${selectedIds.size} ✓`; count.setAttribute("aria-label", `${selectedIds.size} selected`);
-    bar.querySelectorAll('[data-select-act="status"],[data-select-act="favorite"],[data-select-act="delete"]').forEach(button => { button.disabled = selectedIds.size === 0; });
-    const merge = bar.querySelector('[data-select-act="merge"]'); if (merge) merge.disabled = selectedIds.size !== 2 || selectedItems().some((item, _, list) => item.category !== list[0].category);
-  }
-  const selectedItems = () => items.filter(item => selectedIds.has(String(item.id)));
-  async function onSelectBarClick(event) {
-    const act = event.target.closest("[data-select-act]")?.dataset.selectAct; if (!act) return;
-    const list = selectedItems();
-    if (act === "done") { exitSelectMode(); return; }
-    if (act === "all") { let visible = window.SplitAppLibrary.create(pageContext()).filteredItems(libraryQuery); if (dashboardStatusFilter !== "all") visible = visible.filter(item => item.status === dashboardStatusFilter); visible.forEach(item => selectedIds.add(String(item.id))); applySelectionUI(); return; }
-    if (act === "merge") { if (list.length !== 2 || list[0].category !== list[1].category) { toast("Select two titles from the same category to merge."); return; } exitSelectMode(); await mergeLibraryItems(list[0].id, list[1].id); return; }
-    if (!list.length) return;
-    if (act === "favorite") {
-      const next = list.some(item => !item.favorite), before = list.map(item => [item, Boolean(item.favorite), item.updatedAt]);
-      recordLibraryChange("favorite", `${next ? "Favorited" : "Unfavorited"} ${list.length} ${list.length === 1 ? "title" : "titles"}.`, list.map(item => item.id));
-      list.forEach(item => { item.favorite = next; item.updatedAt = Date.now(); }); await persist({ ids: list.map(item => item.id) }); exitSelectMode(); render();
-      toastUndo(`${next ? "Added" : "Removed"} ${list.length} ${list.length === 1 ? "title" : "titles"} ${next ? "to" : "from"} favorites.`, async () => { before.forEach(([item, favorite, updatedAt]) => { item.favorite = favorite; item.updatedAt = updatedAt; }); await persist({ ids: list.map(item => item.id) }); render(); });
-    } else if (act === "delete") {
-      if (!(await appConfirm(`Remove ${list.length} ${list.length === 1 ? "title" : "titles"} from your collection?`, { title: "Remove titles", confirmLabel: "Remove", danger: true }))) return;
-      exitSelectMode(); await removeItemsWithUndo(list);
-    } else if (act === "status") {
-      const statuses = [...new Set(list.flatMap(item => category(item.category)?.statuses || []))];
-      let dialog = $("#bulk-status-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "bulk-status-dialog"; dialog.className = "ios-action-sheet"; document.body.appendChild(dialog); }
-      dialog.innerHTML = `<div class="ios-action-group"><p>Set ${list.length} ${list.length === 1 ? "title" : "titles"} to…</p>${statuses.map(status => `<button type="button" data-bulk-status="${esc(status)}">${esc(status)}</button>`).join("")}</div><div class="ios-action-group"><button type="button" data-bulk-status="">Cancel</button></div>`;
-      dialog.onclick = async event2 => { if (event2.target === dialog) { closePopup(dialog); return; } const button = event2.target.closest("[data-bulk-status]"); if (!button) return; const status = button.dataset.bulkStatus; closePopup(dialog); if (!status) return; backupBeforeBulk(); const before = list.map(item => ({ item, status: item.status, progress: item.progress, updatedAt: item.updatedAt })), added = [];
-        list.forEach(item => { if (item.status === status) return; item.status = status; item.updatedAt = Date.now(); if (status === roles.done && Number(item.goal) > 0) item.progress = Math.max(Number(item.progress) || 0, Number(item.goal)); if (trackedStatuses.includes(status)) { const entry = { itemId: item.id, title: item.title, action: status, status, at: Date.now() }; history.unshift(entry); added.push(entry); } });
-        recordLibraryChange("status", `Marked ${list.length} ${list.length === 1 ? "title" : "titles"} as ${status}.`, list.map(item => item.id));
-        await persist({ ids: list.map(item => item.id) }); exitSelectMode(); render(); toastUndo(`Marked ${list.length} ${list.length === 1 ? "title" : "titles"} as ${status}.`, async () => { before.forEach(row => { row.item.status = row.status; row.item.progress = row.progress; row.item.updatedAt = row.updatedAt; }); history = history.filter(entry => !added.includes(entry)); await persist({ ids: list.map(item => item.id) }); render(); });
-      }; showPopup(dialog);
-    }
-  }
-  document.addEventListener("click", event => { if (!selectMode || page !== "dashboard") return; const card = event.target.closest?.(".item-card[data-item]"); if (!card || event.target.closest("button, a, input, select, textarea")) return; event.preventDefault(); event.stopPropagation(); selectedIds.has(card.dataset.item) ? selectedIds.delete(card.dataset.item) : selectedIds.add(card.dataset.item); applySelectionUI(); }, true);
   document.addEventListener("click", event => {
-    const toggle = event.target.closest?.("#select-toggle");
-    if (toggle) { event.preventDefault(); event.stopPropagation(); selectMode ? exitSelectMode() : enterSelectMode(); return; }
     const share = event.target.closest?.("[data-share-all]");
     if (share) { let selected = window.SplitAppLibrary.create(pageContext()).filteredItems(libraryQuery); if (dashboardStatusFilter !== "all") selected = selected.filter(item => item.status === dashboardStatusFilter); openShareList("Collection", selected); }
   }, true);
-  document.addEventListener("keydown", event => { if (event.key === "Escape" && selectMode) exitSelectMode(); });
 
   let metadataSync = null;
   function saveMetadataSyncState() {
@@ -1799,18 +1868,23 @@
   function toggleSeason(itemId, ids, done) {
     const item = items.find(entry => entry.id === itemId); if (!item) return;
     const watched = new Set((item.watchedEpisodeIds || []).map(String));
+    const previousWatched = watched.size, previousStatus = item.status;
     ids.forEach(id => done ? watched.delete(id) : watched.add(id));
     const info = window.SplitAppLibrary.episodeInfo(item), currentGoal = Number(item.goal) || Number(detailData?.goal) || watched.size;
     item.watchedEpisodeIds = [...watched]; item.goal = !done && info && watched.size > currentGoal ? info.total : currentGoal; item.progress = watched.size;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = roles.done;
-    item.updatedAt = Date.now(); persist({ ids: [item.id] }); render();
+    item.updatedAt = Date.now();
+    if (watched.size !== previousWatched || item.status !== previousStatus) {
+      const allEpisodes = info && ids.length === info.total;
+      history.unshift({ itemId: item.id, title: item.title, action: `${allEpisodes ? "All episodes" : "Season episodes"} marked ${done ? "unwatched" : "watched"}`, status: item.status, type: "episode", at: item.updatedAt });
+    }
+    persist({ ids: [item.id] }); render();
   }
   function toggleEpisodeWatched(itemId, episodeId, episodeTitle) {
     const item = items.find(entry => entry.id === itemId); if (!item) return;
     const watched = new Set((item.watchedEpisodeIds || []).map(String));
     const id = String(episodeId);
     const markingWatched = !watched.has(id);
-    const previousStatus = item.status;
     let earlier = 0;
     if (watched.has(id)) watched.delete(id);
     else {
@@ -1825,7 +1899,7 @@
     item.progress = watched.size;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = roles.done;
     item.updatedAt = Date.now();
-    if (item.status !== previousStatus && trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
+    history.unshift({ itemId: item.id, title: item.title, action: `${episodeTitle || "Episode"} marked ${markingWatched ? "watched" : "unwatched"}`, status: item.status, type: "episode", at: Date.now() });
     persist({ ids: [item.id] }); render(); toast(watched.has(id) ? (earlier ? `Episode and ${earlier} earlier ${earlier === 1 ? "episode" : "episodes"} marked watched.` : "Episode marked watched.") : "Episode marked unwatched.");
   }
   function deleteFromDetails(id) {
@@ -1913,12 +1987,12 @@
       const target = document.elementFromPoint(x, y)?.closest?.(".item-card[data-item]");
       const from = itemById(current.id), to = target && itemById(target.dataset.item);
       if (!from) return;
-      if (!to || from === to) { enterSelectMode(from.id); return; }
+      if (!to || from === to) return;
       if (from.category !== to.category) { toast("Merge titles from the same category."); return; }
       if (await appConfirm(`Merge “${from.title}” into “${to.title}” as one Mix title? Their source matches and tracking will be combined.`, { title: "Merge as Mix", confirmLabel: "Merge" })) await mergeLibraryItems(from.id, to.id, { confirmed: true });
     };
     document.addEventListener("pointerdown", event => {
-      if (page !== "dashboard" || selectMode || (event.pointerType === "mouse" && event.button !== 0)) return;
+      if (page !== "dashboard" || (event.pointerType === "mouse" && event.button !== 0)) return;
       const card = event.target.closest?.(".item-card[data-item]"); if (!card || event.target.closest("button, a, input, select, textarea")) return;
       start = { id: card.dataset.item, x: event.clientX, y: event.clientY };
       timer = setTimeout(() => {
@@ -2130,7 +2204,7 @@
     const settingPreviewIcons = {
       textSize: { small: "type", normal: "text", large: "text-cursor-input" },
       animationSpeed: { off: "pause", fast: "zap", normal: "gauge", slow: "turtle", custom: "sliders-horizontal" },
-      dashboardView: { list: "list", "compact-list": "align-justify", grid: "layout-grid", "detailed-grid": "layout-dashboard", "compact-grid": "grid-3x3", "large-grid": "square", timeline: "calendar-days" },
+      dashboardView: { list: "list", grid: "layout-grid", "posters-plus": "gallery-vertical-end", "compact-grid": "grid-3x3", "large-grid": "square" },
       dashboardDefaultCategory: { remember: "history", all: "layers", movie: "film", series: "tv" },
       dashboardSort: { "updated-desc": "clock-3", "created-desc": "calendar-plus", "progress-desc": "trending-up", "progress-asc": "trending-down", "release-desc": "calendar-days", "alphabetical-asc": "arrow-down-a-z", "alphabetical-desc": "arrow-up-z-a" },
       defaultStatus: { Watchlist: "bookmark", "In Progress": "play", Completed: "circle-check", "On Hold": "pause", Dropped: "circle-x" },
@@ -2144,7 +2218,6 @@
       pressEffect: { shrink: "pointer", soft: "hand", none: "pointer-off" },
       bottomBarBackground: { solid: "square", glass: "panels-top-left", transparent: "panels-top-bottom" },
       bottomBarStyle: { box: "square", "icon-color": "palette", underline: "underline" },
-      bottomBarCorners: { round: "panels-top-left", sharp: "square" },
       bottomBarLabels: { "icons-labels": "list", "icons-only": "layout-grid" },
       bottomBarLayout: { spread: "align-horizontal-space-between", center: "align-horizontal-justify-center", left: "align-horizontal-justify-start" },
       cardCorners: { rounded: "circle", soft: "squircle", square: "square" },
@@ -2369,7 +2442,7 @@
     toast("Replaying animations.");
   }
   function resetAppearance() {
-    ["theme", "textSize", "dateFormat", "iconStyle", "mainColor", "showSidebar", "showScrollbars", "bottomBarStyle", "bottomBarCorners", "bottomBarLabels", "bottomBarBackground", "bottomBarTransparency", "bottomBarLayout"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
+    ["theme", "textSize", "dateFormat", "iconStyle", "mainColor", "showSidebar", "showScrollbars", "bottomBarStyle", "bottomBarLabels", "bottomBarBackground", "bottomBarTransparency", "bottomBarLayout"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
     prefs.navIcons = { ...prefsDefaults.navIcons };
     prefs.navBar = { order: [...navKeys], visible: { ...prefsDefaults.navBar.visible } };
     persist({ meta: true }); applyPreferences(); render(); toast("Appearance settings restored.");
@@ -2386,7 +2459,9 @@
     const mixCategoryButton = event.target.closest("[data-mix-category]");
     if (mixCategoryButton) { mixCategory = mixCategoryButton.dataset.mixCategory; mixCache = null; render(); return; }
     const discoverCategoryButton = event.target.closest("[data-discover-category]");
-    if (discoverCategoryButton) { discoverCategoryChoice = discoverCategoryButton.dataset.discoverCategory; discoverCache = null; suggestionsCache = null; discoverQuery = ""; render(); return; }
+    if (discoverCategoryButton) { discoverCategoryChoice = discoverCategoryButton.dataset.discoverCategory; discoverCache = null; suggestionsCache = null; discoverQuery = ""; discoverYearFilter = ""; discoverGenreFilter = ""; render(); return; }
+    const discoverGenre = event.target.closest("[data-discover-genre]");
+    if (discoverGenre && page === "discover") { discoverGenreFilter = discoverGenre.dataset.discoverGenre || ""; loadDiscoverSuggestions(); return; }
     const addCategoryButton = event.target.closest("[data-add-category]");
     if (addCategoryButton) { applyAddCategory(addCategoryButton.dataset.addCategory); return; }
     const categoryFilter = event.target.closest("[data-category-filter]");
@@ -2406,7 +2481,7 @@
       return;
     }
     const quickStatus = event.target.closest("[data-quick-status]");
-    if (quickStatus) { if (quickStatus.dataset.quickStatus === "all" && prefs.favoritesOnly) prefs.favoritesOnly = false; setPreference("dashboardStatusFilter", quickStatus.dataset.quickStatus); return; }
+    if (quickStatus) { prefs.favoritesOnly = false; setPreference("dashboardStatusFilter", quickStatus.dataset.quickStatus); return; }
     const detailStatus = event.target.closest("[data-detail-status-btn]");
     if (detailStatus) {
       const item = items.find(row => row.id === detailItemId);
@@ -2461,6 +2536,8 @@
     if (csInsert) { const input = $("#custom-source-form")?.elements.searchUrl; if (input) { const at = input.selectionStart ?? input.value.length; input.setRangeText(csInsert.dataset.csInsert, at, input.selectionEnd ?? at, "end"); input.focus(); } return; }
     if (event.target.closest("[data-custom-source-test]")) { testCustomSourceForm(); return; }
     if (event.target.closest("[data-custom-source-delete]")) { deleteCustomSource(); return; }
+    const statsCategoryButton = event.target.closest("[data-stats-category]");
+    if (statsCategoryButton) { statsCategory = statsCategoryButton.dataset.statsCategory === "movie" ? "movie" : "series"; render(); return; }
     const rangeButton = event.target.closest("[data-stats-range]");
     if (rangeButton) { statsRange = rangeButton.dataset.statsRange === "month" ? "month" : "week"; statsActivityDate = ""; render(); return; }
     const watchtimePageButton = event.target.closest("[data-stats-watchtime-page]");
@@ -2507,6 +2584,23 @@
       try { window.Capacitor?.Plugins?.CapacitorCookies?.clearCookies?.({ url: `https://${host}` }); } catch (_) {}
       persist({ meta: true }); render(); toast("Cookies cleared."); return;
     }
+    const reviewProvider = event.target.closest("[data-review-provider-session]");
+    if (reviewProvider) {
+      const key = reviewProvider.dataset.reviewProviderSession, plugin = window.Capacitor?.Plugins?.ProviderSession;
+      const url = key === "imdb" ? "https://www.imdb.com/" : key === "rottentomatoes" ? "https://www.rottentomatoes.com/" : "";
+      (async () => {
+        try {
+          if (!url) throw new Error("Unsupported provider.");
+          if (plugin?.reviewProvider) await plugin.reviewProvider({ provider: key });
+          else window.open(url, "_blank", "noopener,noreferrer");
+          toast(`${key === "imdb" ? "IMDb" : "Rotten Tomatoes"} session ready.`);
+          if (page === "discover" && discoverSource === key && discoverQuery.trim()) submitDiscover();
+          else if (page === "details" && detailRef && (detailRef.extra?.source === key || items.find(row => String(row.id) === String(detailItemId))?.metadataSource === key)) loadDetailRef();
+          else if (page === "details" && detailItemId && items.find(row => String(row.id) === String(detailItemId))?.metadataSource === key) loadDetails(detailItemId);
+        } catch (error) { toast(error?.message || "Could not open the provider."); }
+      })();
+      return;
+    }
     const domainPick = event.target.closest("[data-source-domain-pick]");
     if (domainPick) {
       const [key, host] = domainPick.dataset.sourceDomainPick.split("|"), provider = window.SplitAppSources.list().find(row => row.key === key);
@@ -2518,10 +2612,6 @@
     const resetOptions = event.target.closest("[data-source-reset-options]");
     if (resetOptions) { delete prefs.sourceOptions[resetOptions.dataset.sourceResetOptions]; persist({ meta: true }); render(); toast("Source options reset."); return; }
     const go = event.target.closest("[data-go]"); if (go) { goto(go.dataset.go); return; }
-    const navMove = event.target.closest("[data-nav-move]");
-    if (navMove) { prefs.navBar.order = moveInOrder([...prefs.navBar.order], navMove.dataset.navKey, navMove.dataset.navMove); persist({ meta: true }); applyPreferences(); render(); return; }
-    const sourceMove = event.target.closest("[data-source-move]");
-    if (sourceMove) { prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], sourceMove.dataset.sourceKey, sourceMove.dataset.sourceMove); persist({ meta: true }); render(); return; }
     const sourceFilter = event.target.closest("[data-source-filter]");
     if (sourceFilter) {
       metadataSourceFilter = sourceFilter.dataset.sourceFilter;
@@ -2596,13 +2686,14 @@
     const seasonButton = event.target.closest("[data-season-toggle]");
     if (seasonButton) {
       const ids = seasonButton.dataset.seasonToggle.split(","), undo = seasonButton.dataset.seasonDone === "true";
-      appConfirm(`${undo ? "Uncheck" : "Mark as watched"} all ${ids.length} episodes of this season?`, { title: undo ? "Uncheck season" : "Check whole season", confirmLabel: undo ? "Uncheck" : "Mark watched" }).then(ok => { if (ok) toggleSeason(detailItemId, ids, undo); });
+      toggleSeason(detailItemId, ids, undo);
+      toast(undo ? `${ids.length} episodes marked unwatched.` : `${ids.length} episodes marked watched.`);
       return;
     }
     const episode = event.target.closest("[data-episode-toggle]");
     if (episode) { toggleEpisodeWatched(episode.dataset.itemId || detailItemId, episode.dataset.episodeId, episode.dataset.episodeTitle || "Episode"); return; }
     const favoritesFilter = event.target.closest("[data-favorites-filter]");
-    if (favoritesFilter) { setPreference("favoritesOnly", !prefs.favoritesOnly); render(); return; }
+    if (favoritesFilter) { prefs.dashboardStatusFilter = dashboardStatusFilter = "all"; setPreference("favoritesOnly", !prefs.favoritesOnly); render(); return; }
     const quick = event.target.closest("[data-action=watch-next],[data-action=mark-all-watched],[data-action=toggle-favorite]");
     if (quick) {
       const item = items.find(entry => entry.id === quick.dataset.id), kind = quick.dataset.action; if (!item) return;
@@ -2621,8 +2712,9 @@
     }
     const seasonPill = event.target.closest("[data-season-pill]");
     if (seasonPill) {
-      detailSeason = seasonPill.dataset.seasonPill; const root = seasonPill.closest(".season-list");
-      root.querySelectorAll("[data-season-pill]").forEach(button => { const on = button === seasonPill; button.classList.toggle("active", on); button.setAttribute("aria-selected", String(on)); });
+      const root = seasonPill.closest(".season-list"), collapsing = seasonPill.getAttribute("aria-expanded") === "true";
+      detailSeason = collapsing ? "" : seasonPill.dataset.seasonPill;
+      root.querySelectorAll("[data-season-pill]").forEach(row => { const on = !collapsing && row === seasonPill; row.setAttribute("aria-expanded", String(on)); row.querySelector(".season-accordion-trigger")?.classList.toggle("is-open", on); row.closest(".season-accordion-group")?.classList.toggle("is-open", on); });
       root.querySelectorAll("[data-season-panel]").forEach(panel => { panel.hidden = panel.dataset.seasonPanel !== detailSeason; const lazy = !panel.hidden && panel.querySelector("template[data-lazy-season]"); if (lazy) lazy.replaceWith(lazy.content); });
       return;
     }
@@ -2658,7 +2750,21 @@
       return;
     }
     const sourceDetails = event.target.closest("[data-discover-details]"); if (sourceDetails) { openDiscoverDetails($("#discover-results")._results?.[Number(sourceDetails.dataset.discoverDetails)]); return; }
-    const discoverAdd = event.target.closest("[data-discover-add]"); if (discoverAdd) { addDiscoverResult($("#discover-results")._results?.[Number(discoverAdd.dataset.discoverAdd)]); return; }
+    const discoverAdd = event.target.closest("[data-discover-add]"); if (discoverAdd) { addDiscoverResult($("#discover-results")._results?.[Number(discoverAdd.dataset.discoverAdd)]); refreshDiscoverSavedActions(); return; }
+  });
+  $("#page-content").addEventListener("keydown", event => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const row = event.target.closest?.('.season-accordion-row[role="button"][data-season-pill]');
+    if (!row || event.target !== row) return;
+    event.preventDefault(); row.click();
+  });
+  document.addEventListener("change", event => {
+    const sort = event.target.closest?.("[data-discover-sort]");
+    const year = event.target.closest?.("[data-discover-year]");
+    if (!sort && !year) return;
+    if (sort) discoverSort = sort.value;
+    if (year) discoverYearFilter = year.value;
+    loadDiscoverSuggestions();
   });
   document.addEventListener("change", event => {
     const input = event.target;
@@ -2711,28 +2817,109 @@
     if (input.matches("[data-setting-action=import]")) { const file = input.files?.[0]; input.value = ""; importList(file); }
   });
   document.addEventListener("dragstart", event => {
-    const row = event.target.closest("[data-nav-row], [data-source-row]");
+    const row = event.target.closest("[data-nav-row]");
     if (!row || !event.dataTransfer) return;
-    const kind = row.hasAttribute("data-nav-row") ? "nav" : "source";
-    const key = row.dataset.navRow || row.dataset.sourceRow;
+    const kind = "nav";
+    const key = row.dataset.navRow;
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", `${kind}:${key}`);
     row.classList.add("dragging");
   });
-  document.addEventListener("dragend", event => event.target.closest("[data-nav-row], [data-source-row]")?.classList.remove("dragging"));
+  document.addEventListener("dragend", event => event.target.closest("[data-nav-row]")?.classList.remove("dragging"));
   document.addEventListener("dragover", event => {
-    if (event.target.closest("[data-nav-row], [data-source-row]")) event.preventDefault();
+    if (event.target.closest("[data-nav-row]")) event.preventDefault();
   });
   document.addEventListener("drop", event => {
-    const targetRow = event.target.closest("[data-nav-row], [data-source-row]");
+    const targetRow = event.target.closest("[data-nav-row]");
     if (!targetRow || !event.dataTransfer) return;
     event.preventDefault();
     const [kind, key] = event.dataTransfer.getData("text/plain").split(":");
     if (kind === "nav" && targetRow.dataset.navRow) {
       prefs.navBar.order = moveInOrder([...prefs.navBar.order], key, null, targetRow.dataset.navRow); persist({ meta: true }); applyPreferences(); render();
-    } else if (kind === "source" && targetRow.dataset.sourceRow) {
-      prefs.metadataSourceOrder = moveInOrder([...prefs.metadataSourceOrder], key, null, targetRow.dataset.sourceRow); persist({ meta: true }); render();
     }
+  });
+  let sourcePointerDrag = null;
+  const finishSourcePointerDrag = () => {
+    if (!sourcePointerDrag) return;
+    const { row, list, moved } = sourcePointerDrag;
+    row.classList.remove("dragging");
+    sourcePointerDrag = null;
+    if (!moved) return;
+    prefs.metadataSourceOrder = [...list.querySelectorAll("[data-source-row]")].map(entry => entry.dataset.sourceRow);
+    persist({ meta: true }); render();
+  };
+  document.addEventListener("pointerdown", event => {
+    const handle = event.target.closest(".metadata-source-row .drag-handle");
+    if (!handle || (event.pointerType === "mouse" && event.button !== 0)) return;
+    const row = handle.closest("[data-source-row]"), list = row?.parentElement;
+    if (!row || !list) return;
+    sourcePointerDrag = { row, list, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false };
+    row.classList.add("dragging");
+    handle.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  });
+  document.addEventListener("pointermove", event => {
+    const drag = sourcePointerDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
+    drag.moved = true;
+    event.preventDefault();
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-source-row]");
+    if (!target || target === drag.row || target.parentElement !== drag.list || target.hidden) return;
+    const rect = target.getBoundingClientRect();
+    drag.list.insertBefore(drag.row, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
+  }, { passive: false });
+  document.addEventListener("pointerup", event => { if (sourcePointerDrag?.pointerId === event.pointerId) finishSourcePointerDrag(); });
+  document.addEventListener("pointercancel", event => { if (sourcePointerDrag?.pointerId === event.pointerId) finishSourcePointerDrag(); });
+  document.addEventListener("keydown", event => {
+    const handle = event.target.closest?.(".metadata-source-row .drag-handle");
+    if (!handle || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
+    const row = handle.closest("[data-source-row]"), list = row?.parentElement;
+    const neighbor = event.key === "ArrowUp" ? row?.previousElementSibling : row?.nextElementSibling;
+    if (!row || !neighbor || neighbor.hidden) return;
+    event.preventDefault();
+    list.insertBefore(row, event.key === "ArrowUp" ? neighbor : neighbor.nextSibling);
+    prefs.metadataSourceOrder = [...list.querySelectorAll("[data-source-row]")].map(entry => entry.dataset.sourceRow);
+    persist({ meta: true }); render();
+  });
+  let navPointerDrag = null;
+  const finishNavPointerDrag = () => {
+    if (!navPointerDrag) return;
+    const { row, list, moved } = navPointerDrag;
+    row.classList.remove("dragging"); navPointerDrag = null;
+    if (!moved) return;
+    prefs.navBar.order = [...list.querySelectorAll("[data-nav-row]")].map(entry => entry.dataset.navRow);
+    persist({ meta: true }); applyPreferences(); render();
+  };
+  document.addEventListener("pointerdown", event => {
+    const handle = event.target.closest(".nav-layout-row .drag-handle");
+    if (!handle || event.pointerType === "mouse" || event.button !== 0) return;
+    const row = handle.closest("[data-nav-row]"), list = row?.parentElement;
+    if (!row || !list) return;
+    navPointerDrag = { row, list, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false };
+    row.classList.add("dragging"); handle.setPointerCapture?.(event.pointerId); event.preventDefault();
+  });
+  document.addEventListener("pointermove", event => {
+    const drag = navPointerDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
+    drag.moved = true; event.preventDefault();
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-nav-row]");
+    if (!target || target === drag.row || target.parentElement !== drag.list) return;
+    const rect = target.getBoundingClientRect();
+    drag.list.insertBefore(drag.row, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
+  }, { passive: false });
+  document.addEventListener("pointerup", event => { if (navPointerDrag?.pointerId === event.pointerId) finishNavPointerDrag(); });
+  document.addEventListener("pointercancel", event => { if (navPointerDrag?.pointerId === event.pointerId) finishNavPointerDrag(); });
+  document.addEventListener("keydown", event => {
+    const handle = event.target.closest?.(".nav-layout-row .drag-handle");
+    if (!handle || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
+    const row = handle.closest("[data-nav-row]"), list = row?.parentElement;
+    const neighbor = event.key === "ArrowUp" ? row?.previousElementSibling : row?.nextElementSibling;
+    if (!row || !neighbor) return;
+    event.preventDefault(); list.insertBefore(row, event.key === "ArrowUp" ? neighbor : neighbor.nextSibling);
+    prefs.navBar.order = [...list.querySelectorAll("[data-nav-row]")].map(entry => entry.dataset.navRow);
+    persist({ meta: true }); applyPreferences(); render();
   });
   document.addEventListener("input", event => {
     if (event.target.matches("[data-log-search]")) { if (settingsGroup === "history") historyQuery = event.target.value; else logQuery = event.target.value; const list = $(".logcat-list"); if (list) { const query = (settingsGroup === "history" ? historyQuery : logQuery).toLowerCase(); list.querySelectorAll(".logcat-entry").forEach(row => { row.hidden = !row.textContent.toLowerCase().includes(query); }); } return; }
@@ -2869,7 +3056,7 @@
   })();
   $("#header-type").addEventListener("click", event => {
     const discoverButton = event.target.closest("[data-discover-category]");
-    if (discoverButton && page === "discover") { discoverCategoryChoice = discoverButton.dataset.discoverCategory; discoverCache = null; suggestionsCache = null; discoverQuery = ""; render(); return; }
+    if (discoverButton && page === "discover") { discoverCategoryChoice = discoverButton.dataset.discoverCategory; discoverCache = null; suggestionsCache = null; discoverQuery = ""; discoverYearFilter = ""; discoverGenreFilter = ""; render(); return; }
     const button = event.target.closest("[data-category-filter]"); if (!button) return; activeCategory = button.dataset.categoryFilter || "series"; prefs.dashboardDefaultCategory = activeCategory; persist({ meta: true }); render();
   });
   $("[data-close-setting-picker]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#setting-picker-dialog")); });
@@ -2972,7 +3159,7 @@
       }
       items.forEach(stripLocalScores);
       delete prefs.showRatings; delete prefs.ratingFormat; delete prefs.dashboardDensity; delete prefs.font; delete prefs.categoryColors; delete prefs.showThumbnails; delete prefs.showProgress;
-      if (!["system", "light", "amoled"].includes(prefs.theme)) prefs.theme = "system";
+      prefs.theme = "amoled";
       if (["rating", "rating-desc", "highest-rated"].includes(prefs.dashboardSort)) prefs.dashboardSort = "alphabetical-asc";
       delete prefs.defaultCategory;
       delete prefs.appLook;

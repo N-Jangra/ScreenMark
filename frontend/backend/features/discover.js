@@ -6,7 +6,9 @@
   const capacitor = window.Capacitor;
   const nativeApp = Boolean(capacitor?.isNativePlatform?.() || ["android", "ios"].includes(capacitor?.getPlatform?.()));
   const nativeHttp = window.CapacitorHttp || capacitor?.Plugins?.CapacitorHttp || capacitor?.Plugins?.Http || null;
+  const filePreview = !nativeApp && location.protocol === "file:";
   const localPreview = !nativeApp && location.protocol.startsWith("http") && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  const fileProxy = "http://127.0.0.1:3000/proxy?url=";
   const encode = value => encodeURIComponent(String(value || "").trim());
   async function wireRequest(url, options = {}, responseType = "json") {
     const method = String(options.method || "GET").toUpperCase();
@@ -14,7 +16,7 @@
     // Browsers refuse to set Cookie / User-Agent. The Android app sends them as-is; the local preview passes them to its proxy; a plain website drops them.
     if (!nativeApp) {
       for (const [name, key] of [["Cookie", "x-source-cookie"], ["User-Agent", "x-source-user-agent"]]) {
-        if (headers[name] && localPreview) headers[key] = headers[name];
+        if (headers[name] && (localPreview || filePreview)) headers[key] = headers[name];
         delete headers[name];
       }
     }
@@ -33,8 +35,20 @@
       }
       return data;
     }
-    const requestUrl = localPreview ? `/proxy?url=${encodeURIComponent(url)}` : url;
-    const response = await fetch(requestUrl, { method, headers, body: options.body });
+    let response;
+    if (localPreview) {
+      response = await fetch(`/proxy?url=${encodeURIComponent(url)}`, { method, headers, body: options.body });
+    } else if (filePreview) {
+      try {
+        response = await fetch(`${fileProxy}${encodeURIComponent(url)}`, { method, headers, body: options.body });
+        if (!response.ok) throw Object.assign(new Error(`${response.status} ${response.statusText}`), { status: response.status });
+      } catch (proxyError) {
+        try { response = await fetch(url, { method, headers, body: options.body }); }
+        catch (_) { throw new Error("Firefox blocks metadata requests from file://. Start the local preview with npm run serve, then open http://127.0.0.1:3000."); }
+      }
+    } else {
+      response = await fetch(url, { method, headers, body: options.body });
+    }
     if (!response.ok) throw Object.assign(new Error(`${response.status} ${response.statusText}`), { status: response.status });
     return responseType === "text" ? await response.text() : await response.json();
   }
@@ -72,9 +86,25 @@
     }
   }
   const requestText = (url, options = {}) => { ({ url, options } = applySource(url, options)); return wireRequest(url, options, "text"); };
+  const imageHosts = new Set(["static.tvmaze.com", "s4.anilist.co", "m.media-amazon.com", "image.tmdb.org", "is1-ssl.mzstatic.com", "img.youtube.com"]);
+  const imageUrl = value => {
+    const url = String(value || "");
+    if (!/^https?:\/\//i.test(url) || nativeApp) return url;
+    try { if (!imageHosts.has(new URL(url).hostname)) return url; } catch (_) { return url; }
+    if (filePreview) return `${fileProxy}${encodeURIComponent(url)}`;
+    if (localPreview) return `/proxy?url=${encodeURIComponent(url)}`;
+    return url;
+  };
   // One request through a source's own options (domain / user agent / cookies from its settings page).
-  const sourceJson = (sourceKey, url, settings = {}, extra = {}) => requestJson(url, { ...settings, ...extra });
-  const sourceText = (sourceKey, url, settings = {}, extra = {}) => requestText(url, { ...settings, ...extra });
+  async function providerSessionHeaders(sourceKey) {
+    if (!nativeApp || !["imdb", "rottentomatoes"].includes(sourceKey)) return {};
+    try {
+      const session = await capacitor?.Plugins?.ProviderSession?.getSession?.({ provider: sourceKey });
+      return { ...(session?.cookie ? { Cookie: session.cookie } : {}), ...(session?.userAgent ? { "User-Agent": session.userAgent } : {}) };
+    } catch (_) { return {}; }
+  }
+  const sourceJson = async (sourceKey, url, settings = {}, extra = {}) => requestJson(url, { ...settings, ...extra, headers: { ...(await providerSessionHeaders(sourceKey)), ...(extra.headers || {}) } });
+  const sourceText = async (sourceKey, url, settings = {}, extra = {}) => requestText(url, { ...settings, ...extra, headers: { ...(await providerSessionHeaders(sourceKey)), ...(extra.headers || {}) } });
   const tmdbAuth = key => key.length > 40 ? { headers: { Authorization: `Bearer ${key}` } } : { query: `api_key=${encodeURIComponent(key)}` };
   const tmdbGet = (path, settings) => {
     const key = settings.apiKeys?.tmdb?.trim(); if (!key) throw new Error("Add a TMDB API key in Settings → Metadata Sources.");
@@ -106,9 +136,9 @@
     const anime = genres.includes("anime") || (language === "japanese" && show.type === "Animation");
     return category === "series" && !anime;
   };
-  const tvmazeResult = (show, category) => result("tvmaze", category, show.id, show.name, { year: show.premiered?.slice(0, 4), image: show.image?.medium || show.image?.original, description: textFromHtml(show.summary), rating: show.rating?.average, goal: 0, url: show.url, subtitle: [show.premiered?.slice(0, 4), show.type, show.network?.name || show.webChannel?.name].filter(Boolean).join(" · ") });
+  const tvmazeResult = (show, category) => result("tvmaze", category, show.id, show.name, { year: show.premiered?.slice(0, 4), image: show.image?.medium || show.image?.original, description: textFromHtml(show.summary), rating: show.rating?.average, genres: show.genres || [], goal: 0, url: show.url, subtitle: [show.premiered?.slice(0, 4), show.type, show.network?.name || show.webChannel?.name].filter(Boolean).join(" · ") });
   const anilistFormats = category => category === "movie" ? "[MOVIE]" : "[TV, TV_SHORT, ONA, OVA, SPECIAL]";
-  const anilistRows = (rows, category) => (rows || []).map(row => result("anilist", category, row.id, row.title?.english || row.title?.romaji, { year: row.startDate?.year, image: row.coverImage?.large || row.coverImage?.medium, description: textFromHtml(row.description), rating: row.averageScore ? row.averageScore / 10 : 0, goal: category === "movie" ? 0 : (row.episodes || 0), url: row.siteUrl, subtitle: [row.startDate?.year, row.format, row.averageScore ? `★ ${(row.averageScore / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") }));
+  const anilistRows = (rows, category) => (rows || []).map(row => result("anilist", category, row.id, row.title?.english || row.title?.romaji, { year: row.startDate?.year, image: row.coverImage?.large || row.coverImage?.medium, description: textFromHtml(row.description), rating: row.averageScore ? row.averageScore / 10 : 0, genres: row.genres || [], goal: category === "movie" ? 0 : (row.episodes || 0), url: row.siteUrl, subtitle: [row.startDate?.year, row.format, row.averageScore ? `★ ${(row.averageScore / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") }));
   const ANILIST_FIELDS = "id title{romaji english} coverImage{large medium} description startDate{year} averageScore episodes format genres siteUrl";
   const searchers = {
     tvmaze: async (query, category, settings) => {
@@ -303,5 +333,5 @@
     if (!merged.length && settled.every(entry => entry.status === "rejected")) throw settled[0].reason;
     return merged;
   }
-  window.SplitAppDiscovery = Object.freeze({ appKey, search, searchSource, trending, testCustomSource, loadCustomDetails, requestJson, requestText, sourceJson, sourceText, tmdbGet, tvdbGet, encode, result, textFromHtml });
+  window.SplitAppDiscovery = Object.freeze({ appKey, search, searchSource, trending, testCustomSource, loadCustomDetails, requestJson, requestText, sourceJson, sourceText, tmdbGet, tvdbGet, encode, result, imageUrl, textFromHtml });
 })();
