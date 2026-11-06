@@ -63,6 +63,7 @@
   background: var(--surface);
   box-shadow: var(--shadow);
 }
+.detail-links-section { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .detail-progress-card > div:first-child { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .detail-progress-card > div:first-child span, .detail-progress-card small { color: var(--muted); font-size: .8rem; }
 .detail-progress-card strong { color: var(--legacy-text); font-size: .9rem; }
@@ -89,7 +90,7 @@
 .detail-link-list a {
   padding: 8px 11px;
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
-  border-radius: 12px;
+  border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-text,var(--accent));
   font-size: .8rem;

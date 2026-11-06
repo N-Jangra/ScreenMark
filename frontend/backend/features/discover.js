@@ -113,15 +113,40 @@
       .catch(error => { throw error?.status === 401 ? new Error("TMDB rejected your API key. Check it in Metadata Sources.") : error; });
   };
   const tvdbTokens = new Map();
+  const tvdbTokenLifetime = 28 * 24 * 60 * 60 * 1000;
+  const getTvdbToken = async (key, settings) => {
+    const cached = tvdbTokens.get(key);
+    if (cached?.token && cached.expiresAt > Date.now()) return cached.token;
+    if (cached?.pending) return cached.pending;
+    const pending = sourceJson("tvdb", "https://api4.thetvdb.com/v4/login", settings, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apikey: key }), noCache: true })
+      .then(login => {
+        const token = login?.data?.token;
+        if (!token) throw new Error("TheTVDB did not return a login token.");
+        tvdbTokens.set(key, { token, expiresAt: Date.now() + tvdbTokenLifetime });
+        return token;
+      })
+      .catch(error => {
+        tvdbTokens.delete(key);
+        throw error?.status === 401 ? new Error("TheTVDB rejected your API key. Check it in Metadata Sources.") : error;
+      });
+    tvdbTokens.set(key, { pending });
+    return pending;
+  };
   const tvdbGet = async (path, settings) => {
     const key = settings.apiKeys?.tvdb?.trim(); if (!key) throw new Error("Add a TheTVDB API key in Settings → Metadata Sources.");
-    let token = tvdbTokens.get(key);
-    if (!token) {
-      const login = await sourceJson("tvdb", "https://api4.thetvdb.com/v4/login", settings, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apikey: key }), noCache: true }).catch(error => { throw error?.status === 401 ? new Error("TheTVDB rejected your API key. Check it in Metadata Sources.") : error; });
-      token = login?.data?.token; if (!token) throw new Error("TheTVDB did not return a login token.");
-      tvdbTokens.set(key, token);
+    const request = token => sourceJson("tvdb", `https://api4.thetvdb.com/v4${path}`, settings, { headers: { Authorization: `Bearer ${token}` }, noCache: true });
+    let token = await getTvdbToken(key, settings);
+    try { return await request(token); }
+    catch (error) {
+      if (error?.status !== 401) throw error;
+      const current = tvdbTokens.get(key);
+      if (current?.token && current.token !== token && current.expiresAt > Date.now()) token = current.token;
+      else {
+        if (current?.token === token) tvdbTokens.delete(key);
+        token = await getTvdbToken(key, settings);
+      }
+      return request(token);
     }
-    return sourceJson("tvdb", `https://api4.thetvdb.com/v4${path}`, settings, { headers: { Authorization: `Bearer ${token}` }, noCache: true });
   };
   const result = (source, category, providerId, title, fields = {}) => ({
     source, category, providerId: String(providerId || ""), title: String(title || "").trim(),
@@ -277,12 +302,32 @@
         return [{ source: "tvmaze", title: "Streaming today", items: showsFrom(stream) }, { source: "tvmaze", title: "On TV today", items: showsFrom(tv) }, { source: "tvmaze", title: "Streaming tomorrow", items: showsFrom(soon) }];
       });
     }
+    if (want("tmdb") && settings.apiKeys?.tmdb?.trim()) jobs.push(async () => {
+      const kind = category === "movie" ? "movie" : "tv";
+      const latestSort = kind === "movie" ? "primary_release_date.desc" : "first_air_date.desc";
+      const releaseParam = kind === "movie" ? "release_date.lte" : "first_air_date.lte";
+      const [trending, latest, genreData] = await Promise.all([
+        tmdbGet(`/trending/${kind}/week`, settings).catch(() => ({ results: [] })),
+        tmdbGet(`/discover/${kind}?sort_by=${latestSort}&${releaseParam}=${day(0)}&include_adult=false&page=1`, settings).catch(() => ({ results: [] })),
+        tmdbGet(`/genre/${kind}/list`, settings).catch(() => ({ genres: [] }))
+      ]);
+      const genreNames = new Map((genreData.genres || []).map(row => [row.id, row.name]));
+      const tmdbRows = (rows, title) => ({ source: "tmdb", title, items: (rows || []).slice(0, 14).map(row => {
+        const release = row.release_date || row.first_air_date || "";
+        return result("tmdb", category, row.id, row.title || row.name, {
+          year: release.slice(0, 4), image: row.poster_path ? `https://image.tmdb.org/t/p/w342${row.poster_path}` : "",
+          description: row.overview || "", rating: Number(row.vote_average) || 0,
+          genres: (row.genre_ids || []).map(id => genreNames.get(id)).filter(Boolean),
+          url: `https://www.themoviedb.org/${kind === "movie" ? "movie" : "tv"}/${row.id}`, subtitle: release.slice(0, 4)
+        }); }).filter(row => row.title && row.image) });
+      return [tmdbRows(trending.results, "Trending"), tmdbRows(latest.results, "Latest")];
+    });
     // Public iTunes top-movies chart (no key). Titles are resolved through Mix fetch, so details come from your enabled sources.
     if (category === "movie" && !sourceKey) jobs.push(async () => {
       const data = await requestJson("https://itunes.apple.com/us/rss/topmovies/limit=24/json", settings);
       const entries = Array.isArray(data?.feed?.entry) ? data.feed.entry : [];
       const poster = list => String((list || []).slice(-1)[0]?.label || "").replace(/\/\d+x\d+bb\.(png|jpg)$/, "/300x450bb.$1");
-      const items = entries.map(row => { const title = row["im:name"]?.label; return result("mix", category, window.SplitAppMix?.norm ? window.SplitAppMix.norm(title) : String(title).toLowerCase(), title, { year: String(row["im:releaseDate"]?.label || "").slice(0, 4), image: poster(row["im:image"]), description: row.summary?.label || "", subtitle: [String(row["im:releaseDate"]?.label || "").slice(0, 4), row.category?.attributes?.label].filter(Boolean).join(" · "), mixLookup: true }); }).filter(row => row.title);
+      const items = entries.map(row => { const title = row["im:name"]?.label, genre = row.category?.attributes?.label || ""; return result("mix", category, window.SplitAppMix?.norm ? window.SplitAppMix.norm(title) : String(title).toLowerCase(), title, { year: String(row["im:releaseDate"]?.label || "").slice(0, 4), image: poster(row["im:image"]), description: row.summary?.label || "", genres: genre ? [genre] : [], subtitle: [String(row["im:releaseDate"]?.label || "").slice(0, 4), genre].filter(Boolean).join(" · "), mixLookup: true }); }).filter(row => row.title);
       return [{ source: "mix", title: "Top movies right now", items: items.slice(0, 14) }, { source: "mix", title: "More popular movies", items: items.slice(14) }];
     });
     if (want("anilist")) jobs.push(async () => {

@@ -234,15 +234,19 @@
         try { return [row.season_number, await controller.tmdbGet(`/tv/${encode(item.providerId)}/season/${encode(row.season_number)}`, s)]; }
         catch (error) { return [row.season_number, { _fetchError: String(error?.message || error) }]; }
       }) : [];
+      const failedSeason = seasonData.find(([, season]) => season?._fetchError);
+      if (failedSeason) throw new Error(`TMDB could not load season ${failedSeason[0]}: ${failedSeason[1]._fetchError}`);
       const seasonDetails = Object.fromEntries(seasonData);
       const recommendationPages = Number(d.recommendations?.total_pages) || 1;
-      const additionalRecommendationPages = recommendationPages > 1 ? await mapLimit(Array.from({ length: Math.min(recommendationPages, 500) - 1 }, (_, index) => index + 2), 4, async page => {
+      // The detail UI only needs a short suggestions shelf. Fetching every page can fan out
+      // hundreds of requests and block a title refresh without adding useful detail data.
+      const additionalRecommendationPages = recommendationPages > 1 ? await mapLimit(Array.from({ length: Math.min(recommendationPages, 3) - 1 }, (_, index) => index + 2), 3, async page => {
         try { return await controller.tmdbGet(`/${kind}/${encode(item.providerId)}/recommendations?page=${page}`, s); }
         catch (error) { return { page, error: String(error?.message || error) }; }
       }) : [];
       const recommendationData = [d.recommendations, ...additionalRecommendationPages];
       const recommendationRows = recommendationData.flatMap(page => page?.results || []);
-      const similar = unique(recommendationRows, row => row.id).map(row => ({ title: row.title || row.name, meta: String(row.release_date || row.first_air_date || "").slice(0, 4), image: img(row.poster_path, "w342"), url: `https://www.themoviedb.org/${kind}/${row.id}` }));
+      const similar = unique(recommendationRows, row => row.id).slice(0, 40).map(row => ({ title: row.title || row.name, meta: String(row.release_date || row.first_air_date || "").slice(0, 4), image: img(row.poster_path, "w342"), url: `https://www.themoviedb.org/${kind}/${row.id}` }));
       const episodeRows = seasonRows.flatMap(season => (seasonDetails[season.season_number]?.episodes || []).map(ep => ({
         id: `tmdb-${d.id}-s${ep.season_number ?? season.season_number}-e${ep.episode_number}`,
         season: Number(ep.season_number ?? season.season_number), number: Number(ep.episode_number) || 0,
@@ -274,20 +278,48 @@
     // ---- TheTVDB: series and movies (needs a key) ----
     tvdb: async (item, s) => {
       const kind = item.category === "movie" ? "movies" : "series";
-      const d = (await controller.tvdbGet(`/${kind}/${encode(item.providerId)}/extended${kind === "series" ? "?short=true" : ""}`, s)).data || {};
+      const seriesId = encode(item.providerId);
+      // `short=true` omits artwork, cast and trailers. Ask for the full record and its
+      // episode records so TVDB series can use the same checklist as other providers.
+      const d = (await controller.tvdbGet(`/${kind}/${seriesId}/extended${kind === "series" ? "?meta=episodes" : ""}`, s)).data || {};
+      let rawEpisodes = kind === "series" && Array.isArray(d.episodes) ? d.episodes : [];
+      if (kind === "series" && !rawEpisodes.length) {
+        const pages = [];
+        for (let page = 0; page < 100; page += 1) {
+          const response = await controller.tvdbGet(`/series/${seriesId}/episodes/default?page=${page}`, s);
+          const rows = response.data?.episodes || [];
+          if (!rows.length) break;
+          pages.push(...rows);
+          if (!response.links?.next) break;
+          if (page === 99) throw new Error("TheTVDB episode list exceeded the page limit; refresh again to avoid saving an incomplete guide.");
+        }
+        rawEpisodes = pages;
+      }
       const remote = Object.fromEntries((d.remoteIds || []).map(row => [row.sourceName, row.id]));
-      const people = unique(d.characters || [], row => `${row.peopleId}:${row.name}`).filter(row => row.personName).slice(0, 30).map(row => ({ title: row.personName, meta: row.name ? `as ${row.name}` : row.peopleType, image: row.personImgURL || row.image || "", url: row.peopleId ? `https://thetvdb.com/people/${row.peopleId}` : "" }));
+      const people = unique(d.characters || [], row => `${row.peopleId}:${row.name}`).filter(row => row.personName).slice(0, 60).map(row => ({ title: row.personName, meta: row.name ? `as ${row.name}` : row.peopleType, image: row.personImgURL || row.image || "", url: row.peopleId ? `https://thetvdb.com/people/${row.peopleId}` : "", ref: row.peopleId ? { type: "person", id: `tvdb:${row.peopleId}`, title: row.personName } : null }));
       const shots = (d.artworks || []).filter(row => [3, 15, 16, 7, 8].includes(row.type) || /background|fanart/i.test(String(row.type))).slice(0, 20).map((row, index) => ({ title: `Image ${index + 1}`, image: row.image }));
-      const seasons = (d.seasons || []).filter(row => row.type?.type === "official").map(row => ({ title: row.name || `Season ${row.number}`, meta: row.year || "", image: row.image || "", url: `https://thetvdb.com/series/${d.slug}/seasons/official/${row.number}` }));
+      const officialSeasons = (d.seasons || []).filter(row => String(row.type?.type || row.type || "").toLowerCase() === "official");
+      const seasonRows = officialSeasons.length ? officialSeasons : (d.seasons || []);
+      const seasonInfo = Object.fromEntries(seasonRows.map(row => [Number(row.number), { name: row.name || `Season ${row.number}`, premiere: row.year || "", image: row.image || "" }]));
+      const seasons = seasonRows.map(row => ({ title: row.name || `Season ${row.number}`, meta: row.year || "", image: row.image || "", url: `https://thetvdb.com/series/${d.slug}/seasons/official/${row.number}` }));
+      const episodeItems = unique(rawEpisodes.map(ep => {
+        const season = Number(ep.seasonNumber ?? ep.seasons?.[0]?.number) || 0, number = Number(ep.number) || 0;
+        if (!ep.id || !number) return null;
+        const id = String(ep.id), title = ep.name || `Episode ${number}`;
+        return { id: `tvdb-episode:${id}`, season, number, title, airdate: ep.aired || "", runtime: Number(ep.runtime) || 0, rating: Number(ep.score) || 0, image: ep.image || "", description: clean(ep.overview || ""), ref: { type: "episode", id, title, extra: { source: "tvdb", series: d.name || item.title, season, number } } };
+      }).filter(Boolean), row => row.id).sort((a, b) => a.season - b.season || a.number - b.number);
       const links = [{ label: "TheTVDB", url: `https://thetvdb.com/${kind === "movies" ? "movies" : "series"}/${d.slug || d.id}` }];
       if (remote.IMDB) links.push({ label: "IMDb", url: `https://www.imdb.com/title/${remote.IMDB}/` });
       const runtime = d.averageRuntime || d.runtime || 0;
+      if (!Object.keys(seasonInfo).length && episodeItems.length) episodeItems.forEach(ep => { seasonInfo[ep.season] ||= { name: `Season ${ep.season}` }; });
       return details("tvdb", item, {
         trailer: (() => { const list = d.trailers || [], pick = list.find(row => /^eng/i.test(row.language || "")) || list[0]; if (!pick?.url) return null; const yt = String(pick.url).match(/(?:v=|youtu\.be\/|embed\/)([\w-]{11})/); return { url: pick.url, title: pick.name || "Official trailer", image: yt ? `https://img.youtube.com/vi/${yt[1]}/hqdefault.jpg` : "" }; })(),
         title: d.name, description: (d.translations?.overviewTranslations || []).find(row => row.language === "eng")?.overview || d.overview, image: d.image, year: String(d.year || d.first_release?.date || d.firstAired || "").slice(0, 4), rating: d.score ? Math.round(Number(d.score) / 1000) / 10 : 0, url: links[0].url, links, tags: (d.genres || []).map(row => row.name),
-        watch: { runtimeMinutes: runtime, episodeCount: 0, seasonCount: seasons.length },
-        sections: [{ title: "Images", kind: "gallery", items: shots }, { title: "Cast", kind: "carousel", items: people }, { title: "Seasons", kind: "carousel", items: seasons }],
-        fields: [["Status", d.status?.name], ["First aired", d.firstAired], ["Last aired", d.lastAired], ["Runtime", runtime ? `${runtime} min` : ""], ["Genres", (d.genres || []).map(row => row.name)], ["Network", d.originalNetwork?.name], ["Country", d.originalCountry], ["Language", d.originalLanguage], ["Also known as", (d.aliases || []).map(row => row.name).slice(0, 8)]].map(([label, value]) => ({ label, value }))
+        goal: kind === "series" ? episodeItems.length : 0,
+        watch: { runtimeMinutes: runtime, episodeCount: episodeItems.length, seasonCount: Object.keys(seasonInfo).length || seasons.length },
+        sections: [{ title: "Images", kind: "gallery", items: shots }, { title: "Cast", kind: "carousel", items: people }, ...(seasons.length ? [{ title: "Seasons", kind: "carousel", items: seasons }] : []), ...(episodeItems.length ? [{ title: `Episode guide (${episodeItems.length})`, kind: "episodes", seasons: seasonInfo, items: episodeItems }, { title: "Episode ratings", kind: "ratings", items: episodeItems.map(({ id, season, number, title, rating }) => ({ id, season, number, title, rating })) }] : [])],
+        raw: { title: d, episodes: rawEpisodes },
+        fields: [["Status", d.status?.name], ["First aired", d.firstAired], ["Last aired", d.lastAired], ["Runtime", runtime ? `${runtime} min` : ""], ["Genres", (d.genres || []).map(row => row.name)], ["Network", d.originalNetwork?.name], ["Country", d.originalCountry], ["Language", d.originalLanguage], ["Seasons", Object.keys(seasonInfo).length || seasons.length], ["Episodes", episodeItems.length], ["Also known as", (d.aliases || []).map(row => row.name).slice(0, 8)]].map(([label, value]) => ({ label, value }))
       });
     },
 
@@ -430,9 +462,12 @@
       const seasonResults = isSeries && seasons ? await mapLimit(Array.from({ length: seasons }, (_, index) => index + 1), 4, async season => {
         try {
           const response = await get(`https://www.omdbapi.com/?apikey=${encode(key)}&i=${encode(item.providerId)}&Season=${season}`, s);
+          if (response.Response === "False") throw new Error(response.Error || `Season ${season} was not returned.`);
           return response;
         } catch (error) { return { Season: String(season), _fetchError: String(error?.message || error) }; }
       }) : [];
+      const failedSeason = seasonResults.find(row => row?._fetchError);
+      if (failedSeason) throw new Error(`OMDb could not load season ${failedSeason.Season}: ${failedSeason._fetchError}`);
       const episodeRows = seasonResults.flatMap((seasonData, index) => (seasonData?.Episodes || []).map(ep => ({
         id: `omdb-${ep.imdbID || `${item.providerId}-s${index + 1}-e${ep.Episode}`}`,
         season: index + 1, number: numberFrom(ep.Episode), title: na(ep.Title) || `Episode ${ep.Episode}`,
@@ -482,6 +517,17 @@
   const loadRef = async (ref, settings = {}) => {
     const base = "https://api.tvmaze.com", id = encode(ref.id);
     if (ref.type === "person") {
+      if (/^tvdb:\d+$/i.test(String(ref.id))) {
+        const personId = String(ref.id).split(":")[1];
+        const person = (await controller.tvdbGet(`/people/${encode(personId)}/extended`, settings)).data || {};
+        const biography = (person.biographies || []).find(row => /^eng/i.test(row.language || "")) || (person.biographies || [])[0];
+        const bio = biography?.biography || biography?.overview || biography?.text || "";
+        const remote = Object.fromEntries((person.remoteIds || []).map(row => [String(row.sourceName || "").toLowerCase(), row.id]));
+        const links = remote.imdb ? [{ label: "IMDb", url: `https://www.imdb.com/name/${remote.imdb}/` }] : [];
+        const facts = [["Born", person.birth], ["Died", person.death], ["Birthplace", person.birthPlace], ["Also known as", (person.aliases || []).map(row => row.name).filter(Boolean)]]
+          .filter(([, value]) => Array.isArray(value) ? value.length : value);
+        return { type: "person", source: "TheTVDB", title: person.name || ref.title, image: person.image || "", url: `https://thetvdb.com/people/${personId}`, description: clean(bio || person.overview || ""), facts, links, sections: [], raw: person };
+      }
       if (/^tmdb:\d+$/i.test(String(ref.id))) {
         const personId = String(ref.id).split(":")[1];
         const person = await controller.tmdbGet(`/person/${encode(personId)}?append_to_response=combined_credits,images,external_ids`, settings);
@@ -528,6 +574,15 @@
       return { type: "character", title: character.name, image: character.image?.original || character.image?.medium || "", url: character.url, facts: [], sections: [{ title: "Played by", kind: "people", items: actors }, { title: "Appears in", kind: "shows", items: shows }].filter(section => section.items.length) };
     }
     if (ref.type === "episode") {
+      if (ref.extra?.source === "tvdb") {
+        const row = (await controller.tvdbGet(`/episodes/${encode(ref.id)}/extended`, settings)).data || {};
+        const people = unique(row.characters || [], person => `${person.peopleId}:${person.name}`).filter(person => person.personName).map(person => ({ title: person.personName, meta: person.name ? `as ${person.name}` : person.peopleType || "Actor", image: person.personImgURL || person.image || "", url: person.peopleId ? `https://thetvdb.com/people/${person.peopleId}` : "", ref: person.peopleId ? { type: "person", id: `tvdb:${person.peopleId}`, title: person.personName } : null }));
+        const seriesId = row.seriesId || ref.extra?.seriesId;
+        const series = seriesId ? [{ id: seriesId, title: ref.extra?.series || "Series", meta: "Series", ref: { type: "show", id: seriesId, title: ref.extra?.series || "Series", extra: { source: "tvdb", category: "series" } } }] : [];
+        const image = row.image || "";
+        const facts = [["Aired", row.aired], ["Runtime", row.runtime ? `${row.runtime} min` : ""], ["Season", row.seasonNumber ?? ref.extra?.season], ["Episode", row.number ?? ref.extra?.number], ["Production code", row.productionCode], ["Content rating", row.contentRatings?.[0]?.name]].filter(([, value]) => value !== undefined && value !== null && value !== "");
+        return { type: "episode", source: "TheTVDB", title: row.name || ref.title || "Episode", subtitle: `${ref.extra?.series || "Series"} · S${row.seasonNumber ?? ref.extra?.season}E${row.number ?? ref.extra?.number}`, image, description: clean(row.overview || ""), url: `https://thetvdb.com/episodes/${ref.id}`, facts, sections: [{ title: "Series", kind: "shows", items: series }, { title: "Cast", kind: "people", items: people }].filter(section => section.items.length), raw: row };
+      }
       if (ref.extra?.source === "imdb" || /^imdb-episode:tt\d+$/i.test(String(ref.id))) {
         const imdbId = ref.extra?.imdbId || String(ref.id).match(/tt\d+/i)?.[0] || "";
         if (!imdbId) throw new Error("IMDb did not provide an episode ID for this entry.");

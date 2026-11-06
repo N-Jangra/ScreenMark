@@ -13,7 +13,7 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "amoled", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", favoritesOnly: false, reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, mainColor: "#6366f1",
+    theme: "amoled", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", favoritesOnly: false, reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "rise", cardEntrance: "none", animationStagger: false, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, mainColor: "#6366f1",
     showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
     navBar: { order: navKeys, visible: { dashboard: true, discover: true, explore: true, timeline: false, statistics: false, settings: true } },
     metadataSourceOrder: ["tvmaze", "anilist", "omdb"], customSources: [],
@@ -41,6 +41,12 @@
   let stored = {};
   try { stored = JSON.parse(localStorage.getItem(storageKey) || "{}"); } catch (_) { stored = {}; }
   const prefs = { ...prefsDefaults, ...(stored.preferences || {}) };
+  if (Number(stored.preferences?.motionProfileVersion) < 1) {
+    if (prefs.pageTransition === "slide") prefs.pageTransition = "rise";
+    if (prefs.cardEntrance === "rise") prefs.cardEntrance = "none";
+    if (prefs.animationStagger === true) prefs.animationStagger = false;
+    prefs.motionProfileVersion = 1;
+  }
   delete prefs.appLook;
   delete prefs.recentlyAddedLimit;
   delete prefs.appDisplayName;
@@ -103,7 +109,7 @@
   const statsSections = ["watchtime", "library", "activity"];
   const normalizeStatsSection = section => section === "playtime" ? "watchtime" : section === "breakdown" ? "library" : section;
   let statsSubpage = page === "statistics" && statsSections.includes(initialRoute[1]) ? normalizeStatsSection(initialRoute[1]) : "";
-  let renderedRoute = null, inAppNav = false, mixCache = null, mixRequest = 0, mixCategory = "", statsRange = "week", statsCategory = "series", statsActivityDate = "", statsWatchtimePage = 0, addCategory = "", discoverCategoryChoice = "", discoverSort = "popular", discoverYearFilter = "", discoverGenreFilter = "";
+  let renderedRoute = null, inAppNav = false, mixCache = null, mixRequest = 0, mixCategory = "", statsRange = "week", statsCategory = "series", statsActivityDate = "", statsWatchtimePage = 0, addCategory = "", discoverCategoryChoice = "";
   let metadataSourceFilter = "all";
   let entryDraftId = null, addReturnPage = "dashboard";
   let libraryQuery = new URLSearchParams(location.search).get("q") || "";
@@ -145,6 +151,12 @@
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+  const eventClosest = (event, selector) => {
+    let target = event?.target;
+    if (target?.nodeType !== 1) target = target?.parentElement;
+    while (target && typeof target.closest !== "function") target = target.parentElement;
+    return target?.closest(selector) || null;
+  };
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const category = key => config.categories.find(item => item.key === key) || config.categories[0];
   const labelCategory = key => category(key)?.label || key;
@@ -166,7 +178,7 @@
       let settled = false;
       const finish = value => { if (settled) return; settled = true; try { dialog.close(); } catch (_) {} dialog.removeAttribute("open"); resolve(value); };
       dialog.onclose = () => finish(false); dialog.oncancel = () => finish(false);
-      dialog.onclick = event => { const choice = event.target.closest("[data-confirm]"); if (choice) finish(choice.dataset.confirm === "yes"); else if (event.target === dialog) finish(false); };
+      dialog.onclick = event => { const choice = eventClosest(event, "[data-confirm]"); if (choice) finish(choice.dataset.confirm === "yes"); else if (event.target === dialog) finish(false); };
       try { dialog.showModal(); } catch (_) { dialog.setAttribute("open", ""); }
       dialog.querySelector('[data-confirm="yes"]')?.focus();
     });
@@ -330,8 +342,15 @@
     document.body.style.setProperty("--muted", palette.muted);
     document.body.style.setProperty("--accent-soft", `color-mix(in srgb, ${prefs.mainColor || "#6366f1"} ${palette.mode === "light" ? "12%" : "20%"}, ${palette.surface})`);
     document.body.dataset.reducedMotion = String(Boolean(prefs.reduceMotion));
-    const lowEnd = Boolean(navigator.connection?.saveData) || (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
+    const nativeAndroid = Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor?.getPlatform?.() === "android");
+    const cores = Number(navigator.hardwareConcurrency) || 4, memory = Number(navigator.deviceMemory) || 4;
+    const weakDevice = Boolean(navigator.connection?.saveData) || /^(slow-2g|2g)$/.test(navigator.connection?.effectiveType || "") || memory <= 2 || cores <= 2;
+    // Android WebViews use the lighter profile even on newer phones: reducing blur and entrance work
+    // keeps scrolling responsive at high refresh rates. Very constrained devices get the low profile.
+    const lowEnd = weakDevice || nativeAndroid;
+    root.dataset.perf = weakDevice ? "low" : lowEnd ? "mid" : "high";
     root.dataset.lowend = String(lowEnd);
+    root.dataset.nativeAndroid = String(nativeAndroid);
     document.body.dataset.corners = prefs.cardCorners;
     document.body.dataset.dashboardView = prefs.dashboardView;
     document.body.dataset.oneHanded = prefs.oneHandedMode || "off";
@@ -695,6 +714,7 @@
     document.body.dataset.page = page;
     if (page === "dashboard") $("#page-title").innerHTML = `Screen<span>Mark</span>`; else $("#page-title").textContent = titles[page];
     $("#header-filter").hidden = true;
+    $("#header-explore-settings").hidden = page !== "explore";
     const headerType = $("#header-type");
     headerType.hidden = page !== "dashboard" && page !== "discover";
     if (page === "dashboard") {
@@ -806,12 +826,13 @@
       });
       if (activeControlIndex >= 0) {
         const activeControl = controls[activeControlIndex];
-        if (activeControl?.matches("[data-settings-index-search], [data-settings-search], #explore-source-search")) activeControl.dispatchEvent(new Event("input", { bubbles: true }));
+        if (activeControl?.matches("[data-settings-index-search], [data-settings-search]")) activeControl.dispatchEvent(new Event("input", { bubbles: true }));
         activeControl?.focus({ preventScroll: true });
       }
     }
     window.lucide?.createIcons({ root: content, attrs: { "aria-hidden": "true" } });
     window.lucide?.createIcons({ root: $("#header-filter"), attrs: { "aria-hidden": "true" } });
+    window.lucide?.createIcons({ root: $("#header-explore-settings"), attrs: { "aria-hidden": "true" } });
     window.lucide?.createIcons({ root: $("#floating-add"), attrs: { "aria-hidden": "true" } });
     observeDashboardLoaders();
     observeDeferredImages(content);
@@ -866,7 +887,7 @@
       else if (action === "open-library-item") openDetails(button.dataset.id);
       else if (action === "save-detail-item") {
         const saved = addDiscoverResult(detailPreview);
-        if (saved) { detailPreview = null; detailItemId = saved.id; detailData = null; loadDetails(); }
+        if (saved) { detailPreview = null; detailItemId = saved.id; if (saved.category === "series") detailTab = "episodes"; detailData = null; loadDetails(); }
       }
     }));
     content.querySelector("[data-detail-save]")?.addEventListener("click", event => {
@@ -887,7 +908,7 @@
     content.querySelector("#add-metadata-query")?.addEventListener("input", event => { addMetadataQuery = event.target.value; });
     content.querySelector("#add-metadata-query")?.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); event.stopPropagation(); searchAddMetadata(); } });
     content.querySelector("#add-metadata-results")?.addEventListener("click", event => {
-      const button = event.target.closest("[data-add-metadata-index]");
+      const button = eventClosest(event, "[data-add-metadata-index]");
       if (button) selectAddMetadata(button.dataset.addMetadataIndex);
     });
     if (page === "settings" && settingsGroup === "backups") refreshBackupFolderStatus();
@@ -1284,7 +1305,16 @@
     if (old) items[items.indexOf(old)] = entry; else { items.unshift(entry); recordLibraryChange("added", `Added ${entry.title}.`, [entry.id]); }
     if (old && JSON.stringify(old) !== JSON.stringify(entry)) recordLibraryChange("edited", `Updated ${entry.title}.`, [entry.id]);
     if (entry.status !== roles.queued && entry.status !== old?.status) history.unshift({ itemId: entry.id, title: entry.title, action: entry.status, status: entry.status, at: Date.now() });
-    persist({ ids: [entry.id] }); entryDraftId = null; goto(addReturnPage); toast(old ? "Entry updated." : "Added to your library.");
+    persist({ ids: [entry.id] }); entryDraftId = null;
+    if (!old && entry.category === "series" && entry.metadataSource) openAddedSeriesDetails(entry, addReturnPage);
+    else goto(addReturnPage);
+    toast(old ? "Entry updated." : "Added to your library.");
+  }
+  function openAddedSeriesDetails(item, returnPage = "dashboard") {
+    if (!item?.id) return;
+    clearDetailStack(); detailReturnPage = returnPage || "dashboard"; detailTab = "episodes"; detailItemId = item.id;
+    detailPreview = null; detailEditMode = false; detailData = null; detailError = "";
+    goto("details"); loadDetails();
   }
   function saveAddForm(form) {
     if (!form?.isConnected || !form.reportValidity()) return;
@@ -1375,18 +1405,34 @@
       if (!unique.has(key)) unique.set(key, result);
     }));
     const all = [...unique.values()];
-    const years = [...new Set(all.map(result => String(result.year || "").match(/(?:19|20)\d{2}/)?.[0]).filter(Boolean))].sort((a, b) => Number(b) - Number(a));
-    const genres = [...new Set(all.flatMap(result => Array.isArray(result.genres) ? result.genres : []))].filter(Boolean).sort((a, b) => a.localeCompare(b));
-    let filtered = all.filter(result => (!discoverYearFilter || String(result.year || "").startsWith(discoverYearFilter)) && (!discoverGenreFilter || result.genres?.includes(discoverGenreFilter)));
-    if (discoverSort === "rating") filtered.sort((a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0));
-    else if (discoverSort === "latest") filtered.sort((a, b) => Number(String(b.year || "").slice(0, 4)) - Number(String(a.year || "").slice(0, 4)));
-    else if (discoverSort === "az") filtered.sort((a, b) => a.title.localeCompare(b.title));
-    const items = filtered.slice(0, 90);
-    const yearOptions = years.map(year => `<option value="${year}"${discoverYearFilter === year ? " selected" : ""}>${year}</option>`).join("");
-    const genreButtons = ["", ...genres].map(genre => `<button type="button" class="discover-genre-chip${discoverGenreFilter === genre ? " active" : ""}" data-discover-genre="${esc(genre)}" aria-pressed="${discoverGenreFilter === genre}">${genre ? esc(genre) : "All"}</button>`).join("");
-    box.innerHTML = `<div class="discover-catalog-controls"><select data-discover-sort aria-label="Sort titles"><option value="popular"${discoverSort === "popular" ? " selected" : ""}>Popular</option><option value="rating"${discoverSort === "rating" ? " selected" : ""}>Top rated</option><option value="latest"${discoverSort === "latest" ? " selected" : ""}>Latest</option><option value="az"${discoverSort === "az" ? " selected" : ""}>A–Z</option></select><select data-discover-year aria-label="Filter by year"><option value="">Year</option>${yearOptions}</select></div><nav class="discover-genre-row" aria-label="Filter by genre">${genreButtons}</nav>${items.length ? `<div class="discover-catalog-grid">${items.map(discoverCatalogCard).join("")}</div>` : `<p class="discover-catalog-empty">No titles match these filters.</p>`}`;
+    const yearOf = row => Number(String(row.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0]) || 0;
+    const shelves = [];
+    const addShelf = (title, rows) => {
+      const canonical = row => unique.get(`${row?.source || ""}:${row?.providerId || row?.title?.toLowerCase()}`);
+      const seen = new Set(), shelf = rows.map(canonical).filter(row => row && !seen.has(`${row.source}:${row.providerId || row.title}`) && seen.add(`${row.source}:${row.providerId || row.title}`)).slice(0, 12);
+      if (shelf.length) shelves.push({ title, items: shelf });
+    };
+    const trendItems = (sections || []).filter(section => /trending|popular|top movies/i.test(section.title || "")).flatMap(section => section.items || []);
+    const latestItems = (sections || []).filter(section => /latest|streaming today|on tv today/i.test(section.title || "")).flatMap(section => section.items || []);
+    addShelf("Latest", latestItems.length ? latestItems : [...all].sort((a, b) => yearOf(b) - yearOf(a)));
+    addShelf("Trending", trendItems.length ? trendItems : [...all].sort((a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0)));
+    const genres = [
+      ["Comedy", /\bcom(?:edy|edies)\b/i],
+      ["Action", /\baction\b/i],
+      ["Horror", /\bhorror\b/i],
+      ["Romance", /\bromance\b/i],
+      ["Slice of Life", /slice[ -]of[ -]life/i],
+      ["Sci-Fi", /sci[ -]?fi|science fiction/i],
+      ["Fantasy", /\bfantasy\b/i],
+      ["Adventure", /\badventure\b/i]
+    ];
+    genres.forEach(([label, pattern]) => {
+      const matches = all.filter(row => (Array.isArray(row.genres) ? row.genres : []).some(genre => pattern.test(String(genre))));
+      addShelf(label, matches);
+    });
+    box.innerHTML = shelves.length ? `<div class="discover-catalog-sections">${shelves.map(shelf => `<section class="discover-catalog-section"><h2>${esc(shelf.title)}</h2><div class="discover-catalog-grid">${shelf.items.map(row => discoverCatalogCard(row, all.indexOf(row))).join("")}</div></section>`).join("")}</div>` : `<p class="discover-catalog-empty">No titles match these filters.</p>`;
     routeRemoteImages(box);
-    box._results = items;
+    box._results = all;
     return all.length;
   }
   let suggestionsCache = null, suggestionsRequest = 0;
@@ -1544,7 +1590,8 @@
     goto("details"); loadDetails();
   }
   async function addMixResult(row) {
-    const saved = addDiscoverResult(mixItem(row)); if (!saved) return;
+    const result = mixItem(row), existed = items.some(item => sameDiscoverTitle(item, result));
+    const saved = addDiscoverResult(result); if (!saved) return;
     toast("Added. Merging details from all sources…");
     try {
       const loaded = await window.SplitAppDetails.load(saved, detailSettings());
@@ -1558,6 +1605,7 @@
       saved.description = loaded.description || saved.description; saved.year = loaded.year || saved.year; saved.image = loaded.portraitImage || loaded.image || saved.image;
       saved.updatedAt = Date.now(); persist({ ids: [saved.id] }); toast(`Merged details from ${loaded.mixSources?.length || 0} sources.`);
     } catch (error) { recordLog("warning", `Mix fetch could not merge details for ${saved.title}: ${error?.message || error}`); toast("Added. Details could not be merged yet."); }
+    if (!existed && saved.category === "series") openAddedSeriesDetails(saved, "mix");
   }
   // Looks up runtime / episode counts (OMDb, TVmaze, then AniList) for titles whose saved source has none.
   async function findMissingHours(button) {
@@ -1747,7 +1795,7 @@
     finally { hydrating.delete(item.id); }
   }
   document.addEventListener("click", event => {
-    const share = event.target.closest?.("[data-share-all]");
+    const share = eventClosest(event, "[data-share-all]");
     if (share) { let selected = window.SplitAppLibrary.create(pageContext()).filteredItems(libraryQuery); if (dashboardStatusFilter !== "all") selected = selected.filter(item => item.status === dashboardStatusFilter); openShareList("Collection", selected); }
   }, true);
 
@@ -1993,7 +2041,7 @@
     };
     document.addEventListener("pointerdown", event => {
       if (page !== "dashboard" || (event.pointerType === "mouse" && event.button !== 0)) return;
-      const card = event.target.closest?.(".item-card[data-item]"); if (!card || event.target.closest("button, a, input, select, textarea")) return;
+      const card = eventClosest(event, ".item-card[data-item]"); if (!card || eventClosest(event, "button, a, input, select, textarea")) return;
       start = { id: card.dataset.item, x: event.clientX, y: event.clientY };
       timer = setTimeout(() => {
         if (!start) return;
@@ -2040,20 +2088,20 @@
     const search = async () => { state.query = dialog.querySelector("[data-fix-query]")?.value.trim() || ""; state.key = dialog.querySelector("[data-fix-source]")?.value || state.key; if (!state.query) return; state.rows = []; state.preview = null; state.message = "Searching…"; paint(); try { state.rows = (await window.SplitAppDiscovery.searchSource(state.query, item.category, detailSettings(), state.key)).slice(0, 15); state.message = state.rows.length ? "Choose the correct title." : "No results from this source."; } catch (error) { state.message = error?.message || "Search failed."; } paint(); };
     dialog.onclick = event => {
       const current = itemById(String(id)); if (!current) return;
-      if (event.target === dialog || event.target.closest("[data-fix-close]")) { closePopup(dialog); return; }
-      if (event.target.closest("[data-fix-search]")) { search(); return; }
-      const view = event.target.closest("[data-fix-view]"); if (view) { state.preview = Number(view.dataset.fixView); paint(); return; }
-      if (event.target.closest("[data-fix-back]")) { state.preview = null; paint(); return; }
-      const use = event.target.closest("[data-fix-use]");
+      if (event.target === dialog || eventClosest(event, "[data-fix-close]")) { closePopup(dialog); return; }
+      if (eventClosest(event, "[data-fix-search]")) { search(); return; }
+      const view = eventClosest(event, "[data-fix-view]"); if (view) { state.preview = Number(view.dataset.fixView); paint(); return; }
+      if (eventClosest(event, "[data-fix-back]")) { state.preview = null; paint(); return; }
+      const use = eventClosest(event, "[data-fix-use]");
       if (use) {
         const row = state.rows[Number(use.dataset.fixUse)]; if (!row) return; const key = state.key, providerId = String(row.providerId);
         if (current.metadataSource === "mix") { current.sourceIds = { ...(current.sourceIds || {}), [key]: providerId }; current.mixPins = { ...(current.mixPins || {}), [key]: providerId }; current.mixSkip = { ...(current.mixSkip || {}) }; delete current.mixSkip[key]; if (!current.mixPrimary?.key) current.mixPrimary = { key, providerId }; }
         else { current.metadataSource = key; current.providerId = providerId; current.sourceIds = { ...(current.sourceIds || {}), [key]: providerId }; }
         current.cachedDetails = null; closePopup(dialog); resyncAfterRelink(current, `Linked “${row.title}”.`, { key, meta: { title: row.title || "", year: row.year || "", url: row.url || "", image: row.image || "" } }); return;
       }
-      const unlink = event.target.closest("[data-fix-unlink]");
+      const unlink = eventClosest(event, "[data-fix-unlink]");
       if (unlink) { const key = unlink.dataset.fixUnlink; if (current.sourceIds) delete current.sourceIds[key]; if (current.mixPins) delete current.mixPins[key]; if (current.metadataSource === "mix") { current.mixSkip = { ...(current.mixSkip || {}), [key]: true }; if (current.mixPrimary?.key === key) delete current.mixPrimary; } else if (current.metadataSource === key) { current.metadataSource = ""; current.providerId = ""; current.cachedDetails = null; } closePopup(dialog); resyncAfterRelink(current, "Source unlinked."); }
-      const allow = event.target.closest("[data-fix-unskip]");
+      const allow = eventClosest(event, "[data-fix-unskip]");
       if (allow) { const key = allow.dataset.fixUnskip; current.mixSkip = { ...(current.mixSkip || {}) }; delete current.mixSkip[key]; closePopup(dialog); resyncAfterRelink(current, "Source enabled for this title."); }
     };
     dialog.onchange = event => { if (event.target.matches("[data-fix-source]")) { state.key = event.target.value; state.rows = []; state.preview = null; state.message = ""; paint(); } };
@@ -2070,7 +2118,7 @@
     let dialog = $("#cover-picker-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "cover-picker-dialog"; dialog.className = "choice-dialog cover-picker-dialog"; document.body.appendChild(dialog); }
     const urls = coverCandidates(item);
     dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">COVER</p><h2>${esc(item.title)}</h2></div><button class="choice-dialog-close" type="button" data-cover-close aria-label="Close">×</button></header><div class="cover-picker-body"><p class="fix-match-status">${item.customCover ? "Using your chosen cover." : "Pick a cover; it stays when metadata refreshes."}</p><div class="cover-picker-grid">${urls.map(url => `<button type="button" class="cover-choice${item.customCover === url ? " is-current" : ""}" data-cover-url="${esc(url)}"><img src="${esc(url)}" alt="" loading="lazy" onerror="this.closest('button').hidden=true"></button>`).join("")}</div>${item.customCover ? '<button type="button" class="button secondary" data-cover-auto>Use automatic cover</button>' : ""}</div>`;
-    dialog.onclick = event => { if (event.target === dialog || event.target.closest("[data-cover-close]")) { closePopup(dialog); return; } const choice = event.target.closest("[data-cover-url]"), automatic = event.target.closest("[data-cover-auto]"); if (!choice && !automatic) return; if (choice) { item.customCover = choice.dataset.coverUrl; item.image = item.customCover; } else delete item.customCover; item.updatedAt = Date.now(); persist({ ids: [item.id] }); closePopup(dialog); render(); toast(automatic ? "Automatic cover restored." : "Cover updated."); };
+    dialog.onclick = event => { if (event.target === dialog || eventClosest(event, "[data-cover-close]")) { closePopup(dialog); return; } const choice = eventClosest(event, "[data-cover-url]"), automatic = eventClosest(event, "[data-cover-auto]"); if (!choice && !automatic) return; if (choice) { item.customCover = choice.dataset.coverUrl; item.image = item.customCover; } else delete item.customCover; item.updatedAt = Date.now(); persist({ ids: [item.id] }); closePopup(dialog); render(); toast(automatic ? "Automatic cover restored." : "Cover updated."); };
     showPopup(dialog);
   }
   function openItemActions(id) {
@@ -2081,7 +2129,7 @@
       document.body.appendChild(dialog);
       dialog.addEventListener("click", async event => {
         if (event.target === dialog) { closePopup(dialog); return; }
-        const button = event.target.closest("[data-sheet-action]"); if (!button) return;
+        const button = eventClosest(event, "[data-sheet-action]"); if (!button) return;
         const target = items.find(entry => entry.id === dialog.dataset.itemId);
         const action = button.dataset.sheetAction;
         // Details/Edit navigate to another page; keep the sheet's history entry so closing it cannot undo that navigation.
@@ -2232,6 +2280,22 @@
       metadataRefreshInterval: { daily: "calendar-check", weekly: "calendar-range", monthly: "calendar-days", never: "calendar-x" },
       offlineFallback: { cached: "database", none: "ban" },
       thumbnailSize: { small: "image", medium: "images", large: "gallery-horizontal" },
+      syncScope: { needed: "list-checks", missing: "file-question", all: "layers-3" },
+      metadataSyncWorkers: { 1: "user-round", 2: "users-round", 3: "users" },
+      syncMaxSources: { 0: "network", 1: "route", 2: "share-2", 3: "git-branch" },
+      syncRequestDelay: { 0: "zap", 250: "timer", 1000: "clock-3", 2000: "hourglass" },
+      syncTimeout: { 10: "timer", 20: "alarm-clock", 25: "clock-4", 40: "hourglass" },
+      syncRetries: { 0: "ban", 1: "rotate-cw", 2: "repeat-2" },
+      syncRetryDelay: { 1: "timer", 2: "alarm-clock", 5: "hourglass", 10: "clock-3" },
+    };
+    const settingPreviewDescriptions = {
+      syncScope: { needed: "Refresh titles missing details or past their refresh interval.", missing: "Refresh only titles with no saved detail record.", all: "Recheck every saved title with enabled sources." },
+      metadataSyncWorkers: { 1: "Refresh one title at a time.", 2: "Refresh two titles at once.", 3: "Refresh three titles at once; this uses more network and device resources." },
+      syncMaxSources: { 0: "Check every enabled source for each title.", 1: "Check one source per title, keeping linked sources included.", 2: "Check up to two sources per title, keeping linked sources included.", 3: "Check up to three sources per title, keeping linked sources included." },
+      syncRequestDelay: { 0: "Start the next title as soon as a worker is free.", 250: "Pause briefly between starting titles.", 1000: "Wait one second before starting the next title.", 2000: "Wait two seconds before starting the next title." },
+      syncTimeout: { 10: "Stop a provider request after ten seconds.", 20: "Stop a provider request after twenty seconds.", 25: "Stop a provider request after twenty-five seconds.", 40: "Allow slower providers up to forty seconds to respond." },
+      syncRetries: { 0: "Do not retry temporary provider failures.", 1: "Retry a temporary provider failure once.", 2: "Retry a temporary provider failure up to twice." },
+      syncRetryDelay: { 1: "Wait one second before retrying.", 2: "Wait two seconds before retrying.", 5: "Wait five seconds before retrying.", 10: "Wait ten seconds before retrying." }
     };
     list.replaceChildren();
     options.forEach(option => {
@@ -2260,6 +2324,7 @@
         const icon = settingPreviewIcons[key]?.[option.value];
         if (icon) preview.innerHTML = `<i data-lucide="${icon}" aria-hidden="true"></i>`;
         else preview.textContent = "•";
+        description = settingPreviewDescriptions[key]?.[option.value] || "";
       }
       const copy = document.createElement("span"); copy.className = "setting-picker-copy";
       const name = document.createElement("strong"); name.textContent = option.label;
@@ -2408,8 +2473,8 @@
         };
       dialog.onclick = event => {
         if (event.target === dialog) { closePopup(dialog); dialog._finishDuplicateReview?.(); return; }
-        if (event.target.closest("[data-duplicate-keep]")) accepted.add(rowItemId());
-        if (!event.target.closest("[data-duplicate-keep],[data-duplicate-skip]")) return;
+        if (eventClosest(event, "[data-duplicate-keep]")) accepted.add(rowItemId());
+        if (!eventClosest(event, "[data-duplicate-keep],[data-duplicate-skip]")) return;
         position++; if (position >= collisions.length) { closePopup(dialog); dialog._finishDuplicateReview?.(); return; } paint();
       };
         const rowItemId = () => collisions[position]?.item.id;
@@ -2449,30 +2514,28 @@
   }
 
   $("#page-content").addEventListener("click", event => {
-    const pill = event.target.closest("[data-pill-name]");
+    const pill = eventClosest(event, "[data-pill-name]");
     if (pill) {
       const group = pill.closest(".ios-pills");
       group.querySelector('input[type="hidden"]').value = pill.dataset.pillValue;
       group.querySelectorAll("[data-pill-name]").forEach(button => { const on = button === pill; button.classList.toggle("active", on); button.setAttribute("aria-pressed", String(on)); });
       return;
     }
-    const mixCategoryButton = event.target.closest("[data-mix-category]");
+    const mixCategoryButton = eventClosest(event, "[data-mix-category]");
     if (mixCategoryButton) { mixCategory = mixCategoryButton.dataset.mixCategory; mixCache = null; render(); return; }
-    const discoverCategoryButton = event.target.closest("[data-discover-category]");
-    if (discoverCategoryButton) { discoverCategoryChoice = discoverCategoryButton.dataset.discoverCategory; discoverCache = null; suggestionsCache = null; discoverQuery = ""; discoverYearFilter = ""; discoverGenreFilter = ""; render(); return; }
-    const discoverGenre = event.target.closest("[data-discover-genre]");
-    if (discoverGenre && page === "discover") { discoverGenreFilter = discoverGenre.dataset.discoverGenre || ""; loadDiscoverSuggestions(); return; }
-    const addCategoryButton = event.target.closest("[data-add-category]");
+    const discoverCategoryButton = eventClosest(event, "[data-discover-category]");
+    if (discoverCategoryButton) { discoverCategoryChoice = discoverCategoryButton.dataset.discoverCategory; discoverCache = null; suggestionsCache = null; discoverQuery = ""; render(); return; }
+    const addCategoryButton = eventClosest(event, "[data-add-category]");
     if (addCategoryButton) { applyAddCategory(addCategoryButton.dataset.addCategory); return; }
-    const categoryFilter = event.target.closest("[data-category-filter]");
+    const categoryFilter = eventClosest(event, "[data-category-filter]");
     if (categoryFilter) { activeCategory = categoryFilter.dataset.categoryFilter || "all"; render(); return; }
-    const shareTitle = event.target.closest('[data-action="share-title"]');
+    const shareTitle = eventClosest(event, '[data-action="share-title"]');
     if (shareTitle) {
       const item = itemById(shareTitle.dataset.id);
       if (item) openShareDetail(item.id);
       return;
     }
-    const shareGroup = event.target.closest("[data-share-group]");
+    const shareGroup = eventClosest(event, "[data-share-group]");
     if (shareGroup) {
       let ids = [];
       try { ids = JSON.parse(shareGroup.dataset.shareIds || "[]"); } catch (_) {}
@@ -2480,9 +2543,9 @@
       openShareList(shareGroup.getAttribute("aria-label")?.replace(/^Share\s+/i, "") || "Collection", selected);
       return;
     }
-    const quickStatus = event.target.closest("[data-quick-status]");
+    const quickStatus = eventClosest(event, "[data-quick-status]");
     if (quickStatus) { prefs.favoritesOnly = false; setPreference("dashboardStatusFilter", quickStatus.dataset.quickStatus); return; }
-    const detailStatus = event.target.closest("[data-detail-status-btn]");
+    const detailStatus = eventClosest(event, "[data-detail-status-btn]");
     if (detailStatus) {
       const item = items.find(row => row.id === detailItemId);
       if (item) {
@@ -2491,39 +2554,39 @@
       }
       return;
     }
-    const itemMenu = event.target.closest("[data-open-item-actions]");
+    const itemMenu = eventClosest(event, "[data-open-item-actions]");
     if (itemMenu) { openItemActions(itemMenu.dataset.openItemActions); return; }
-    const fixMatch = event.target.closest("[data-fix-match]");
+    const fixMatch = eventClosest(event, "[data-fix-match]");
     if (fixMatch) { event.preventDefault(); event.stopPropagation(); openFixMatch(fixMatch.dataset.fixMatch); return; }
-    const changeCover = event.target.closest("[data-change-cover]");
+    const changeCover = eventClosest(event, "[data-change-cover]");
     if (changeCover) { event.preventDefault(); event.stopPropagation(); openCoverPicker(changeCover.dataset.changeCover); return; }
-    const dashboardViewChoice = event.target.closest("button[data-dashboard-view]");
+    const dashboardViewChoice = eventClosest(event, "button[data-dashboard-view]");
     if (dashboardViewChoice) { setPreference("dashboardView", dashboardViewChoice.dataset.dashboardView); return; }
-    const dashboardSortChoice = event.target.closest("button[data-dashboard-sort]");
+    const dashboardSortChoice = eventClosest(event, "button[data-dashboard-sort]");
     if (dashboardSortChoice) { setPreference("dashboardSort", dashboardSortChoice.dataset.dashboardSort); return; }
-    if (event.target.closest("[data-close-dashboard-filter]")) { closePopup($("#dashboard-filter-dialog")); return; }
-    if (event.target.closest("[data-reset-dashboard-filter]")) { dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; activeCategory = "all"; prefs.favoritesOnly = false; libraryQuery = ""; prefs.dashboardView = "list"; prefs.dashboardSort = "alphabetical-asc"; prefs.dashboardGroupBy = "status"; persist({ meta: true }); applyPreferences(); historyPush(); closePopup($("#dashboard-filter-dialog")); render(); return; }
-    const dashboardLoader = event.target.closest("[data-dashboard-load-more]");
+    if (eventClosest(event, "[data-close-dashboard-filter]")) { closePopup($("#dashboard-filter-dialog")); return; }
+    if (eventClosest(event, "[data-reset-dashboard-filter]")) { dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; activeCategory = "all"; prefs.favoritesOnly = false; libraryQuery = ""; prefs.dashboardView = "list"; prefs.dashboardSort = "alphabetical-asc"; prefs.dashboardGroupBy = "status"; persist({ meta: true }); applyPreferences(); historyPush(); closePopup($("#dashboard-filter-dialog")); render(); return; }
+    const dashboardLoader = eventClosest(event, "[data-dashboard-load-more]");
     if (dashboardLoader) { dashboardLazyObserver?.unobserve(dashboardLoader); loadDashboardMore(dashboardLoader); if (dashboardLoader.isConnected) dashboardLazyObserver?.observe(dashboardLoader); return; }
-    const detailImage = event.target.closest("[data-detail-image-src]");
+    const detailImage = eventClosest(event, "[data-detail-image-src]");
     if (detailImage) {
       showDetailImage($$("[data-detail-image-src]", $("#page-content")).indexOf(detailImage));
       return;
     }
-    if (event.target.closest("[data-detail-image-close]")) { closePopup($("#detail-image-modal")); return; }
-    if (event.target.closest("[data-detail-image-prev]")) { showDetailImage(detailImagePosition - 1); return; }
-    if (event.target.closest("[data-detail-image-next]")) { showDetailImage(detailImagePosition + 1); return; }
+    if (eventClosest(event, "[data-detail-image-close]")) { closePopup($("#detail-image-modal")); return; }
+    if (eventClosest(event, "[data-detail-image-prev]")) { showDetailImage(detailImagePosition - 1); return; }
+    if (eventClosest(event, "[data-detail-image-next]")) { showDetailImage(detailImagePosition + 1); return; }
     if (event.target.id === "detail-image-modal") { closePopup(event.target); return; }
-    const statsFilter = event.target.closest("[data-stats-filter]");
+    const statsFilter = eventClosest(event, "[data-stats-filter]");
     if (statsFilter) { setPreference("dashboardStatusFilter", statsFilter.dataset.statsFilter); goto("dashboard"); return; }
-    if (event.target.closest("[data-mix-search]")) { runMixSearch(); return; }
-    const mixAdd = event.target.closest("[data-mix-add]");
+    if (eventClosest(event, "[data-mix-search]")) { runMixSearch(); return; }
+    const mixAdd = eventClosest(event, "[data-mix-add]");
     if (mixAdd) { event.stopPropagation(); const row = mixCache?.results?.[Number(mixAdd.dataset.mixAdd)]; if (row) addMixResult(row); return; }
-    const mixOpen = event.target.closest("[data-mix-open]");
+    const mixOpen = eventClosest(event, "[data-mix-open]");
     if (mixOpen) { const row = mixCache?.results?.[Number(mixOpen.dataset.mixOpen)]; if (row) openMixDetails(row); return; }
-    const backLink = event.target.closest("[data-back]");
+    const backLink = eventClosest(event, "[data-back]");
     if (backLink && inAppNav) { event.preventDefault(); window.history.back(); return; }
-    const csType = event.target.closest("[data-cs-type]");
+    const csType = eventClosest(event, "[data-cs-type]");
     if (csType) {
       const input = $("#custom-source-form")?.elements.categories, key = csType.dataset.csType;
       const chosen = new Set(String(input?.value || "").split(",").filter(Boolean));
@@ -2532,23 +2595,23 @@
       $$("[data-cs-type]").forEach(button => { const on = chosen.has(button.dataset.csType); button.classList.toggle("active", on); button.setAttribute("aria-pressed", String(on)); });
       return;
     }
-    const csInsert = event.target.closest("[data-cs-insert]");
+    const csInsert = eventClosest(event, "[data-cs-insert]");
     if (csInsert) { const input = $("#custom-source-form")?.elements.searchUrl; if (input) { const at = input.selectionStart ?? input.value.length; input.setRangeText(csInsert.dataset.csInsert, at, input.selectionEnd ?? at, "end"); input.focus(); } return; }
-    if (event.target.closest("[data-custom-source-test]")) { testCustomSourceForm(); return; }
-    if (event.target.closest("[data-custom-source-delete]")) { deleteCustomSource(); return; }
-    const statsCategoryButton = event.target.closest("[data-stats-category]");
+    if (eventClosest(event, "[data-custom-source-test]")) { testCustomSourceForm(); return; }
+    if (eventClosest(event, "[data-custom-source-delete]")) { deleteCustomSource(); return; }
+    const statsCategoryButton = eventClosest(event, "[data-stats-category]");
     if (statsCategoryButton) { statsCategory = statsCategoryButton.dataset.statsCategory === "movie" ? "movie" : "series"; render(); return; }
-    const rangeButton = event.target.closest("[data-stats-range]");
+    const rangeButton = eventClosest(event, "[data-stats-range]");
     if (rangeButton) { statsRange = rangeButton.dataset.statsRange === "month" ? "month" : "week"; statsActivityDate = ""; render(); return; }
-    const watchtimePageButton = event.target.closest("[data-stats-watchtime-page]");
+    const watchtimePageButton = eventClosest(event, "[data-stats-watchtime-page]");
     if (watchtimePageButton) { statsWatchtimePage = Math.max(0, Number(watchtimePageButton.dataset.statsWatchtimePage) || 0); render(); return; }
-    const activityDay = event.target.closest("[data-stats-activity-date]");
+    const activityDay = eventClosest(event, "[data-stats-activity-date]");
     if (activityDay) { statsActivityDate = activityDay.dataset.statsActivityDate; render(); return; }
-    const findHours = event.target.closest("[data-stats-find-hours]");
+    const findHours = eventClosest(event, "[data-stats-find-hours]");
     if (findHours) { findMissingHours(findHours); return; }
-    const fetchFacts = event.target.closest("[data-stats-fetch-facts]");
+    const fetchFacts = eventClosest(event, "[data-stats-fetch-facts]");
     if (fetchFacts) { fetchMissingFacts(fetchFacts); return; }
-    const adjust = event.target.closest("[data-adjust-progress]");
+    const adjust = eventClosest(event, "[data-adjust-progress]");
     if (adjust) {
       const item = items.find(row => row.id === detailItemId);
       if (item) {
@@ -2559,15 +2622,15 @@
       }
       return;
     }
-    const stepper = event.target.closest("[data-step-input]");
+    const stepper = eventClosest(event, "[data-step-input]");
     if (stepper) {
       const input = $("#item-form")?.elements[stepper.dataset.stepInput];
       if (input) { input.value = Math.max(0, (Number(input.value) || 0) + Number(stepper.dataset.step)); input.dispatchEvent(new Event("input", { bubbles: true })); }
       return;
     }
-    const cancelAdd = event.target.closest("[data-cancel-add]");
+    const cancelAdd = eventClosest(event, "[data-cancel-add]");
     if (cancelAdd) { entryDraftId = null; goto(addReturnPage); return; }
-    const entryStatus = event.target.closest("[data-entry-status]");
+    const entryStatus = eventClosest(event, "[data-entry-status]");
     if (entryStatus) {
       const form = entryStatus.closest("form");
       if (form?.elements.status) form.elements.status.value = entryStatus.dataset.entryStatus;
@@ -2576,7 +2639,7 @@
       });
       return;
     }
-    const clearCookies = event.target.closest("[data-source-clear-cookies]");
+    const clearCookies = eventClosest(event, "[data-source-clear-cookies]");
     if (clearCookies) {
       const key = clearCookies.dataset.sourceClearCookies, provider = window.SplitAppSources.list().find(row => row.key === key);
       if (prefs.sourceOptions[key]) { delete prefs.sourceOptions[key].cookies; if (!Object.keys(prefs.sourceOptions[key]).length) delete prefs.sourceOptions[key]; }
@@ -2584,7 +2647,7 @@
       try { window.Capacitor?.Plugins?.CapacitorCookies?.clearCookies?.({ url: `https://${host}` }); } catch (_) {}
       persist({ meta: true }); render(); toast("Cookies cleared."); return;
     }
-    const reviewProvider = event.target.closest("[data-review-provider-session]");
+    const reviewProvider = eventClosest(event, "[data-review-provider-session]");
     if (reviewProvider) {
       const key = reviewProvider.dataset.reviewProviderSession, plugin = window.Capacitor?.Plugins?.ProviderSession;
       const url = key === "imdb" ? "https://www.imdb.com/" : key === "rottentomatoes" ? "https://www.rottentomatoes.com/" : "";
@@ -2601,7 +2664,7 @@
       })();
       return;
     }
-    const domainPick = event.target.closest("[data-source-domain-pick]");
+    const domainPick = eventClosest(event, "[data-source-domain-pick]");
     if (domainPick) {
       const [key, host] = domainPick.dataset.sourceDomainPick.split("|"), provider = window.SplitAppSources.list().find(row => row.key === key);
       const next = { ...(prefs.sourceOptions[key] || {}) };
@@ -2609,92 +2672,92 @@
       if (Object.keys(next).length) prefs.sourceOptions[key] = next; else delete prefs.sourceOptions[key];
       persist({ meta: true }); render(); return;
     }
-    const resetOptions = event.target.closest("[data-source-reset-options]");
+    const resetOptions = eventClosest(event, "[data-source-reset-options]");
     if (resetOptions) { delete prefs.sourceOptions[resetOptions.dataset.sourceResetOptions]; persist({ meta: true }); render(); toast("Source options reset."); return; }
-    const go = event.target.closest("[data-go]"); if (go) { goto(go.dataset.go); return; }
-    const sourceFilter = event.target.closest("[data-source-filter]");
+    const go = eventClosest(event, "[data-go]"); if (go) { goto(go.dataset.go); return; }
+    const sourceFilter = eventClosest(event, "[data-source-filter]");
     if (sourceFilter) {
       metadataSourceFilter = sourceFilter.dataset.sourceFilter;
       $$('[data-source-filter]').forEach(button => { const selected = button === sourceFilter; button.classList.toggle("active", selected); button.setAttribute("aria-pressed", String(selected)); });
       $$('[data-source-row]').forEach(row => { const enabled = row.dataset.sourceEnabledState === "true"; row.hidden = metadataSourceFilter === "enabled" ? !enabled : metadataSourceFilter === "disabled" ? enabled : false; });
       return;
     }
-    const storageAction = event.target.closest("[data-storage-action]");
+    const storageAction = eventClosest(event, "[data-storage-action]");
     if (storageAction) { runStorageAction(storageAction.dataset.storageAction); return; }
-    const backupFolderAction = event.target.closest("[data-backup-folder-action]");
+    const backupFolderAction = eventClosest(event, "[data-backup-folder-action]");
     if (backupFolderAction) {
       if (backupFolderAction.dataset.backupFolderAction === "choose") chooseBackupDatabaseFolder();
       else refreshBackupFolderStatus();
       return;
     }
-    if (event.target.closest("[data-log-dates-clear]")) { if (settingsGroup === "history") { historyFrom = ""; historyTo = ""; } else { logFrom = ""; logTo = ""; } render(); return; }
-    if (event.target.closest("[data-open-log-filter]")) { showPopup($("#log-filter-dialog")); return; }
-    if (event.target.closest("[data-close-log-filter]")) { closePopup($("#log-filter-dialog")); return; }
-    const logRangeButton = event.target.closest("[data-log-range]");
+    if (eventClosest(event, "[data-log-dates-clear]")) { if (settingsGroup === "history") { historyFrom = ""; historyTo = ""; } else { logFrom = ""; logTo = ""; } render(); return; }
+    if (eventClosest(event, "[data-open-log-filter]")) { showPopup($("#log-filter-dialog")); return; }
+    if (eventClosest(event, "[data-close-log-filter]")) { closePopup($("#log-filter-dialog")); return; }
+    const logRangeButton = eventClosest(event, "[data-log-range]");
     if (logRangeButton) {
       const now = new Date(), to = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
       const fromDate = new Date(now); if (logRangeButton.dataset.logRange !== "today") fromDate.setDate(fromDate.getDate() - Number(logRangeButton.dataset.logRange) + 1);
       const from = new Date(fromDate.getTime() - fromDate.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
       $("[data-log-filter-from]").value = from; $("[data-log-filter-to]").value = to; return;
     }
-    if (event.target.closest("[data-log-filter-apply]")) {
+    if (eventClosest(event, "[data-log-filter-apply]")) {
       const from = $("[data-log-filter-from]")?.value || "", to = $("[data-log-filter-to]")?.value || "";
       if (settingsGroup === "history") { historyFrom = from; historyTo = to; } else { logFrom = from; logTo = to; }
       closePopup($("#log-filter-dialog")); render(); return;
     }
-    if (event.target.closest("[data-log-filter-clear]")) {
+    if (eventClosest(event, "[data-log-filter-clear]")) {
       if (settingsGroup === "history") { historyFrom = ""; historyTo = ""; } else { logFrom = ""; logTo = ""; }
       closePopup($("#log-filter-dialog")); render(); return;
     }
-    const logAction = event.target.closest("[data-log-action]");
+    const logAction = eventClosest(event, "[data-log-action]");
     if (logAction?.dataset.logAction === "clear") { clearLogcat().then(() => { render(); toast("Logs cleared."); }).catch(error => { recordLog("error", `Log clear failed: ${error?.message || error}`); toast("Could not clear logs."); }); return; }
     if (logAction?.dataset.logAction === "clear-history") {
       clearLibraryHistory().then(() => { render(); toast("History cleared."); }).catch(error => { recordLog("error", `History clear failed: ${error?.message || error}`); toast("Could not clear history."); });
       return;
     }
-    const syncAction = event.target.closest("[data-metadata-sync-action]");
+    const syncAction = eventClosest(event, "[data-metadata-sync-action]");
     if (syncAction) { if (syncAction.dataset.metadataSyncAction === "start") syncMetadataNow(); else if (syncAction.dataset.metadataSyncAction === "retry") retryMetadataSync(syncAction.dataset.id || null); else if (syncAction.dataset.metadataSyncAction === "clear") clearMetadataSyncState(); return; }
-    const matchReviewOk = event.target.closest("[data-match-review-ok]");
+    const matchReviewOk = eventClosest(event, "[data-match-review-ok]");
     if (matchReviewOk) {
       const item = itemById(String(matchReviewOk.dataset.matchReviewOk)); if (!item) return;
       item.matchOk = { ...(item.matchOk || {}) };
       (item.matchReview || []).forEach(flag => { item.matchOk[flag.key] = flag.providerId || item.sourceIds?.[flag.key] || ""; });
       delete item.matchReview; persist({ ids: [item.id] }); render(); toast("Match marked as correct."); return;
     }
-    if (event.target.closest("[data-match-review-ok-all]")) {
+    if (eventClosest(event, "[data-match-review-ok-all]")) {
       const reviewed = [];
       items.forEach(item => { if (!item.matchReview?.length) return; item.matchOk = { ...(item.matchOk || {}) }; item.matchReview.forEach(flag => { item.matchOk[flag.key] = flag.providerId || item.sourceIds?.[flag.key] || ""; }); delete item.matchReview; reviewed.push(item.id); });
       if (reviewed.length) { persist({ ids: reviewed }); render(); toast("Matches marked as correct."); } return;
     }
-    const settingPicker = event.target.closest("[data-setting-picker]");
+    const settingPicker = eventClosest(event, "[data-setting-picker]");
     if (settingPicker) { openSettingPicker(settingPicker); return; }
-    if (event.target.closest("[data-close-setting-picker]")) { closePopup($("#setting-picker-dialog")); return; }
+    if (eventClosest(event, "[data-close-setting-picker]")) { closePopup($("#setting-picker-dialog")); return; }
     if (event.target.id === "setting-picker-dialog") { closePopup(event.target); return; }
-    const timelineFilterButton = event.target.closest("[data-timeline-filter]");
+    const timelineFilterButton = eventClosest(event, "[data-timeline-filter]");
     if (timelineFilterButton) { timelineFilter = timelineFilterButton.dataset.timelineFilter; render(); return; }
-    if (event.target.closest("[data-open-timeline-filters]")) { showPopup($("#timeline-filter-dialog")); return; }
-    if (event.target.closest("[data-clear-timeline-filters]")) {
+    if (eventClosest(event, "[data-open-timeline-filters]")) { showPopup($("#timeline-filter-dialog")); return; }
+    if (eventClosest(event, "[data-clear-timeline-filters]")) {
       timelineSearch = ""; timelineMonth = ""; timelineYear = ""; timelineFilter = "all";
       closePopup($("#timeline-filter-dialog")); render(); return;
     }
-    const detailRefButton = event.target.closest("[data-detail-ref]");
+    const detailRefButton = eventClosest(event, "[data-detail-ref]");
     if (detailRefButton) { const [type, ...rest] = detailRefButton.dataset.detailRef.split(":"); { let extra; try { extra = JSON.parse(detailRefButton.dataset.detailRefExtra || "null"); } catch (_) {} openDetailRef(type, rest.join(":"), detailRefButton.dataset.detailRefTitle, extra, detailRefButton.dataset.refReplace === "true"); } return; }
-    if (event.target.closest("[data-detail-back]")) { detailBack(); return; }
-    if (event.target.closest("[data-detail-ref-retry]")) { loadDetailRef(); return; }
-    const refPage = event.target.closest("[data-detail-ref-page]");
+    if (eventClosest(event, "[data-detail-back]")) { detailBack(); return; }
+    if (eventClosest(event, "[data-detail-ref-retry]")) { loadDetailRef(); return; }
+    const refPage = eventClosest(event, "[data-detail-ref-page]");
     if (refPage) { detailRefOffset = Math.max(0, Number(refPage.dataset.detailRefPage) || 0); render(); scrollPageTop(); return; }
-    const seasonButton = event.target.closest("[data-season-toggle]");
+    const seasonButton = eventClosest(event, "[data-season-toggle]");
     if (seasonButton) {
       const ids = seasonButton.dataset.seasonToggle.split(","), undo = seasonButton.dataset.seasonDone === "true";
       toggleSeason(detailItemId, ids, undo);
       toast(undo ? `${ids.length} episodes marked unwatched.` : `${ids.length} episodes marked watched.`);
       return;
     }
-    const episode = event.target.closest("[data-episode-toggle]");
+    const episode = eventClosest(event, "[data-episode-toggle]");
     if (episode) { toggleEpisodeWatched(episode.dataset.itemId || detailItemId, episode.dataset.episodeId, episode.dataset.episodeTitle || "Episode"); return; }
-    const favoritesFilter = event.target.closest("[data-favorites-filter]");
+    const favoritesFilter = eventClosest(event, "[data-favorites-filter]");
     if (favoritesFilter) { prefs.dashboardStatusFilter = dashboardStatusFilter = "all"; setPreference("favoritesOnly", !prefs.favoritesOnly); render(); return; }
-    const quick = event.target.closest("[data-action=watch-next],[data-action=mark-all-watched],[data-action=toggle-favorite]");
+    const quick = eventClosest(event, "[data-action=watch-next],[data-action=mark-all-watched],[data-action=toggle-favorite]");
     if (quick) {
       const item = items.find(entry => entry.id === quick.dataset.id), kind = quick.dataset.action; if (!item) return;
       const info = window.SplitAppLibrary.episodeInfo(item);
@@ -2703,14 +2766,14 @@
       else { item.favorite = !item.favorite; item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); toast(item.favorite ? "Added to favorites." : "Removed from favorites."); }
       return;
     }
-    const tabButton = event.target.closest("[data-detail-tab]");
+    const tabButton = eventClosest(event, "[data-detail-tab]");
     if (tabButton) {
       detailTab = tabButton.dataset.detailTab; const root = tabButton.closest(".detail-page");
       root.querySelectorAll("[data-detail-tab]").forEach(button => { const on = button === tabButton; button.classList.toggle("active", on); button.setAttribute("aria-selected", String(on)); });
       root.querySelectorAll("[data-detail-panel]").forEach(panel => { panel.hidden = panel.dataset.detailPanel !== detailTab; });
       return;
     }
-    const seasonPill = event.target.closest("[data-season-pill]");
+    const seasonPill = eventClosest(event, "[data-season-pill]");
     if (seasonPill) {
       const root = seasonPill.closest(".season-list"), collapsing = seasonPill.getAttribute("aria-expanded") === "true";
       detailSeason = collapsing ? "" : seasonPill.dataset.seasonPill;
@@ -2718,7 +2781,7 @@
       root.querySelectorAll("[data-season-panel]").forEach(panel => { panel.hidden = panel.dataset.seasonPanel !== detailSeason; const lazy = !panel.hidden && panel.querySelector("template[data-lazy-season]"); if (lazy) lazy.replaceWith(lazy.content); });
       return;
     }
-    const reactEpisode = event.target.closest("[data-episode-react]");
+    const reactEpisode = eventClosest(event, "[data-episode-react]");
     if (reactEpisode) {
       const item = items.find(entry => entry.id === reactEpisode.dataset.itemId); if (!item) return;
       item.episodeNotes = item.episodeNotes || {}; const note = { ...(item.episodeNotes[reactEpisode.dataset.episodeId] || {}) };
@@ -2727,19 +2790,19 @@
       if (!Object.keys(item.episodeNotes).length) delete item.episodeNotes;
       item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); return;
     }
-    const layoutToggle = event.target.closest("[data-ratings-layout]");
+    const layoutToggle = eventClosest(event, "[data-ratings-layout]");
     if (layoutToggle) {
       const grid = layoutToggle.closest(".ep-ratings"), next = grid.dataset.layout === "vertical" ? "horizontal" : "vertical";
       grid.dataset.layout = next; layoutToggle.textContent = next === "vertical" ? "Horizontal" : "Vertical";
       try { localStorage.setItem("screenmark_ratings_layout", next); } catch (_) {}
       return;
     }
-    const expandCast = event.target.closest("[data-carousel-expand]");
+    const expandCast = eventClosest(event, "[data-carousel-expand]");
     if (expandCast) { const carousel = expandCast.closest(".detail-section")?.querySelector(".detail-carousel"); const open = carousel?.classList.toggle("expanded"); expandCast.textContent = open ? "Collapse" : "Full list"; return; }
-    const action = event.target.closest("[data-action]");
+    const action = eventClosest(event, "[data-action]");
     if (action) { if (action.dataset.action === "add") openItem(); else if (action.dataset.action === "progress") updateProgress(action.dataset.id); else if (action.dataset.action === "edit") { if (page === "details") { detailEditMode = true; render(); } else openEdit(action.dataset.id); } else if (action.dataset.action === "cancel-detail-edit") { detailEditMode = false; render(); } else if (action.dataset.action === "details") openDetails(action.dataset.id); else if (action.dataset.action === "refresh-details") loadDetails(); else if (action.dataset.action === "delete-detail") requestDeleteDetails(action.dataset.id); else if (action.dataset.action === "save-detail-item") { const saved = addDiscoverResult(detailPreview); if (saved) { detailPreview = null; detailItemId = saved.id; detailData = null; loadDetails(); } } return; }
-    const deleteButton = event.target.closest("#delete-item"); if (deleteButton) { deleteItem(deleteButton.dataset.id); return; }
-    const settingAction = event.target.closest("[data-setting-action]");
+    const deleteButton = eventClosest(event, "#delete-item"); if (deleteButton) { deleteItem(deleteButton.dataset.id); return; }
+    const settingAction = eventClosest(event, "[data-setting-action]");
     if (settingAction && settingAction.type !== "file") {
       const key = settingAction.dataset.settingAction;
       if (key === "export") exportList(); else if (key === "export-txt") exportNames("txt"); else if (key === "export-csv") exportNames("csv"); else if (key === "sync-metadata") syncMetadataNow(); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
@@ -2749,22 +2812,20 @@
       }
       return;
     }
-    const sourceDetails = event.target.closest("[data-discover-details]"); if (sourceDetails) { openDiscoverDetails($("#discover-results")._results?.[Number(sourceDetails.dataset.discoverDetails)]); return; }
-    const discoverAdd = event.target.closest("[data-discover-add]"); if (discoverAdd) { addDiscoverResult($("#discover-results")._results?.[Number(discoverAdd.dataset.discoverAdd)]); refreshDiscoverSavedActions(); return; }
+    const sourceDetails = eventClosest(event, "[data-discover-details]"); if (sourceDetails) { openDiscoverDetails($("#discover-results")._results?.[Number(sourceDetails.dataset.discoverDetails)]); return; }
+    const discoverAdd = eventClosest(event, "[data-discover-add]"); if (discoverAdd) {
+      const result = $("#discover-results")._results?.[Number(discoverAdd.dataset.discoverAdd)];
+      const existed = result && items.some(item => sameDiscoverTitle(item, result));
+      const saved = addDiscoverResult(result);
+      if (!existed && saved?.category === "series") openAddedSeriesDetails(saved, "discover");
+      refreshDiscoverSavedActions(); return;
+    }
   });
   $("#page-content").addEventListener("keydown", event => {
     if (event.key !== "Enter" && event.key !== " ") return;
-    const row = event.target.closest?.('.season-accordion-row[role="button"][data-season-pill]');
+    const row = eventClosest(event, '.season-accordion-row[role="button"][data-season-pill]');
     if (!row || event.target !== row) return;
     event.preventDefault(); row.click();
-  });
-  document.addEventListener("change", event => {
-    const sort = event.target.closest?.("[data-discover-sort]");
-    const year = event.target.closest?.("[data-discover-year]");
-    if (!sort && !year) return;
-    if (sort) discoverSort = sort.value;
-    if (year) discoverYearFilter = year.value;
-    loadDiscoverSuggestions();
   });
   document.addEventListener("change", event => {
     const input = event.target;
@@ -2817,7 +2878,7 @@
     if (input.matches("[data-setting-action=import]")) { const file = input.files?.[0]; input.value = ""; importList(file); }
   });
   document.addEventListener("dragstart", event => {
-    const row = event.target.closest("[data-nav-row]");
+    const row = eventClosest(event, "[data-nav-row]");
     if (!row || !event.dataTransfer) return;
     const kind = "nav";
     const key = row.dataset.navRow;
@@ -2825,12 +2886,12 @@
     event.dataTransfer.setData("text/plain", `${kind}:${key}`);
     row.classList.add("dragging");
   });
-  document.addEventListener("dragend", event => event.target.closest("[data-nav-row]")?.classList.remove("dragging"));
+  document.addEventListener("dragend", event => eventClosest(event, "[data-nav-row]")?.classList.remove("dragging"));
   document.addEventListener("dragover", event => {
-    if (event.target.closest("[data-nav-row]")) event.preventDefault();
+    if (eventClosest(event, "[data-nav-row]")) event.preventDefault();
   });
   document.addEventListener("drop", event => {
-    const targetRow = event.target.closest("[data-nav-row]");
+    const targetRow = eventClosest(event, "[data-nav-row]");
     if (!targetRow || !event.dataTransfer) return;
     event.preventDefault();
     const [kind, key] = event.dataTransfer.getData("text/plain").split(":");
@@ -2849,7 +2910,7 @@
     persist({ meta: true }); render();
   };
   document.addEventListener("pointerdown", event => {
-    const handle = event.target.closest(".metadata-source-row .drag-handle");
+    const handle = eventClosest(event, ".metadata-source-row .drag-handle");
     if (!handle || (event.pointerType === "mouse" && event.button !== 0)) return;
     const row = handle.closest("[data-source-row]"), list = row?.parentElement;
     if (!row || !list) return;
@@ -2872,7 +2933,7 @@
   document.addEventListener("pointerup", event => { if (sourcePointerDrag?.pointerId === event.pointerId) finishSourcePointerDrag(); });
   document.addEventListener("pointercancel", event => { if (sourcePointerDrag?.pointerId === event.pointerId) finishSourcePointerDrag(); });
   document.addEventListener("keydown", event => {
-    const handle = event.target.closest?.(".metadata-source-row .drag-handle");
+    const handle = eventClosest(event, ".metadata-source-row .drag-handle");
     if (!handle || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
     const row = handle.closest("[data-source-row]"), list = row?.parentElement;
     const neighbor = event.key === "ArrowUp" ? row?.previousElementSibling : row?.nextElementSibling;
@@ -2892,7 +2953,7 @@
     persist({ meta: true }); applyPreferences(); render();
   };
   document.addEventListener("pointerdown", event => {
-    const handle = event.target.closest(".nav-layout-row .drag-handle");
+    const handle = eventClosest(event, ".nav-layout-row .drag-handle");
     if (!handle || event.pointerType === "mouse" || event.button !== 0) return;
     const row = handle.closest("[data-nav-row]"), list = row?.parentElement;
     if (!row || !list) return;
@@ -2912,7 +2973,7 @@
   document.addEventListener("pointerup", event => { if (navPointerDrag?.pointerId === event.pointerId) finishNavPointerDrag(); });
   document.addEventListener("pointercancel", event => { if (navPointerDrag?.pointerId === event.pointerId) finishNavPointerDrag(); });
   document.addEventListener("keydown", event => {
-    const handle = event.target.closest?.(".nav-layout-row .drag-handle");
+    const handle = eventClosest(event, ".nav-layout-row .drag-handle");
     if (!handle || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
     const row = handle.closest("[data-nav-row]"), list = row?.parentElement;
     const neighbor = event.key === "ArrowUp" ? row?.previousElementSibling : row?.nextElementSibling;
@@ -2961,15 +3022,6 @@
       if (globalResults) globalResults.hidden = !hasGlobalMatch;
       return;
     }
-    if (event.target.id === "explore-source-search") {
-      const query = event.target.value.trim().toLowerCase();
-      const rows = $$("[data-explore-search]");
-      let matches = 0;
-      rows.forEach(row => { row.hidden = query !== "" && !row.dataset.exploreSearch.includes(query); if (!row.hidden) matches++; });
-      const empty = $("#explore-no-sources");
-      if (empty) empty.hidden = query === "" || matches > 0;
-      return;
-    }
     if (event.target.id === "global-search") {
       libraryQuery = event.target.value;
       const clearButton = $("[data-clear-collection-search]");
@@ -3005,13 +3057,13 @@
     closePopup($("#timeline-filter-dialog")); render();
   });
   $("#bottom-bar").addEventListener("click", event => {
-    const button = event.target.closest(".nav-button[data-page]");
+    const button = eventClosest(event, ".nav-button[data-page]");
     if (!button) return;
     settingsGroup = null;
     goto(button.dataset.page);
   });
   $("#sidebar-nav").addEventListener("click", event => {
-    const button = event.target.closest(".sidebar-nav-button[data-sidebar-page]");
+    const button = eventClosest(event, ".sidebar-nav-button[data-sidebar-page]");
     if (!button) return;
     settingsGroup = null;
     goto(button.dataset.sidebarPage);
@@ -3050,14 +3102,14 @@
     document.addEventListener("touchmove", event => move(event.touches[0].clientY, event), { passive: false });
     document.addEventListener("touchend", finish); document.addEventListener("touchcancel", () => { candidate = false; pulling = false; hide(); });
     let mouseDown = false;
-    document.addEventListener("mousedown", event => { if (event.button !== 0 || event.target.closest("button, a, label")) return; mouseDown = true; begin(event.clientY, event.target); });
+    document.addEventListener("mousedown", event => { if (event.button !== 0 || eventClosest(event, "button, a, label")) return; mouseDown = true; begin(event.clientY, event.target); });
     document.addEventListener("mousemove", event => { if (mouseDown) move(event.clientY, event); });
     document.addEventListener("mouseup", () => { if (mouseDown) { mouseDown = false; finish(); } });
   })();
   $("#header-type").addEventListener("click", event => {
-    const discoverButton = event.target.closest("[data-discover-category]");
-    if (discoverButton && page === "discover") { discoverCategoryChoice = discoverButton.dataset.discoverCategory; discoverCache = null; suggestionsCache = null; discoverQuery = ""; discoverYearFilter = ""; discoverGenreFilter = ""; render(); return; }
-    const button = event.target.closest("[data-category-filter]"); if (!button) return; activeCategory = button.dataset.categoryFilter || "series"; prefs.dashboardDefaultCategory = activeCategory; persist({ meta: true }); render();
+    const discoverButton = eventClosest(event, "[data-discover-category]");
+    if (discoverButton && page === "discover") { discoverCategoryChoice = discoverButton.dataset.discoverCategory; discoverCache = null; suggestionsCache = null; discoverQuery = ""; render(); return; }
+    const button = eventClosest(event, "[data-category-filter]"); if (!button) return; activeCategory = button.dataset.categoryFilter || "series"; prefs.dashboardDefaultCategory = activeCategory; persist({ meta: true }); render();
   });
   $("[data-close-setting-picker]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#setting-picker-dialog")); });
   $("#floating-add").addEventListener("click", () => openItem());

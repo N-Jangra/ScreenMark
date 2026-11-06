@@ -6,7 +6,6 @@
   const merge = window.SplitAppMixMerge.merge;
   const norm = title => String(title || "").toLowerCase().replace(/[™®©]/g, "").replace(/[^a-z0-9]+/g, " ").replace(/^the /, "").trim();
   const yearOf = value => String(value || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
-  const SOURCE_GRACE_MS = 4000, BACKGROUND_GRACE_MS = 14000;
   const withTimeout = (promise, ms = 15000) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out")), ms))]);
   const LIMITS = { tmdb: 4, tvdb: 3, omdb: 4, tvmaze: 3, anilist: 2, imdb: 3 };
   const lanes = new Map();
@@ -103,9 +102,10 @@
     const hasPrimary = Boolean(primaryKey && primaryId && sources.some(source => source.key === primaryKey));
     const pins = { ...(item.sourceIds || {}), ...(item.mixPins || {}) };
     if (hasPrimary) pins[primaryKey] = primaryId;
-    const knownKeys = new Set([...(window.SplitAppSources?.list?.() || []).map(source => source.key), ...sources.map(source => source.key)]);
-    const expected = new Set(Object.keys(pins).filter(key => knownKeys.has(key)));
-    const waiting = new Set([...expected].filter(key => sources.some(source => source.key === key)));
+    // Only expect links to sources that are enabled for this refresh. Disabled linked providers
+    // stay saved, but must not make an otherwise successful refresh fail.
+    const enabledKeys = new Set(sources.map(source => source.key));
+    const expected = new Set(Object.keys(pins).filter(key => enabledKeys.has(key)));
     const answered = new Set(), noMatch = new Set(), failures = [];
     const capped = new Set(), maxSources = settings.background ? Math.max(0, Number(settings.syncMaxSources) || 0) : 0;
     if (maxSources > 0) {
@@ -135,12 +135,13 @@
       }
       return entry;
     });
-    const entries = await new Promise(resolve => {
-      const ok = []; let pending = tasks.length, timer = 0, finished = false;
-      const finish = () => { if (finished) return; finished = true; clearTimeout(timer); resolve(ok.slice().sort((a, b) => a.order - b.order)); };
-      const arm = () => { if (!timer && !finished && ok.length && !waiting.size) timer = setTimeout(finish, settings.background ? BACKGROUND_GRACE_MS : SOURCE_GRACE_MS); };
-      tasks.forEach((task, index) => task.then(entry => { ok.push(entry); waiting.delete(entry.key); arm(); }, error => { if (error?.message !== "No match") failures.push(`${sources[index].name}: ${error?.message || "failed"}`); waiting.delete(sources[index].key); arm(); }).finally(() => { if (--pending === 0) finish(); }));
-    });
+    const settled = await Promise.allSettled(tasks);
+    const entries = settled.flatMap((outcome, index) => {
+      if (outcome.status === "fulfilled") return [outcome.value];
+      const error = outcome.reason;
+      if (error?.message !== "No match") failures.push(`${sources[index].name}: ${error?.message || "failed"}`);
+      return [];
+    }).sort((a, b) => a.order - b.order);
     const fail = (message, isTransient) => Object.assign(new Error(message), { transient: isTransient });
     if (!entries.length) throw fail(`No enabled source had details for “${title}”${failures.length ? ` (${failures[0]})` : ""}.`, failures.length > 0);
     const missing = [...expected].filter(key => !entries.some(entry => entry.key === key));

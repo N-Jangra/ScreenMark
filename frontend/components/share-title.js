@@ -306,7 +306,8 @@
     prewarm();
 
     dialog.addEventListener("click", async event => {
-      const t = event.target;
+      const t = event.target?.closest ? event.target : event.target?.parentElement;
+      if (!t?.closest) return;
       if (t === dialog || t.closest("[data-share-close]")) return closePopup(dialog);
       const f = t.closest("[data-fmt]"); if (f) { state.format = f.dataset.fmt; paint(); return prewarm(); }
       const i = t.closest("[data-inc]"); if (i) { const k = i.dataset.inc; state[k] = !state[k]; paint(); return prewarm(); }

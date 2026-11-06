@@ -247,7 +247,8 @@
       finally { busy(false); }
     };
     dialog.addEventListener("click", event => {
-      const t = event.target;
+      const t = event.target?.closest ? event.target : event.target?.parentElement;
+      if (!t?.closest) return;
       if (t === dialog || t.closest("[data-share-close]")) return closePopup(dialog);
       const kb = t.closest("[data-share-kind]"); if (kb) { kind = kb.dataset.shareKind; return applyKind(); }
       if (t.closest("[data-share-pdf-save]")) return guard(async () => saveBytes(await makeListPdf(), "application/pdf", "pdf", slug(title)), r => `Saved to ${r}.`, "Preparing…");
