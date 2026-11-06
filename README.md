@@ -7,10 +7,10 @@ ScreenMark is a local-first tracker for **movies and TV series**. It runs as a b
 - Track movies (minutes watched) and TV series (episodes watched) with status, rating, progress and total.
 - Home with type and status filters, a filter sheet and a quick-action sheet on every card.
 - Discover movies and series across TVmaze, AniList, TMDB, TheTVDB, IMDb, Rotten Tomatoes and OMDb, with year, genre and sort filters plus suggestions when nothing is searched.
-- Source-backed Details pages: season and episode guides, cast and crew, ratings, screenshots and links; saved with the title for offline use. Episode tracking updates Timeline activity.
+- Source-backed Details pages: season and episode guides, cast and crew, ratings, screenshots and provider links; shared Links pills appear on title, episode and cast/person pages. Episode tracking updates Timeline activity, and metadata-backed series open on Episodes after being added.
 - Statistics: an overview with Watch time, Library breakdown, Activity and Ratings sub-pages (including a Not rated yet list), and a Timeline grouped by day.
 - Favorites (♥) from Details or the ⋮ menu, with a Favorites filter on Home.
-- **Mix fetch (beta):** one list across all sources, details merged from every enabled source.
+- **Mix fetch (beta):** one list across all sources, details and ratings merged from every enabled source; duplicate episodes are combined by season and episode number.
 - **Custom sources:** add any JSON search API on a guided page.
 - Export (Android Save as screen, chunked) and import a JSON library backup; the library lives in IndexedDB with a device cover cache, plus Android encrypted storage, an optional folder database and daily backups.
 

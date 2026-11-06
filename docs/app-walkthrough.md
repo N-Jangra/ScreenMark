@@ -31,8 +31,8 @@ A launch screen (ScreenMark clapperboard icon, name, dots) shows until the first
 
 - **Home:** titles grouped by status (or type, release year, none). Movies and Series filters, status chips with counts and collection search sit above the library. Dashboard layouts include List, Compact list, Posters, Posters+, Compact grid and Large poster grid. The floating plus opens Add.
 - **Discover:** a Movies / Series switch and search across enabled sources. Results can be sorted and filtered by year and genre; saved results show that they are already in the library. With no query, suggestions include TV schedules, movie charts and anime picks where supported.
-- **Add:** choose Movie or TV series, search sources to auto-fill poster, description, year and runtime or episode count, then set status, progress and total with steppers (10 minutes for movies, 1 episode for series) and a star rating.
-- **Details:** hero with poster and backdrop, status and source facts, progress controls, overview, cast and crew, ratings and provider details. Series episode lists expand by season; season and episode checks update progress. Long vertical rating grids add rows as needed.
+- **Add:** choose Movie or TV series, search sources to auto-fill poster, description, year and runtime or episode count, then set status, progress and total with steppers (10 minutes for movies, 1 episode for series) and a star rating. Saving a metadata-backed series opens its library details on Episodes when an episode guide is available.
+- **Details:** hero with poster and backdrop, status and source facts, progress controls, overview, cast and crew, ratings and provider details. Series episode lists expand by season; season and episode checks update progress. Long vertical rating grids add rows as needed. Provider links use a shared Links heading and rounded pills on title, episode and cast/person pages.
 - **Explore:** Timeline, Statistics, metadata sources and Mix fetch.
 - **Timeline:** recent library and watched-episode activity grouped by day and month, with time-range filters.
 - **Statistics:** movie and series views with watch time, activity, library breakdown, ratings and top titles.
@@ -40,7 +40,7 @@ A launch screen (ScreenMark clapperboard icon, name, dots) shows until the first
 
 ## Mix fetch (experimental)
 
-**Explore → Beta → Mix fetch** searches every enabled source as one plain list (a type switch All / Movies / TV series; the same title from several sources is one row with a chip per source). Opening a title or adding it fetches details from all enabled sources and merges them (`metadataSource: "mix"`). Adding a title that already exists from a single source offers to convert it to a Mix entry. See [metadata](metadata.md).
+**Explore → Beta → Mix fetch** searches every enabled source as one plain list (a type switch All / Movies / TV series; the same title from several sources is one row with a chip per source). Opening a title or adding it fetches details from all enabled sources and merges them (`metadataSource: "mix"`). Available title ratings appear as provider-labeled badges. Matching episode guides are merged by season and episode number, retaining one row per episode and combining details across providers. Adding a title that already exists from a single source offers to convert it to a Mix entry. See [metadata](metadata.md).
 
 ## Custom sources
 

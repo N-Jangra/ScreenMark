@@ -24,7 +24,11 @@ Suggestions on Discover also use TVmaze schedules and the public iTunes top-movi
 - **Rotten Tomatoes:** title and series, season and episode data, ratings, cast and crew where available. The public site may limit requests; Android source sessions let you complete a provider prompt yourself before retrying.
 - **TheTVDB:** provider-backed movie and series metadata using your API key.
 
-Every loader returns the same detail shape (`schemaVersion: 2`) with `watch` (`runtimeMinutes`, `episodeCount`, `seasonCount`) and a derived `facts` summary saved with the title: runtime, episode and season counts, total minutes, genres, release date, directors, writers, cast, networks, languages, countries, status, age rating, rating, awards, box office, tags and alternative names.
+Every loader returns the same detail shape (`schemaVersion: 2`) with `watch` (`runtimeMinutes`, `episodeCount`, `seasonCount`) and a derived `facts` summary saved with the title: runtime, episode and season counts, total minutes, genres, release date, directors, writers, cast, networks, languages, countries, status, age rating, rating, awards, box office, tags and alternative names. Detail pages share a Links section with provider pills across titles, episodes and cast/person pages.
+
+## Mix detail merging
+
+Mix fetch requests details from every enabled source that matches a title. It keeps a provider-labeled rating badge for each source that returns a rating, including that source's vote count in the badge tooltip. Episode guides and episode-rating rows are combined by season and episode number, so the same episode from multiple providers appears once; non-overlapping episodes remain, and missing details can be filled from another provider. Provider-specific episode links and source metadata stay attached to the preferred matching row.
 
 ## Custom sources
 

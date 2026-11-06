@@ -13,6 +13,8 @@ Follow-up release focused on provider detail pages, discovery, library tracking 
 - Rotten Tomatoes and IMDb source sessions on Android, plus image proxy support for additional provider hosts in local preview.
 - Discover catalogue filters for sort order, year and genre, with add buttons that reflect titles already in the library.
 - Compact shared cast and crew rows with portraits, names and roles.
+- Mix fetch preserves each matched source's title rating and displays available ratings as provider-labeled badges.
+- Adding a series through metadata search or Discover now opens its library details on the Episodes tab when a guide is available.
 
 ### Changed
 
@@ -20,6 +22,9 @@ Follow-up release focused on provider detail pages, discovery, library tracking 
 - Refreshed dashboard, Discover, Timeline, Statistics and settings layouts; improved empty-state colors and saved-title indicators.
 - Reduced motion friction in the tracking episode rail and made metadata source ordering usable by drag and drop on Android.
 - Updated appearance, navigation, backup, metadata and dashboard settings to match current app behavior.
+- Unified provider links across title, episode, cast and person pages as a Links heading with rounded source pills.
+- Mix detail merging now combines duplicate episode guides by season and episode number while keeping unmatched episodes and filling missing episode data from other sources.
+- Tightened Export, Import, metadata source and custom-source settings layouts for mobile; removed repeated add-form actions when the sticky header already provides them.
 
 ### Fixed
 
