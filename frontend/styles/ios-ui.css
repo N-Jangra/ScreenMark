@@ -319,7 +319,6 @@ dialog.ios-action-sheet::backdrop{background:#00000066;backdrop-filter:blur(2px)
 
 /* Settings: Category colors row matches the other rows */
 button.setting-page-link{display:inline-flex;align-items:center;justify-content:flex-end;gap:8px;width:100%;min-height:42px;padding:4px 0 4px 8px;border:0;background:transparent;color:var(--muted);font-size:.86rem;text-align:right;cursor:pointer}
-.category-colors-setting{border-top:1px solid var(--line)}
 
 /* Settings > Bottom bar icons: card rows like Bottom Bar Layout */
 .nav-icon-list{display:grid;gap:9px}

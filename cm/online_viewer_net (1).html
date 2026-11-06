@@ -1,0 +1,1978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CueMark - Universal Media Tracking Suite</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+
+      /* OLED Dark Surface Scale */
+      --bg-black: #000000;
+      --bg-base: #06070a;
+      --bg-surface: #0e111a;
+      --bg-elevated: #151824;
+      --bg-card: #12141f;
+      --bg-glass: rgba(14, 17, 26, 0.88);
+
+      /* Primary Accents */
+      --brand-violet: #a855f7;
+      --brand-violet-dark: #9333ea;
+      --brand-violet-subtle: rgba(168, 85, 247, 0.16);
+      --brand-glow: rgba(168, 85, 247, 0.35);
+
+      /* Format Semantic Accents */
+      --color-tv: #06b6d4;
+      --color-movie: #f59e0b;
+      --color-game: #10b981;
+      --color-anime: #ec4899;
+      --color-manga: #f97316;
+      --color-novel: #8b5cf6;
+
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+
+      /* Typography */
+      --text-white: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+
+      /* Borders */
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-card: rgba(255, 255, 255, 0.12);
+      --border-focus: rgba(168, 85, 247, 0.5);
+
+      /* Radius */
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-full: 9999px;
+
+      --nav-height: 68px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg-black);
+      color: var(--text-white);
+      font-family: var(--font-main);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 12px 6px;
+      overflow-x: hidden;
+    }
+
+    /* Device Viewport Harness */
+    .app-viewport {
+      width: 100%;
+      max-width: 420px;
+      height: 890px;
+      background: var(--bg-black);
+      border-radius: 44px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 30px 90px rgba(0, 0, 0, 0.95), 0 0 0 10px #11131a;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top Hardware Status Bar */
+    .status-bar {
+      height: 42px;
+      padding: 0 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 700;
+      z-index: 50;
+      background: var(--bg-black);
+      pointer-events: none;
+    }
+    .island-pill {
+      width: 108px;
+      height: 22px;
+      background: #000;
+      border-radius: 20px;
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    .island-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #1e2230;
+    }
+    .island-lens {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 6px var(--accent-green);
+    }
+
+    /* Views Stage */
+    .stage-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    .screen-view {
+      position: absolute;
+      inset: 0;
+      bottom: var(--nav-height);
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 10px 16px 24px;
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+      scrollbar-width: none;
+    }
+    .screen-view::-webkit-scrollbar { display: none; }
+    .screen-view.active {
+      display: flex;
+      animation: viewIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes viewIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Header Components */
+    .view-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 4px;
+    }
+    .app-title-main {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.6px;
+      color: #fff;
+    }
+    .nav-back-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+    }
+    .btn-back-text {
+      background: transparent;
+      border: none;
+      color: var(--brand-violet);
+      font-size: 15px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+    .btn-refine {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: #fff;
+      padding: 7px 14px;
+      border-radius: var(--radius-full);
+      font-size: 12.5px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    /* Category Filter Strip */
+    .category-chips-strip {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      margin: 0 -16px;
+      padding: 2px 16px;
+      scrollbar-width: none;
+    }
+    .category-chips-strip::-webkit-scrollbar { display: none; }
+    .cat-chip {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .cat-chip svg { width: 15px; height: 15px; }
+    .cat-chip.active {
+      background: var(--brand-violet-dark);
+      color: #fff;
+      border-color: transparent;
+      box-shadow: 0 4px 14px var(--brand-glow);
+    }
+
+    /* Search Box */
+    .search-box-wrap {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .search-box-wrap input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #fff;
+      font-size: 14px;
+      width: 100%;
+    }
+    .search-box-wrap input::placeholder { color: var(--text-dim); }
+
+    /* In-Progress Shelf Accordion */
+    .accordion-toggle-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+    .accordion-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--color-tv);
+    }
+    .count-bubble {
+      font-size: 11px;
+      font-weight: 800;
+      background: var(--bg-elevated);
+      color: var(--brand-violet);
+      padding: 1px 7px;
+      border-radius: var(--radius-full);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .shelf-card-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .shelf-item-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .shelf-item-card:hover { border-color: var(--border-card); }
+    .shelf-thumb {
+      width: 50px;
+      height: 68px;
+      border-radius: var(--radius-sm);
+      object-fit: cover;
+      background: var(--bg-elevated);
+      flex-shrink: 0;
+    }
+    .shelf-meta {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .shelf-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .shelf-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .progress-track-line {
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: var(--radius-full);
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .progress-fill-line {
+      height: 100%;
+      background: var(--brand-violet);
+      border-radius: var(--radius-full);
+    }
+    .shelf-pct-num {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-dim);
+      align-self: flex-end;
+    }
+
+    /* Catalog Cards (Screen 2) */
+    .catalog-entry-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+    }
+    .catalog-thumb-box {
+      width: 52px;
+      height: 72px;
+      border-radius: var(--radius-sm);
+      object-fit: cover;
+      background: var(--bg-elevated);
+      flex-shrink: 0;
+    }
+    .catalog-tag-pill {
+      font-size: 10px;
+      font-weight: 700;
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+      border: 1px solid var(--border-subtle);
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+
+    /* Detail View Components */
+    .detail-hero-box {
+      background: linear-gradient(135deg, rgba(21, 24, 36, 0.9), rgba(10, 12, 18, 0.95));
+      border: 1px solid var(--border-card);
+      border-radius: var(--radius-lg);
+      padding: 14px;
+      display: flex;
+      gap: 14px;
+    }
+    .detail-poster-img {
+      width: 74px;
+      height: 104px;
+      border-radius: var(--radius-sm);
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .detail-meta-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .meta-badges-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+    .meta-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+    }
+    .badge-cached {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent-green);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .btn-big-action {
+      background: var(--brand-violet-dark);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-md);
+      padding: 13px 18px;
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px var(--brand-glow);
+    }
+    .btn-outline-action {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: #fff;
+      border-radius: var(--radius-md);
+      padding: 11px 14px;
+      font-size: 12.5px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    /* Tracking & Notes Groups */
+    .section-label {
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--text-dim);
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+    .group-panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .group-row-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 13px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      cursor: pointer;
+    }
+    .group-row-item:last-child { border-bottom: none; }
+    .row-val-tag {
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .star-rating-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      color: var(--border-card);
+      cursor: pointer;
+    }
+    .star-rating-box svg {
+      width: 26px;
+      height: 26px;
+      transition: color 0.15s;
+    }
+    .star-rating-box svg.active {
+      color: var(--accent-amber);
+      fill: var(--accent-amber);
+    }
+
+    .notes-textarea-box {
+      width: 100%;
+      height: 72px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      color: #fff;
+      font-size: 12.5px;
+      resize: none;
+      outline: none;
+    }
+
+    /* Episode Row Items (TV Series) */
+    .ep-filter-row {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      margin: 8px 0 12px;
+    }
+    .ep-filter-row::-webkit-scrollbar { display: none; }
+    .ep-pill {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .ep-pill.active {
+      background: var(--brand-violet-dark);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    .ep-card-item {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .ep-round-check {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: transparent;
+      border: 2px solid var(--border-card);
+      color: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .ep-round-check.checked {
+      background: var(--brand-violet);
+      border-color: var(--brand-violet);
+      color: #fff;
+    }
+
+    /* Statistics Screen Components */
+    .stat-radial-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .radial-svg-box {
+      width: 82px;
+      height: 82px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .radial-svg-box svg {
+      transform: rotate(-90deg);
+      width: 100%;
+      height: 100%;
+    }
+    .radial-svg-box circle {
+      fill: none;
+      stroke-width: 8;
+      stroke-linecap: round;
+    }
+
+    .triad-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .triad-tile {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .triad-num {
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .stacked-mix-bar {
+      height: 8px;
+      border-radius: var(--radius-full);
+      display: flex;
+      overflow: hidden;
+      gap: 2px;
+      margin: 10px 0 6px;
+    }
+    .mix-seg { height: 100%; }
+
+    /* Bottom Dock Navigation */
+    .bottom-nav-dock {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: var(--nav-height);
+      background: var(--bg-black);
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      padding: 0 10px 6px;
+      z-index: 60;
+    }
+    .dock-tab-btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 44px;
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .dock-tab-btn svg { width: 22px; height: 22px; stroke-width: 2.2; stroke: currentColor; fill: none; }
+    .dock-tab-btn.active {
+      background: rgba(168, 85, 247, 0.18);
+      color: var(--brand-violet);
+    }
+
+    /* Floating Action Button (+) */
+    .app-fab {
+      position: absolute;
+      bottom: calc(var(--nav-height) + 14px);
+      right: 18px;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: var(--brand-violet);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      box-shadow: 0 6px 20px var(--brand-glow);
+      cursor: pointer;
+      z-index: 55;
+      transition: transform 0.2s;
+    }
+    .app-fab:active { transform: scale(0.92); }
+
+    /* Modal Overlay: Add Tracking Entry */
+    .modal-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.88);
+      backdrop-filter: blur(10px);
+      z-index: 100;
+      display: none;
+      flex-direction: column;
+      justify-content: flex-end;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-sheet-dialog {
+      background: var(--bg-base);
+      border-top: 1px solid var(--border-card);
+      border-radius: 28px 28px 0 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .input-field-styled {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 13.5px;
+      outline: none;
+      width: 100%;
+    }
+
+    /* System Toast */
+    .toast-pill-box {
+      position: fixed;
+      bottom: 24px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-focus);
+      color: #fff;
+      padding: 9px 18px;
+      border-radius: var(--radius-full);
+      font-size: 12.5px;
+      font-weight: 700;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.25s ease;
+      z-index: 999;
+      pointer-events: none;
+    }
+    .toast-pill-box.visible {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- MOBILE DEVICE VIEWPORT -->
+  <main class="app-viewport" id="mainAppViewport">
+
+    <!-- Top Hardware Status Bar -->
+    <div class="status-bar">
+      <span>10:32</span>
+      <div class="island-pill" onclick="triggerToast('11 Metadata Providers Synced 🟢')">
+        <div class="island-dot"></div>
+        <div class="island-lens"></div>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"/><line x1="22" y1="11" x2="22" y2="13"/></svg>
+        <span style="font-size:11px;">90%</span>
+      </div>
+    </div>
+
+    <!-- Active Stage -->
+    <div class="stage-container">
+
+      <!-- ========================================================
+           SCREEN 1: MY COLLECTION (Matching Screenshot 1)
+           ======================================================== -->
+      <section id="screen-collection" class="screen-view active">
+        <div class="view-header-row">
+          <h1 class="app-title-main">My collection</h1>
+          <button class="btn-refine" onclick="triggerToast('Refine filter opened')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            Refine
+          </button>
+        </div>
+
+        <!-- Category Horizontal Strip -->
+        <div class="category-chips-strip">
+          <div class="cat-chip active" onclick="filterCategory(this, 'all')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
+            TV Series
+          </div>
+          <div class="cat-chip" onclick="filterCategory(this, 'movie')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/></svg>
+            Movie
+          </div>
+          <div class="cat-chip" onclick="filterCategory(this, 'anime')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Anime
+          </div>
+          <div class="cat-chip" onclick="filterCategory(this, 'novel')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Novel
+          </div>
+        </div>
+
+        <!-- Search Input -->
+        <div class="search-box-wrap">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search your collection..." oninput="CueStore.filterCollection(this.value)">
+        </div>
+
+        <!-- Accordion Section: In Progress (Exact Screenshot 1 Layout) -->
+        <div>
+          <div class="accordion-toggle-bar" onclick="toggleAccordion('inProgressShelf')">
+            <div class="accordion-left">
+              <span class="status-dot"></span>
+              <span>In Progress</span>
+              <span class="count-bubble" id="inProgressCountBubble">2</span>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+
+          <div class="shelf-card-list" id="inProgressShelf">
+            <!-- Item 1: Friends -->
+            <div class="shelf-item-card" onclick="CueRouter.navigate('detail-friends')">
+              <img class="shelf-thumb" src="https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&w=140&q=80" alt="Friends">
+              <div class="shelf-meta">
+                <span class="shelf-title">Friends</span>
+                <span class="shelf-sub">In Progress</span>
+                <div class="progress-track-line">
+                  <div class="progress-fill-line" style="width: 90%;"></div>
+                </div>
+              </div>
+              <span class="shelf-pct-num">90%</span>
+            </div>
+
+            <!-- Item 2: Sherlock -->
+            <div class="shelf-item-card" onclick="CueRouter.navigate('detail-sherlock')">
+              <img class="shelf-thumb" src="https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=140&q=80" alt="Sherlock">
+              <div class="shelf-meta">
+                <span class="shelf-title">Sherlock</span>
+                <span class="shelf-sub">In Progress</span>
+                <div class="progress-track-line">
+                  <div class="progress-fill-line" style="width: 17%;"></div>
+                </div>
+              </div>
+              <span class="shelf-pct-num">17%</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 2: CATALOG / SEARCH (Matching Screenshot 2)
+           ======================================================== -->
+      <section id="screen-search" class="screen-view">
+        <div class="category-chips-strip">
+          <div class="cat-chip active">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
+            TV Series
+          </div>
+          <div class="cat-chip">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/></svg>
+            Movie
+          </div>
+          <div class="cat-chip">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Anime
+          </div>
+          <div class="cat-chip">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Novel
+          </div>
+        </div>
+
+        <div style="display:flex; gap:8px; align-items:center;">
+          <div class="search-box-wrap" style="flex:1;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" placeholder="Search tv series..." oninput="CueStore.filterCatalog(this.value)">
+          </div>
+          <button class="btn-refine" style="height:44px; padding:0 12px;" onclick="triggerToast('Filters dialog opened')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/></svg>
+          </button>
+        </div>
+
+        <!-- List matching exact Screenshot 2 -->
+        <div class="shelf-card-list" id="catalogCardList">
+          <div class="catalog-entry-card" onclick="CueRouter.navigate('detail-sherlock')">
+            <img class="catalog-thumb-box" src="https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=140&q=80" alt="Band of Brothers">
+            <div class="shelf-meta">
+              <span class="shelf-title">Band of Brothers</span>
+              <span class="shelf-sub">2001 · Scripted</span>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+                <span style="font-size:12px; font-weight:800; color:var(--accent-amber);">★ 9</span>
+                <span class="catalog-tag-pill">TVmaze</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="catalog-entry-card" onclick="CueRouter.navigate('detail-sherlock')">
+            <img class="catalog-thumb-box" src="https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=140&q=80" alt="Sherlock">
+            <div class="shelf-meta">
+              <span class="shelf-title">Sherlock</span>
+              <span class="shelf-sub">2010 · Scripted</span>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+                <span style="font-size:12px; font-weight:800; color:var(--accent-amber);">★ 8.9</span>
+                <span class="catalog-tag-pill">TVmaze</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="catalog-entry-card" onclick="triggerToast('Opening Gravity Falls...')">
+            <img class="catalog-thumb-box" src="https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=140&q=80" alt="Gravity Falls">
+            <div class="shelf-meta">
+              <span class="shelf-title">Gravity Falls</span>
+              <span class="shelf-sub">2012 · Animation</span>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+                <span style="font-size:12px; font-weight:800; color:var(--accent-amber);">★ 8.8</span>
+                <span class="catalog-tag-pill">TVmaze</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="catalog-entry-card" onclick="triggerToast('Opening Downton Abbey...')">
+            <img class="catalog-thumb-box" src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=140&q=80" alt="Downton Abbey">
+            <div class="shelf-meta">
+              <span class="shelf-title">Downton Abbey</span>
+              <span class="shelf-sub">2010 · Scripted</span>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+                <span style="font-size:12px; font-weight:800; color:var(--accent-amber);">★ 8.7</span>
+                <span class="catalog-tag-pill">TVmaze</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="catalog-entry-card">
+            <img class="catalog-thumb-box" src="https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=140&q=80" alt="Star Trek">
+            <div class="shelf-meta">
+              <span class="shelf-title">Star Trek: The Next Generation</span>
+              <span class="shelf-sub">1987 · Scripted</span>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+                <span style="font-size:12px; font-weight:800; color:var(--accent-amber);">★ 8.7</span>
+                <span class="catalog-tag-pill">TVmaze</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 3: EXPLORE & METADATA SOURCES (Matching Screenshot 3)
+           ======================================================== -->
+      <section id="screen-explore" class="screen-view">
+        <div class="view-header-row">
+          <h1 class="app-title-main">Explore</h1>
+          <button style="background:transparent; border:none; color:var(--text-muted); cursor:pointer;" onclick="triggerToast('Diagnostics passed: all APIs healthy')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          </button>
+        </div>
+
+        <div>
+          <span class="section-label">Insights & Activity</span>
+          <div class="group-panel" style="margin-top:8px;">
+            <div class="group-row-item" onclick="triggerToast('Timeline View Loaded')">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <div style="width:36px; height:36px; border-radius:var(--radius-sm); background:rgba(16,185,129,0.18); color:var(--accent-green); display:flex; align-items:center; justify-content:center;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                </div>
+                <span style="font-size:14.5px; font-weight:700;">Timeline</span>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+
+            <div class="group-row-item" onclick="CueRouter.navigate('stats')">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <div style="width:36px; height:36px; border-radius:var(--radius-sm); background:rgba(245,158,11,0.18); color:var(--accent-amber); display:flex; align-items:center; justify-content:center;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                </div>
+                <span style="font-size:14.5px; font-weight:700;">Statistics</span>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <span class="section-label">Metadata Sources</span>
+          <div class="group-panel" style="margin-top:8px;">
+            <div class="group-row-item" onclick="triggerToast('TVmaze API: Connected (32ms)')">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-violet)" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
+                <div>
+                  <div style="font-size:14px; font-weight:700;">TVmaze</div>
+                  <div style="font-size:11px; color:var(--text-muted);">TV Series, K-Drama, C-Drama, Anime</div>
+                </div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+
+            <div class="group-row-item" onclick="triggerToast('Wikidata: Connected')">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-violet)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                <div>
+                  <div style="font-size:14px; font-weight:700;">Wikidata</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Movie, Game</div>
+                </div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+
+            <div class="group-row-item" onclick="triggerToast('Open Library: Connected (1.4M titles)')">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-violet)" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                <div>
+                  <div style="font-size:14px; font-weight:700;">Open Library</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Manga, Novel</div>
+                </div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+
+            <div class="group-row-item" onclick="triggerToast('FreeToGame: Connected')">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-violet)" stroke-width="2"><polygon points="6 2 18 2 18 6 6 6 6 2"/><rect x="3" y="6" width="18" height="16" rx="2"/></svg>
+                <div>
+                  <div style="font-size:14px; font-weight:700;">FreeToGame</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Game</div>
+                </div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+
+            <div class="group-row-item" onclick="triggerToast('AniList: GraphQL Connected')">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-violet)" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <div>
+                  <div style="font-size:14px; font-weight:700;">AniList</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Anime, Manga, TV Series, K-Drama, C-Drama</div>
+                </div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+
+            <div class="group-row-item" onclick="triggerToast('MangaDex: v5 API Online')">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-violet)" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                <div>
+                  <div style="font-size:14px; font-weight:700;">MangaDex</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Manga</div>
+                </div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+
+            <div class="group-row-item" onclick="triggerToast('Steam + SteamDB API Online')">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-violet)" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="4.93" y1="4.93" x2="9.17" y2="9.17"/></svg>
+                <div>
+                  <div style="font-size:14px; font-weight:700;">Steam + SteamDB</div>
+                  <div style="font-size:11px; color:var(--text-muted);">PC Games, Playtime, Achievements</div>
+                </div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 4: DETAIL VIEW - GAME (Matching Screenshot 4)
+           ======================================================== -->
+      <section id="screen-detail-game" class="screen-view">
+        <div class="nav-back-row">
+          <button class="btn-back-text" onclick="CueRouter.navigate('collection')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
+          <span style="font-size:16px; font-weight:800;">Game</span>
+          <div style="width:40px;"></div>
+        </div>
+
+        <div class="detail-hero-box">
+          <img class="detail-poster-img" src="https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=200&q=80" alt="Neverness">
+          <div class="detail-meta-col">
+            <h2 style="font-size:18px; font-weight:800;">Neverness to Everness</h2>
+            <div class="meta-badges-row">
+              <span class="meta-badge">FreeToGame</span>
+            </div>
+            <span style="font-size:11px; color:var(--text-muted); margin-top:2px;">2026-04-29 · RPG, PC (Windows), Perfect World Entertainment · Hotta Studio</span>
+            <div class="progress-track-line" style="margin-top:8px;">
+              <div class="progress-fill-line" style="width: 0%;"></div>
+            </div>
+            <span style="font-size:10.5px; color:var(--text-dim); text-align:right;">0% complete</span>
+          </div>
+        </div>
+
+        <button class="btn-outline-action" onclick="triggerToast('Added to dashboard feed')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add to dashboard
+        </button>
+
+        <p style="font-size:13px; line-height:1.6; color:var(--text-muted);">
+          Neverness to Everness is a gacha game that blends some GTA-style play with team-based combat.
+        </p>
+
+        <div>
+          <span class="section-label">Tracking</span>
+          <div class="group-panel" style="margin-top:6px;">
+            <div class="group-row-item">
+              <span style="font-size:13.5px; font-weight:700;">Add to list</span>
+              <span class="row-val-tag">Game <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+            </div>
+            <div class="group-row-item">
+              <span style="font-size:13.5px; font-weight:700;">Status</span>
+              <span class="row-val-tag">Backlog <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <span class="section-label">Rating</span>
+          <div class="star-rating-box" id="gameStarsBox">
+            <svg viewBox="0 0 24 24" onclick="setStars(this, 1)"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24" onclick="setStars(this, 2)"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24" onclick="setStars(this, 3)"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24" onclick="setStars(this, 4)"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24" onclick="setStars(this, 5)"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          </div>
+        </div>
+
+        <div>
+          <span class="section-label">Notes / Thoughts</span>
+          <textarea class="notes-textarea-box" placeholder="Add optional details, links, or comments..."></textarea>
+        </div>
+
+        <button class="btn-outline-action" onclick="CueRouter.navigate('collection')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
+        </button>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 5: DETAIL VIEW - TV SERIES (Matching Screenshot 5)
+           ======================================================== -->
+      <section id="screen-detail-sherlock" class="screen-view">
+        <div class="nav-back-row">
+          <button class="btn-back-text" onclick="CueRouter.navigate('collection')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
+          <span style="font-size:16px; font-weight:800;">TV Series</span>
+          <button style="background:transparent; border:none; color:var(--accent-rose); cursor:pointer;" onclick="triggerToast('Deleted Sherlock from shelf')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+
+        <div class="detail-hero-box">
+          <img class="detail-poster-img" src="https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=200&q=80" alt="Sherlock">
+          <div class="detail-meta-col">
+            <h2 style="font-size:20px; font-weight:800;">Sherlock</h2>
+            <div class="meta-badges-row">
+              <span class="meta-badge">Ended</span>
+              <span class="meta-badge">TVmaze</span>
+              <span class="meta-badge badge-cached">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                Cached metadata
+              </span>
+            </div>
+            <span style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">TV Series · ~1h 30min/ep · BBC One</span>
+            <div class="progress-track-line" style="margin-top:8px;">
+              <div class="progress-fill-line" id="sherlockFillLine" style="width: 17%;"></div>
+            </div>
+            <span style="font-size:10.5px; color:var(--text-dim); text-align:right;" id="sherlockPctText">17% complete</span>
+          </div>
+        </div>
+
+        <button class="btn-big-action" onclick="CueStore.toggleSherlockEpisode(3)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+          Next: Episode 3
+        </button>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <button class="btn-outline-action" onclick="CueStore.markAllSherlockWatched()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            Mark previous watched
+          </button>
+          <button class="btn-outline-action" onclick="triggerToast('Pinned to dashboard')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Added to dashboard
+          </button>
+        </div>
+
+        <p style="font-size:13px; line-height:1.6; color:var(--text-muted);">
+          Sherlock Holmes and Dr. John Watson's adventures in 21st Century London. A thrilling, funny, fast-paced contemporary reimagining of the Arthur Conan Doyle classic.
+        </p>
+
+        <div>
+          <span class="section-label">Tracking</span>
+          <div class="group-panel" style="margin-top:6px;">
+            <div class="group-row-item">
+              <span style="font-size:13.5px; font-weight:700;">Add to list</span>
+              <span class="row-val-tag">TV Series <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+            </div>
+            <div class="group-row-item">
+              <span style="font-size:13.5px; font-weight:700;">Status</span>
+              <span class="row-val-tag">In Progress <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Season 1 Dropdown & Episode List (Exact Screenshot 5 Layout) -->
+        <div>
+          <button class="btn-outline-action" style="width:100%; justify-content:space-between; margin-bottom:8px;">
+            <span>Season 1</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+
+          <div class="ep-filter-row">
+            <span class="ep-pill active">All</span>
+            <span class="ep-pill">Watched</span>
+            <span class="ep-pill">Unwatched</span>
+            <span class="ep-pill">Upcoming</span>
+            <span class="ep-pill">Filler</span>
+            <span class="ep-pill">Recap</span>
+          </div>
+
+          <div id="sherlockEpisodesMount">
+            <!-- Episode 1 -->
+            <div class="ep-card-item">
+              <div class="shelf-meta">
+                <span class="shelf-title">1. A Study in Pink</span>
+                <span class="shelf-sub">📅 2010-07-25 · ⏱️ 90m · ⭐ 8.6</span>
+              </div>
+              <button class="ep-round-check checked" onclick="CueStore.toggleSherlockEpisode(1, this)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+
+            <!-- Episode 2 -->
+            <div class="ep-card-item">
+              <div class="shelf-meta">
+                <span class="shelf-title">2. The Blind Banker</span>
+                <span class="shelf-sub">📅 2010-08-01 · ⏱️ 90m · ⭐ 7.9</span>
+              </div>
+              <button class="ep-round-check checked" onclick="CueStore.toggleSherlockEpisode(2, this)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+
+            <!-- Episode 3 -->
+            <div class="ep-card-item">
+              <div class="shelf-meta">
+                <span class="shelf-title">3. The Great Game</span>
+                <span class="shelf-sub">📅 2010-08-08 · ⏱️ 90m · ⭐ 8.5</span>
+              </div>
+              <button class="ep-round-check" id="sherlockEp3Btn" onclick="CueStore.toggleSherlockEpisode(3, this)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 6: DETAIL VIEW - MANGA (Matching Screenshot 6)
+           ======================================================== -->
+      <section id="screen-detail-manga" class="screen-view">
+        <div class="nav-back-row">
+          <button class="btn-back-text" onclick="CueRouter.navigate('collection')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
+          <span style="font-size:16px; font-weight:800;">Manga</span>
+          <div style="width:40px;"></div>
+        </div>
+
+        <div class="detail-hero-box">
+          <img class="detail-poster-img" src="https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=200&q=80" alt="Naruto 33">
+          <div class="detail-meta-col">
+            <h2 style="font-size:20px; font-weight:800;">Naruto 33</h2>
+            <div class="meta-badges-row">
+              <span class="meta-badge">Open Library</span>
+            </div>
+            <span style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">2003</span>
+            <div class="progress-track-line" style="margin-top:8px;">
+              <div class="progress-fill-line" style="width: 0%;"></div>
+            </div>
+            <span style="font-size:10.5px; color:var(--text-dim); text-align:right;">0% complete</span>
+          </div>
+        </div>
+
+        <button class="btn-outline-action" onclick="triggerToast('Added Naruto to dashboard')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add to dashboard
+        </button>
+
+        <p style="font-size:13px; line-height:1.6; color:var(--text-muted);">
+          Naruto is a young shinobi with an incorrigible knack for mischief. He's got a wild sense of humor, but Naruto is completely serious about his mission to be the world's greatest ninja!
+        </p>
+
+        <div>
+          <span class="section-label">Tracking</span>
+          <div class="group-panel" style="margin-top:6px;">
+            <div class="group-row-item">
+              <span style="font-size:13.5px; font-weight:700;">Add to list</span>
+              <span class="row-val-tag">Manga <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+            </div>
+            <div class="group-row-item">
+              <span style="font-size:13.5px; font-weight:700;">Status</span>
+              <span class="row-val-tag">Reading <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Volume Inputs Matching Screenshot 6 -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div>
+            <span class="section-label">Total Volumes</span>
+            <input type="text" class="input-field-styled" value="72">
+          </div>
+          <div>
+            <span class="section-label">Volumes Read</span>
+            <input type="number" class="input-field-styled" value="33" onchange="triggerToast('Saved read volumes')">
+          </div>
+        </div>
+
+        <div>
+          <span class="section-label">Rating</span>
+          <div class="star-rating-box">
+            <svg viewBox="0 0 24 24" class="active"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24" class="active"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24" class="active"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24" class="active"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          </div>
+        </div>
+
+        <div>
+          <span class="section-label">Notes / Thoughts</span>
+          <textarea class="notes-textarea-box" placeholder="Add optional details, links, or comments..."></textarea>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 7: DETAIL VIEW - NOVEL (Matching Screenshot 7)
+           ======================================================== -->
+      <section id="screen-detail-novel" class="screen-view">
+        <div class="nav-back-row">
+          <button class="btn-back-text" onclick="CueRouter.navigate('collection')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
+          <span style="font-size:16px; font-weight:800;">Novel</span>
+          <div style="width:40px;"></div>
+        </div>
+
+        <div class="detail-hero-box">
+          <img class="detail-poster-img" src="https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=200&q=80" alt="Words of Radiance">
+          <div class="detail-meta-col">
+            <h2 style="font-size:20px; font-weight:800;">Words of Radiance</h2>
+            <div class="meta-badges-row">
+              <span class="meta-badge">Open Library</span>
+            </div>
+            <span style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">Novel · Brandon Sanderson</span>
+            <div class="progress-track-line" style="margin-top:8px;">
+              <div class="progress-fill-line" style="width: 45%;"></div>
+            </div>
+            <span style="font-size:10.5px; color:var(--text-dim); text-align:right;">45% complete</span>
+          </div>
+        </div>
+
+        <button class="btn-outline-action" onclick="triggerToast('Added novel to dashboard')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add to dashboard
+        </button>
+
+        <p style="font-size:13px; line-height:1.6; color:var(--text-muted);">
+          The eagerly awaited sequel to the New York Times bestselling The Way of Kings. Six years ago, the Assassin in White assassinated the Alethi king. Now, the Parshendi are making an epochal decision.
+        </p>
+
+        <div>
+          <span class="section-label">Tracking</span>
+          <div class="group-panel" style="margin-top:6px;">
+            <div class="group-row-item">
+              <span style="font-size:13.5px; font-weight:700;">Add to list</span>
+              <span class="row-val-tag">Novel <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+            </div>
+            <div class="group-row-item">
+              <span style="font-size:13.5px; font-weight:700;">Status</span>
+              <span class="row-val-tag">Reading <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div>
+            <span class="section-label">Total Pages</span>
+            <input type="text" class="input-field-styled" value="1088">
+          </div>
+          <div>
+            <span class="section-label">Current Page</span>
+            <input type="number" class="input-field-styled" value="489" onchange="triggerToast('Updated reading progress')">
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 8: STATISTICS (Matching Screenshot 8)
+           ======================================================== -->
+      <section id="screen-stats" class="screen-view">
+        <div class="nav-back-row">
+          <button class="btn-back-text" onclick="CueRouter.navigate('explore')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
+          <span style="font-size:16px; font-weight:800;">Statistics</span>
+          <div style="width:40px;"></div>
+        </div>
+
+        <div class="category-chips-strip">
+          <div class="cat-chip active">All categories</div>
+          <div class="cat-chip">TV Series</div>
+          <div class="cat-chip">Movie</div>
+          <div class="cat-chip">Anime</div>
+        </div>
+
+        <div>
+          <span class="section-label">Overview</span>
+          <h2 style="font-size:24px; font-weight:800; color:#fff; margin-top:2px;">Collection health</h2>
+          <p style="font-size:12px; color:var(--text-muted);">Track progress and activity across your library.</p>
+        </div>
+
+        <!-- Radial Donut Card (Exact Screenshot 8) -->
+        <div class="stat-radial-card">
+          <div>
+            <span style="font-size:11px; color:var(--text-dim); font-weight:700;">Across <b style="color:#fff;">7</b> tracked items</span>
+            <div style="font-size:13px; font-weight:700; color:var(--text-muted); margin-top:2px;">Completion rate</div>
+            <div style="font-size:42px; font-weight:800; color:var(--brand-violet); line-height:1; margin-top:4px;" id="statDonutNum">65%</div>
+          </div>
+          <div class="radial-svg-box">
+            <svg viewBox="0 0 80 80">
+              <circle cx="40" cy="40" r="36" stroke="rgba(255,255,255,0.08)"/>
+              <circle id="statDonutCircle" cx="40" cy="40" r="36" stroke="var(--brand-violet)" stroke-dasharray="226" stroke-dashoffset="79"/>
+            </svg>
+            <span style="position:absolute; font-size:15px; font-weight:800;" id="statDonutCenterText">65%</span>
+          </div>
+        </div>
+
+        <!-- 3-Tile Status Triad -->
+        <div class="triad-grid">
+          <div class="triad-tile">
+            <span class="triad-num" style="color:var(--accent-green);" id="statsCompletedCount">2</span>
+            <span style="font-size:12px; font-weight:700;">Completed</span>
+            <span style="font-size:10px; color:var(--text-dim);">Finished</span>
+          </div>
+          <div class="triad-tile">
+            <span class="triad-num" style="color:var(--color-tv);" id="statsProgressCount">4</span>
+            <span style="font-size:12px; font-weight:700;">In progress</span>
+            <span style="font-size:10px; color:var(--text-dim);">Active now</span>
+          </div>
+          <div class="triad-tile">
+            <span class="triad-num" style="color:var(--accent-amber);" id="statsQueueCount">1</span>
+            <span style="font-size:12px; font-weight:700;">In your queue</span>
+            <span style="font-size:10px; color:var(--text-dim);">Ready when you are</span>
+          </div>
+        </div>
+
+        <!-- Library Mix Breakdown -->
+        <div class="group-panel" style="padding:14px; gap:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <span class="section-label" style="margin:0;">Library Mix</span>
+              <div style="font-size:14px; font-weight:700;">Status breakdown</div>
+            </div>
+            <span class="count-bubble" style="font-size:11px;">7 tracked</span>
+          </div>
+          <div class="stacked-mix-bar">
+            <div class="mix-seg" style="width:28%; background:var(--accent-green);"></div>
+            <div class="mix-seg" style="width:57%; background:var(--color-tv);"></div>
+            <div class="mix-seg" style="width:15%; background:var(--accent-amber);"></div>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--text-muted); margin-top:4px;">
+            <span>🟢 Completed <b>2</b></span>
+            <span>🔵 In progress <b>4</b></span>
+            <span>🟡 Queue <b>1</b></span>
+            <span>🟣 On hold <b>0</b></span>
+            <span>⚪ Dropped <b>0</b></span>
+          </div>
+        </div>
+
+        <!-- Time Invested & Remaining Split Cards -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <div class="triad-tile">
+            <span class="section-label" style="margin:0;">Time Invested</span>
+            <span style="font-size:22px; font-weight:800; color:var(--color-tv);">4d 19h</span>
+            <span style="font-size:10.5px; color:var(--text-dim);">Estimated completed</span>
+          </div>
+          <div class="triad-tile">
+            <span class="section-label" style="margin:0;">Remaining</span>
+            <span style="font-size:22px; font-weight:800; color:var(--accent-rose);">1d 7h</span>
+            <span style="font-size:10.5px; color:var(--text-dim);">Estimated to finish</span>
+          </div>
+        </div>
+
+        <!-- Trends & Activity Chart -->
+        <div>
+          <span class="section-label">Trends</span>
+          <h3 style="font-size:20px; font-weight:800; color:#fff;">Activity</h3>
+          <p style="font-size:11.5px; color:var(--text-muted);">Recent viewing and reading, by day and by week.</p>
+
+          <div class="group-panel" style="padding:14px; margin-top:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:13.5px; font-weight:700;">Watch time · This week</span>
+              <span style="font-size:11px; color:var(--text-dim);">4d 21h</span>
+            </div>
+            <div style="height:88px; display:flex; align-items:flex-end; gap:8px; padding-top:10px;">
+              <div style="flex:1; height:35%; background:var(--bg-elevated); border-radius:4px;"></div>
+              <div style="flex:1; height:45%; background:var(--bg-elevated); border-radius:4px;"></div>
+              <div style="flex:1; height:20%; background:var(--bg-elevated); border-radius:4px;"></div>
+              <div style="flex:1; height:60%; background:var(--bg-elevated); border-radius:4px;"></div>
+              <div style="flex:1; height:40%; background:var(--bg-elevated); border-radius:4px;"></div>
+              <div style="flex:1; height:95%; background:var(--brand-violet); border-radius:4px; box-shadow:0 0 12px var(--brand-glow);"></div>
+              <div style="flex:1; height:50%; background:var(--bg-elevated); border-radius:4px;"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 9: SETTINGS (Matching Screenshot 9)
+           ======================================================== -->
+      <section id="screen-settings" class="screen-view">
+        <div>
+          <h1 class="app-title-main">Settings</h1>
+          <p style="font-size:12px; color:var(--text-muted); margin-top:2px;">Personalize CueMark</p>
+        </div>
+
+        <div class="search-box-wrap">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search all settings...">
+        </div>
+
+        <div>
+          <span class="section-label">Personalize</span>
+          <div class="group-panel" style="margin-top:6px;">
+            <div class="group-row-item" onclick="triggerToast('Appearance settings loaded')">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-violet)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 0 0 20v-4a6 6 0 0 1 0-12z"/></svg>
+                <div>
+                  <div style="font-size:13.5px; font-weight:700;">Appearance</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Theme, accessibility, and visual preferences.</div>
+                </div>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+
+            <div class="group-row-item" onclick="triggerToast('Dashboard & Navigation preferences')">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-violet)" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                <div>
+                  <div style="font-size:13.5px; font-weight:700;">Dashboard & Navigation</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Dashboard layout and navigation preferences.</div>
+                </div>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+
+            <div class="group-row-item" onclick="triggerToast('Tracking status setups')">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-violet)" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                <div>
+                  <div style="font-size:13.5px; font-weight:700;">Tracking</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Statuses, progress, and category setup.</div>
+                </div>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <span class="section-label">Your Library</span>
+          <div class="group-panel" style="margin-top:6px;">
+            <div class="group-row-item" onclick="CueExporter.exportJsonBackup()">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-violet)" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/></svg>
+                <div>
+                  <div style="font-size:13.5px; font-weight:700;">Backup & Sync</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Backups, imports, exports, and sync.</div>
+                </div>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+
+            <div class="group-row-item" onclick="triggerToast('Local poster cache purged')">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-violet)" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                <div>
+                  <div style="font-size:13.5px; font-weight:700;">Metadata & Storage</div>
+                  <div style="font-size:11px; color:var(--text-muted);">Cache and device storage.</div>
+                </div>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- QUICK ADD FLOATING ACTION BUTTON (+) -->
+    <button class="app-fab" onclick="openAddEntryModal()" title="Add Tracking Entry">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+
+    <!-- BOTTOM APP NAVIGATION DOCK (Matching all Screenshots) -->
+    <nav class="bottom-nav-dock">
+      <button class="dock-tab-btn active" id="dock-btn-collection" onclick="CueRouter.navigate('collection')">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      </button>
+
+      <button class="dock-tab-btn" id="dock-btn-search" onclick="CueRouter.navigate('search')">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+
+      <button class="dock-tab-btn" id="dock-btn-explore" onclick="CueRouter.navigate('explore')">
+        <svg viewBox="0 0 24 24"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
+      </button>
+
+      <button class="dock-tab-btn" id="dock-btn-settings" onclick="CueRouter.navigate('settings')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+
+      <button class="dock-tab-btn" onclick="CueRouter.navigate('stats')">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+      </button>
+    </nav>
+
+    <!-- ========================================================
+         MODAL: ADD TRACKING ENTRY (Exact Screenshot 10 Layout)
+         ======================================================== -->
+    <div class="modal-overlay" id="addEntryModal">
+      <div class="modal-sheet-dialog">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2 style="font-size:20px; font-weight:800;">Add Tracking Entry</h2>
+          <button style="background:transparent; border:none; color:var(--text-muted); cursor:pointer;" onclick="closeAddEntryModal()">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div>
+          <span class="section-label">TITLE / NAME</span>
+          <div style="display:flex; gap:8px; margin-top:4px;">
+            <input type="text" id="modalEntryTitle" class="input-field-styled" placeholder="e.g., Elden Ring, Naruto, Dune">
+            <button class="btn-refine" style="height:44px; padding:0 12px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button>
+            <button class="btn-refine" style="height:44px; padding:0 12px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+          </div>
+        </div>
+
+        <div>
+          <span class="section-label">CATEGORY</span>
+          <select id="modalEntryCategory" class="input-field-styled" style="margin-top:4px;" onchange="updateModalFormLayout(this.value)">
+            <option value="tv">TV Series</option>
+            <option value="game">Game</option>
+            <option value="manga">Manga</option>
+            <option value="novel">Novel</option>
+            <option value="anime">Anime</option>
+            <option value="movie">Movie</option>
+          </select>
+        </div>
+
+        <div>
+          <span class="section-label">STATUS</span>
+          <div class="ep-filter-row" style="margin-top:4px;" id="modalStatusPills">
+            <span class="ep-pill active" onclick="setStatusPill(this)">Watchlist</span>
+            <span class="ep-pill" onclick="setStatusPill(this)">In Progress</span>
+            <span class="ep-pill" onclick="setStatusPill(this)">On Hold</span>
+            <span class="ep-pill" onclick="setStatusPill(this)">Dropped</span>
+            <span class="ep-pill" onclick="setStatusPill(this)">Completed</span>
+          </div>
+        </div>
+
+        <!-- Fetch Metadata Card Toggle -->
+        <div class="group-panel" style="padding:14px; display:flex; flex-direction:row; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-size:14px; font-weight:700;">Fetch metadata</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Online mode will try to fill counts and show a thumbnail from public metadata sources.</div>
+          </div>
+          <input type="checkbox" checked style="accent-color:var(--brand-violet); width:20px; height:20px;">
+        </div>
+
+        <div id="dynamicModalCategoryFields">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div>
+              <span class="section-label">TOTAL SEASONS</span>
+              <input type="text" class="input-field-styled" placeholder="e.g. 5">
+            </div>
+            <div>
+              <span class="section-label">SEASONS WATCHED</span>
+              <input type="text" class="input-field-styled" placeholder="e.g. 2">
+            </div>
+          </div>
+
+          <div style="margin-top:10px;">
+            <span class="section-label">AVG. EPISODE RUNTIME (MINUTES)</span>
+            <input type="text" class="input-field-styled" placeholder="e.g. 24" style="margin-top:4px;">
+          </div>
+        </div>
+
+        <div>
+          <span class="section-label">RATING</span>
+          <div class="star-rating-box" style="margin-top:4px;">
+            <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          </div>
+        </div>
+
+        <div>
+          <span class="section-label">NOTES / THOUGHTS</span>
+          <textarea class="notes-textarea-box" placeholder="Add optional details, links, or comments..." style="margin-top:4px;"></textarea>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+          <button class="btn-outline-action" onclick="closeAddEntryModal()">Cancel</button>
+          <button class="btn-big-action" onclick="submitModalEntry()">Save Entry</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- TOAST PILL -->
+  <div class="toast-pill-box" id="systemToast">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--brand-violet)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    <span id="toastMessage">Action recorded</span>
+  </div>
+
+  <!-- ========================================================
+       REACTIVE JAVASCRIPT STATE ENGINE
+       ======================================================== -->
+  <script>
+    /**
+     * Normalized CueMark Data Store
+     */
+    class CueMarkDataStore {
+      constructor() {
+        this.storageKey = 'cuemark_user_store_v1';
+        this.data = this.load();
+      }
+
+      load() {
+        try {
+          const raw = localStorage.getItem(this.storageKey);
+          if (raw) return JSON.parse(raw);
+        } catch(e) {}
+        return {
+          sherlockEpisodes: [1, 2],
+          totalSherlockEpisodes: 3
+        };
+      }
+
+      save() {
+        try {
+          localStorage.setItem(this.storageKey, JSON.stringify(this.data));
+        } catch(e) {}
+      }
+
+      toggleSherlockEpisode(epNum, btn) {
+        const idx = this.data.sherlockEpisodes.indexOf(epNum);
+        let checked = false;
+        if (idx >= 0) {
+          this.data.sherlockEpisodes.splice(idx, 1);
+          checked = false;
+          triggerToast(`Unmarked Episode ${epNum}`);
+        } else {
+          this.data.sherlockEpisodes.push(epNum);
+          checked = true;
+          triggerToast(`Marked Episode ${epNum} watched! ✓`);
+        }
+        if (btn) btn.classList.toggle('checked', checked);
+        this.save();
+        this.updateSherlockProgressUI();
+      }
+
+      markAllSherlockWatched() {
+        this.data.sherlockEpisodes = [1, 2, 3];
+        document.querySelectorAll('#sherlockEpisodesMount .ep-round-check').forEach(b => b.classList.add('checked'));
+        this.save();
+        this.updateSherlockProgressUI();
+        triggerToast('Marked all Sherlock episodes watched! 🏆');
+      }
+
+      updateSherlockProgressUI() {
+        const pct = Math.round((this.data.sherlockEpisodes.length / 12) * 100);
+        const fill = document.getElementById('sherlockFillLine');
+        const text = document.getElementById('sherlockPctText');
+        if (fill) fill.style.width = pct + '%';
+        if (text) text.textContent = pct + '% complete';
+      }
+
+      filterCollection(query) {
+        const q = query.toLowerCase().trim();
+        document.querySelectorAll('#inProgressShelf .shelf-item-card').forEach(card => {
+          const title = card.querySelector('.shelf-title').textContent.toLowerCase();
+          card.style.display = title.includes(q) ? 'flex' : 'none';
+        });
+      }
+
+      filterCatalog(query) {
+        const q = query.toLowerCase().trim();
+        document.querySelectorAll('#catalogCardList .catalog-entry-card').forEach(card => {
+          const title = card.querySelector('.shelf-title').textContent.toLowerCase();
+          card.style.display = title.includes(q) ? 'flex' : 'none';
+        });
+      }
+    }
+
+    const CueStore = new CueMarkDataStore();
+
+    /**
+     * Parametric Router
+     */
+    const CueRouter = {
+      currentView: 'collection',
+
+      navigate(viewKey) {
+        this.currentView = viewKey;
+        document.querySelectorAll('.screen-view').forEach(v => v.classList.remove('active'));
+        const target = document.getElementById('screen-' + viewKey);
+        if (target) {
+          target.classList.add('active');
+          target.scrollTop = 0;
+        }
+
+        // Update Bottom Nav Dock
+        const dockMap = {
+          'collection': 'dock-btn-collection',
+          'search': 'dock-btn-search',
+          'explore': 'dock-btn-explore',
+          'settings': 'dock-btn-settings',
+          'stats': 'dock-btn-settings'
+        };
+        document.querySelectorAll('.dock-tab-btn').forEach(b => b.classList.remove('active'));
+        const activeDockId = dockMap[viewKey] || 'dock-btn-collection';
+        const activeBtn = document.getElementById(activeDockId);
+        if (activeBtn) activeBtn.classList.add('active');
+      }
+    };
+
+    /**
+     * Interactive Controls
+     */
+    function toggleAccordion(id) {
+      const el = document.getElementById(id);
+      el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+    }
+
+    function filterCategory(chip, category) {
+      document.querySelectorAll('.category-chips-strip .cat-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      triggerToast('Filtered: ' + chip.textContent.trim());
+    }
+
+    function setStars(starSvg, score) {
+      const parent = starSvg.parentElement;
+      const stars = parent.querySelectorAll('svg');
+      stars.forEach((s, idx) => {
+        s.classList.toggle('active', idx < score);
+      });
+      triggerToast(`Rated ${score} / 5 stars`);
+    }
+
+    /**
+     * Modal Logic
+     */
+    function openAddEntryModal() {
+      document.getElementById('addEntryModal').classList.add('open');
+    }
+    function closeAddEntryModal() {
+      document.getElementById('addEntryModal').classList.remove('open');
+    }
+
+    function setStatusPill(pill) {
+      document.querySelectorAll('#modalStatusPills .ep-pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+    }
+
+    function updateModalFormLayout(category) {
+      const mount = document.getElementById('dynamicModalCategoryFields');
+      if (category === 'game') {
+        mount.innerHTML = `
+          <div>
+            <span class="section-label">PLATFORM</span>
+            <input type="text" class="input-field-styled" placeholder="e.g. PC (Steam), PS5, Switch" style="margin-top:4px;">
+          </div>
+        `;
+      } else if (category === 'manga' || category === 'novel') {
+        mount.innerHTML = `
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div>
+              <span class="section-label">TOTAL CHAPTERS / VOLUMES</span>
+              <input type="text" class="input-field-styled" placeholder="e.g. 72">
+            </div>
+            <div>
+              <span class="section-label">CURRENT PROGRESS</span>
+              <input type="text" class="input-field-styled" placeholder="e.g. 1">
+            </div>
+          </div>
+        `;
+      } else {
+        mount.innerHTML = `
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div>
+              <span class="section-label">TOTAL SEASONS</span>
+              <input type="text" class="input-field-styled" placeholder="e.g. 5">
+            </div>
+            <div>
+              <span class="section-label">SEASONS WATCHED</span>
+              <input type="text" class="input-field-styled" placeholder="e.g. 2">
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <span class="section-label">AVG. EPISODE RUNTIME (MINUTES)</span>
+            <input type="text" class="input-field-styled" placeholder="e.g. 24" style="margin-top:4px;">
+          </div>
+        `;
+      }
+    }
+
+    function submitModalEntry() {
+      const title = document.getElementById('modalEntryTitle').value.trim();
+      if (!title) {
+        triggerToast('Please provide a title');
+        return;
+      }
+      closeAddEntryModal();
+      triggerToast(`Saved "${title}" to your library! 🚀`);
+      CueRouter.navigate('collection');
+    }
+
+    /**
+     * Backup & Toast
+     */
+    const CueExporter = {
+      exportJsonBackup() {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(CueStore.data, null, 2));
+        const dl = document.createElement('a');
+        dl.setAttribute("href", dataStr);
+        dl.setAttribute("download", `CueMark_Backup_${new Date().toISOString().slice(0,10)}.json`);
+        document.body.appendChild(dl);
+        dl.click();
+        dl.remove();
+        triggerToast('📦 Library JSON exported!');
+      }
+    };
+
+    let toastTimer;
+    function triggerToast(msg) {
+      const toast = document.getElementById('systemToast');
+      document.getElementById('toastMessage').textContent = msg;
+      toast.classList.add('visible');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('visible');
+      }, 2300);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,2827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CueMark - Ultimate Media Tracking Experience</title>
+  <style>
+    /* ==========================================================================
+       DESIGN TOKENS & DYNAMIC THEMES
+       ========================================================================== */
+    :root {
+      --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", Roboto, sans-serif;
+      
+      /* Pure OLED Black & Scaled Surface Tiers */
+      --bg-canvas: #06070a;
+      --bg-base: #0b0d13;
+      --bg-surface: #121520;
+      --bg-elevated: #1a1e2d;
+      --bg-card: #151824;
+      --bg-glass: rgba(11, 13, 19, 0.88);
+      
+      /* Primary Dynamic Theme Accent (CueMark Signature Violet) */
+      --accent-primary: #8b5cf6;
+      --accent-primary-hover: #7c3aed;
+      --accent-primary-subtle: rgba(139, 92, 246, 0.16);
+      --accent-primary-glow: rgba(139, 92, 246, 0.38);
+      
+      /* Canonical Badges & Semantic Hues */
+      --accent-gold: #f59e0b;
+      --accent-gold-subtle: rgba(245, 158, 11, 0.16);
+      --accent-yellow: #f5c518;
+      --accent-green: #10b981;
+      --accent-green-subtle: rgba(16, 185, 129, 0.15);
+      --accent-cyan: #06b6d4;
+      --accent-rose: #f43f5e;
+      --accent-rose-subtle: rgba(244, 63, 94, 0.15);
+      
+      /* High-Legibility Typography */
+      --text-high: #f8fafc;
+      --text-med: #94a3b8;
+      --text-low: #64748b;
+      --text-faint: #475569;
+      
+      /* Structural Borders & Shadows */
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-card: rgba(255, 255, 255, 0.11);
+      --border-active: rgba(139, 92, 246, 0.55);
+      --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.4);
+      --shadow-deep: 0 16px 40px rgba(0, 0, 0, 0.7);
+      
+      /* Geometry */
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-xl: 28px;
+      --radius-full: 9999px;
+      
+      --nav-height: 68px;
+    }
+
+    [data-theme="amber"] {
+      --accent-primary: #f59e0b;
+      --accent-primary-hover: #d97706;
+      --accent-primary-subtle: rgba(245, 158, 11, 0.2);
+      --accent-primary-glow: rgba(245, 158, 11, 0.45);
+    }
+    [data-theme="emerald"] {
+      --accent-primary: #10b981;
+      --accent-primary-hover: #059669;
+      --accent-primary-subtle: rgba(16, 185, 129, 0.2);
+      --accent-primary-glow: rgba(16, 185, 129, 0.45);
+    }
+    [data-theme="rose"] {
+      --accent-primary: #f43f5e;
+      --accent-primary-hover: #e11d48;
+      --accent-primary-subtle: rgba(244, 63, 94, 0.2);
+      --accent-primary-glow: rgba(244, 63, 94, 0.45);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg-canvas);
+      color: var(--text-high);
+      font-family: var(--font-stack);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 16px 8px;
+      overflow-x: hidden;
+    }
+
+    /* Mobile Shell Harness */
+    .mobile-shell {
+      width: 100%;
+      max-width: 420px;
+      height: 890px;
+      background: var(--bg-base);
+      border-radius: 46px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 32px 90px rgba(0, 0, 0, 0.95), 0 0 0 10px #151822, 0 0 0 11px rgba(255, 255, 255, 0.08);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Hardware Status Bar */
+    .status-bar {
+      height: 44px;
+      padding: 0 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-high);
+      z-index: 60;
+      background: linear-gradient(180deg, rgba(11, 13, 19, 0.95) 0%, rgba(11, 13, 19, 0) 100%);
+      pointer-events: none;
+    }
+    .island-pill {
+      width: 104px;
+      height: 24px;
+      background: #000;
+      border-radius: 20px;
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      top: 10px;
+    }
+
+    /* Viewport Container */
+    .view-viewport {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .screen-view {
+      position: absolute;
+      inset: 0;
+      bottom: var(--nav-height);
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 8px 18px 24px;
+      display: none;
+      flex-direction: column;
+      gap: 18px;
+      scrollbar-width: none;
+    }
+    .screen-view::-webkit-scrollbar { display: none; }
+    .screen-view.active {
+      display: flex;
+      animation: fadeInView 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes fadeInView {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ==========================================================================
+       SHARED ATOMIC COMPONENTS
+       ========================================================================== */
+    .view-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 4px;
+    }
+    .view-title {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.6px;
+      color: var(--text-high);
+    }
+    .view-title span {
+      color: var(--accent-primary);
+    }
+
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: var(--radius-full);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-high);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+    }
+    .icon-btn:active {
+      transform: scale(0.92);
+      background: var(--bg-elevated);
+      border-color: var(--border-card);
+    }
+
+    /* Pill Badges & Ratings */
+    .rating-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--accent-gold-subtle);
+      color: var(--accent-gold);
+      padding: 2px 7px;
+      border-radius: var(--radius-full);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .badge-tag {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      padding: 3px 8px;
+      border-radius: var(--radius-full);
+      background: var(--bg-elevated);
+      color: var(--text-med);
+      border: 1px solid var(--border-subtle);
+    }
+    .badge-cached {
+      background: var(--accent-green-subtle);
+      color: var(--accent-green);
+      border-color: rgba(16, 185, 129, 0.3);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Category Strip */
+    .category-strip {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      margin: 0 -18px;
+      padding: 0 18px;
+      scrollbar-width: none;
+    }
+    .category-strip::-webkit-scrollbar { display: none; }
+
+    .cat-chip {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      padding: 8px 16px;
+      border-radius: var(--radius-full);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-med);
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .cat-chip svg { width: 14px; height: 14px; stroke: currentColor; fill: none; }
+    .cat-chip.active {
+      background: var(--accent-primary);
+      border-color: transparent;
+      color: #fff;
+      box-shadow: 0 4px 16px var(--accent-primary-glow);
+    }
+
+    /* Search Bar with Filter Icon */
+    .search-bar-wrap {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .search-input-box {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .search-input-box svg {
+      position: absolute;
+      left: 14px;
+      color: var(--text-low);
+      pointer-events: none;
+    }
+    .search-input {
+      width: 100%;
+      height: 44px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 0 14px 0 42px;
+      color: var(--text-high);
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border 0.2s, box-shadow 0.2s;
+    }
+    .search-input:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px var(--accent-primary-subtle);
+    }
+    .search-input::placeholder { color: var(--text-low); }
+
+    /* Tactical Circular Check Button (TV Time Soul) */
+    .check-circle-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-full);
+      background: transparent;
+      border: 2px solid var(--border-card);
+      color: transparent;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      flex-shrink: 0;
+    }
+    .check-circle-btn svg {
+      width: 15px;
+      height: 15px;
+      stroke-width: 3.2;
+      stroke: currentColor;
+    }
+    .check-circle-btn:active { transform: scale(0.85); }
+    .check-circle-btn.checked {
+      background: var(--accent-yellow);
+      border-color: var(--accent-yellow);
+      color: #000;
+      box-shadow: 0 0 14px rgba(245, 197, 24, 0.45);
+    }
+
+    /* Standard Card Container */
+    .ui-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      position: relative;
+    }
+
+    .section-label-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-high);
+    }
+
+    /* Segmented Header Switcher (LazyWatch Shows/Movies) */
+    .segment-toggle {
+      display: flex;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-full);
+      padding: 3px;
+      gap: 2px;
+    }
+    .segment-btn {
+      flex: 1;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border: none;
+      background: transparent;
+      color: var(--text-med);
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .segment-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; }
+    .segment-btn.active {
+      background: var(--accent-primary);
+      color: #fff;
+      box-shadow: 0 2px 8px var(--accent-primary-glow);
+    }
+
+    /* Subtabs (LazyWatch Watching | Upcoming | Library) */
+    .subtabs-bar {
+      display: flex;
+      border-bottom: 1px solid var(--border-subtle);
+      gap: 20px;
+    }
+    .subtab-link {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-low);
+      padding-bottom: 8px;
+      cursor: pointer;
+      position: relative;
+    }
+    .subtab-link.active {
+      color: var(--text-high);
+    }
+    .subtab-link.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--accent-primary);
+      border-radius: 2px;
+    }
+
+    /* ==========================================================================
+       SCREEN 1: MY COLLECTION & HOME DASHBOARD
+       ========================================================================== */
+    .hero-resume-card {
+      position: relative;
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+      min-height: 220px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: linear-gradient(180deg, rgba(11, 13, 19, 0.1) 0%, rgba(11, 13, 19, 0.95) 100%),
+                  url('https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=700&q=80') center/cover;
+      box-shadow: var(--shadow-deep);
+      cursor: pointer;
+    }
+
+    .hero-badge-tag {
+      align-self: flex-start;
+      margin-bottom: auto;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .hero-badge-tag::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-primary);
+      box-shadow: 0 0 8px var(--accent-primary);
+    }
+
+    .hero-info h2 {
+      font-size: 24px;
+      font-weight: 800;
+      color: #fff;
+    }
+    .hero-info p {
+      font-size: 13px;
+      color: var(--text-med);
+      margin: 2px 0 10px;
+    }
+
+    .progress-bar-track {
+      width: 100%;
+      height: 5px;
+      background: rgba(255, 255, 255, 0.16);
+      border-radius: var(--radius-full);
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-primary), #a855f7);
+      border-radius: var(--radius-full);
+      transition: width 0.35s ease;
+    }
+
+    .hero-btn-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .btn-resume {
+      flex: 1;
+      height: 42px;
+      background: var(--accent-primary);
+      border: none;
+      border-radius: var(--radius-md);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px var(--accent-primary-glow);
+    }
+    .btn-resume:active { transform: scale(0.98); }
+
+    /* In Progress List Accordion & Cards */
+    .accordion-header-toggle {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .accordion-header-toggle .left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .counter-badge {
+      background: var(--bg-elevated);
+      color: var(--accent-primary);
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      font-weight: 700;
+    }
+
+    .media-card-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 12px;
+      cursor: pointer;
+      transition: border-color 0.2s, transform 0.15s;
+    }
+    .media-card-item:hover { border-color: var(--border-card); }
+    .media-card-item:active { transform: scale(0.99); }
+
+    .card-thumb {
+      width: 52px;
+      height: 72px;
+      border-radius: var(--radius-sm);
+      object-fit: cover;
+      background: var(--bg-elevated);
+      flex-shrink: 0;
+    }
+
+    .card-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .card-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-high);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-meta {
+      font-size: 12px;
+      color: var(--text-med);
+    }
+    .card-progress-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .card-pct {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-low);
+      min-width: 32px;
+      text-align: right;
+    }
+
+    /* Not Started / Queue Posters Grid (LazyWatch / TV Time) */
+    .not-started-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .poster-queue-card {
+      position: relative;
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      height: 180px;
+      cursor: pointer;
+    }
+    .poster-queue-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .poster-queue-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, transparent 40%, rgba(0, 0, 0, 0.9) 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: 10px;
+    }
+    .poster-queue-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .poster-queue-badge {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+    }
+
+    /* ==========================================================================
+       SCREEN 2: TV TIME / SHOW DETAILS VIEW (LANTERNS)
+       ========================================================================== */
+    .detail-backdrop-hero {
+      position: relative;
+      margin: -8px -18px 0;
+      height: 250px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 14px 18px 18px;
+      background: linear-gradient(180deg, rgba(11, 13, 19, 0.25) 0%, var(--bg-base) 100%),
+                  url('https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=700&q=80') center/cover;
+    }
+
+    .detail-top-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 2;
+    }
+    .detail-actions-tray {
+      display: flex;
+      gap: 8px;
+    }
+
+    .detail-hero-content {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 2;
+    }
+    .detail-title {
+      font-size: 28px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.5px;
+    }
+    .detail-meta-tags {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-med);
+    }
+
+    /* Overall Watch Progress & Action Row */
+    .show-progress-summary {
+      font-size: 12px;
+      color: var(--text-med);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .progress-bar-yellow {
+      height: 5px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: var(--radius-full);
+      overflow: hidden;
+      margin: 6px 0 14px;
+    }
+    .progress-bar-yellow-fill {
+      width: 88%;
+      height: 100%;
+      background: var(--accent-yellow);
+      border-radius: var(--radius-full);
+      transition: width 0.3s;
+    }
+
+    .action-deck-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 8px;
+    }
+    .btn-mark-all-watched {
+      background: #2b3950;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: var(--radius-md);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+    .btn-action-outline {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      color: var(--text-high);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 0 16px;
+      height: 44px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .btn-action-square {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-md);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-high);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .remove-action-link {
+      font-size: 12px;
+      color: var(--text-low);
+      text-align: right;
+      cursor: pointer;
+      margin-top: -6px;
+    }
+    .remove-action-link:hover { color: var(--accent-rose); }
+
+    .synopsis-paragraph {
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--text-med);
+    }
+
+    /* Cast Avatar Carousel */
+    .cast-scroll-track {
+      display: flex;
+      gap: 12px;
+      overflow-x: auto;
+      margin: 0 -18px;
+      padding: 4px 18px 8px;
+      scrollbar-width: none;
+    }
+    .cast-scroll-track::-webkit-scrollbar { display: none; }
+
+    .cast-card {
+      width: 78px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 4px;
+    }
+    .cast-avatar {
+      width: 66px;
+      height: 66px;
+      border-radius: var(--radius-md);
+      object-fit: cover;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-surface);
+    }
+    .cast-actor {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-high);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 100%;
+    }
+    .cast-role {
+      font-size: 10px;
+      color: var(--text-low);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 100%;
+    }
+
+    /* Trailer Banner with YouTube Link */
+    .trailer-banner-card {
+      position: relative;
+      height: 140px;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.6)),
+                  url('https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=600&q=80') center/cover;
+      border: 1px solid var(--border-subtle);
+      cursor: pointer;
+    }
+    .trailer-youtube-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--accent-primary);
+      text-decoration: none;
+      font-weight: 600;
+      margin-top: 6px;
+      cursor: pointer;
+    }
+
+    /* Episode Line Item (TV Time style) */
+    .ep-card-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 14px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .ep-left-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .ep-header-code {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-high);
+    }
+    .ep-summary-snippet {
+      font-size: 11px;
+      color: var(--text-low);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      line-height: 1.4;
+    }
+    .ep-meta-airdate {
+      font-size: 11px;
+      color: var(--text-med);
+      margin-top: 2px;
+    }
+
+    /* Similar Shows Carousel (TV Time) */
+    .similar-scroll-track {
+      display: flex;
+      gap: 12px;
+      overflow-x: auto;
+      margin: 0 -18px;
+      padding: 4px 18px 8px;
+      scrollbar-width: none;
+    }
+    .similar-scroll-track::-webkit-scrollbar { display: none; }
+
+    .similar-card {
+      width: 110px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .similar-poster {
+      width: 100%;
+      height: 150px;
+      border-radius: var(--radius-md);
+      object-fit: cover;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+    }
+    .similar-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-high);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .similar-sub {
+      font-size: 10px;
+      color: var(--text-low);
+      display: flex;
+      justify-content: space-between;
+    }
+    .btn-similar-action {
+      height: 28px;
+      border-radius: var(--radius-full);
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-surface);
+      color: var(--text-high);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .btn-similar-action.following {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent-green);
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    /* User Review Box with Spoilers Checkbox */
+    .review-box-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .star-rating-row {
+      display: flex;
+      gap: 6px;
+      color: var(--border-card);
+      cursor: pointer;
+    }
+    .star-rating-row svg {
+      width: 22px;
+      height: 22px;
+      fill: currentColor;
+      transition: color 0.15s;
+    }
+    .star-rating-row svg.active {
+      color: var(--accent-yellow);
+    }
+    .review-textarea {
+      width: 100%;
+      height: 70px;
+      background: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      color: var(--text-high);
+      font-family: inherit;
+      font-size: 12px;
+      resize: none;
+      outline: none;
+    }
+    .review-textarea:focus { border-color: var(--accent-primary); }
+
+    .review-bottom-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .spoiler-check-label {
+      font-size: 12px;
+      color: var(--text-med);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    /* ==========================================================================
+       SCREEN 3: SHOW DETAIL 2 - FRIENDS (CUEMARK SCREEN 16)
+       ========================================================================== */
+    .friends-header-card {
+      display: flex;
+      gap: 14px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 14px;
+    }
+    .friends-poster {
+      width: 76px;
+      height: 108px;
+      border-radius: var(--radius-md);
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .friends-header-meta {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .btn-big-next {
+      background: var(--accent-primary);
+      border: none;
+      border-radius: var(--radius-md);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px var(--accent-primary-glow);
+    }
+    .dual-action-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .tracking-setting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 14px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      color: var(--text-high);
+      cursor: pointer;
+    }
+    .tracking-setting-row span.val {
+      color: var(--text-med);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Season 9 Filter Pills */
+    .filter-pills-row {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      margin: 4px 0 10px;
+    }
+    .filter-pills-row::-webkit-scrollbar { display: none; }
+    .pill-opt {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: var(--radius-full);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-med);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .pill-opt.active {
+      background: var(--bg-elevated);
+      color: var(--accent-primary);
+      border-color: var(--accent-primary);
+    }
+
+    /* ==========================================================================
+       SCREEN 4: SEARCH / CATALOG (CUEMARK SCREEN 12 & TV TIME BROWSE)
+       ========================================================================== */
+    .filter-selectors-row {
+      display: flex;
+      gap: 8px;
+    }
+    .filter-select-btn {
+      flex: 1;
+      height: 36px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      color: var(--text-high);
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      cursor: pointer;
+    }
+
+    .catalog-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .catalog-item-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .catalog-item-card:hover { border-color: var(--border-card); }
+    .catalog-thumb {
+      width: 46px;
+      height: 64px;
+      border-radius: var(--radius-sm);
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .catalog-details {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+    .catalog-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-high);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .catalog-meta {
+      font-size: 11px;
+      color: var(--text-med);
+    }
+    .catalog-source-tag {
+      font-size: 10px;
+      color: var(--text-low);
+      background: var(--bg-elevated);
+      padding: 1px 6px;
+      border-radius: 4px;
+      display: inline-block;
+      align-self: flex-start;
+      margin-top: 2px;
+    }
+
+    /* ==========================================================================
+       SCREEN 5: SCHEDULE / AIRING TIMELINE (LAZYWATCH & TV TIME SCREEN 6 & 10)
+       ========================================================================== */
+    .schedule-temporal-tag {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--accent-primary);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 6px;
+    }
+    .schedule-temporal-tag span.day-date {
+      color: var(--text-low);
+      font-weight: 600;
+    }
+
+    .schedule-row-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px;
+    }
+    .schedule-thumb {
+      width: 42px;
+      height: 58px;
+      border-radius: var(--radius-sm);
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .schedule-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .schedule-show-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-high);
+    }
+    .schedule-ep-code {
+      font-size: 12px;
+      color: var(--text-med);
+    }
+    .schedule-air-time {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent-gold);
+      margin-top: 2px;
+    }
+
+    /* Recent Activity Feed (TV Time Screen 6) */
+    .activity-feed-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+    }
+    .activity-feed-thumb {
+      width: 36px;
+      height: 50px;
+      border-radius: var(--radius-sm);
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+
+    /* ==========================================================================
+       SCREEN 6: EXPLORE & METADATA SOURCES (CUEMARK SCREEN 14)
+       ========================================================================== */
+    .source-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .source-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .source-card:active { background: var(--bg-elevated); }
+    .source-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .source-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      color: var(--accent-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .source-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-high);
+    }
+    .source-desc {
+      font-size: 11px;
+      color: var(--text-low);
+    }
+    .source-ping {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 8px var(--accent-green);
+    }
+
+    /* ==========================================================================
+       SCREEN 7: STATISTICS & HEALTH (CUEMARK SCREEN 15)
+       ========================================================================== */
+    .health-stats-row {
+      display: grid;
+      grid-template-columns: 1fr 100px;
+      align-items: center;
+      gap: 12px;
+    }
+    .health-metric-large {
+      font-size: 34px;
+      font-weight: 800;
+      color: var(--accent-primary);
+      line-height: 1;
+      margin-top: 4px;
+    }
+
+    /* SVG Donut Progress */
+    .donut-holder {
+      width: 86px;
+      height: 86px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .donut-holder svg {
+      transform: rotate(-90deg);
+      width: 100%;
+      height: 100%;
+    }
+    .donut-holder circle {
+      fill: none;
+      stroke-width: 8;
+      stroke-linecap: round;
+    }
+    .donut-bg { stroke: var(--bg-elevated); }
+    .donut-fill {
+      stroke: var(--accent-primary);
+      stroke-dasharray: 226;
+      stroke-dashoffset: 79; /* 65% */
+      transition: stroke-dashoffset 0.8s ease;
+    }
+    .donut-label {
+      position: absolute;
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--text-high);
+    }
+
+    .stats-tri-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .stat-tile {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .stat-tile-num {
+      font-size: 22px;
+      font-weight: 800;
+    }
+    .stat-tile-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-med);
+    }
+
+    /* Segmented Mix Bar */
+    .mix-bar {
+      height: 8px;
+      border-radius: var(--radius-full);
+      display: flex;
+      overflow: hidden;
+      gap: 2px;
+      margin: 10px 0;
+    }
+    .mix-seg-done { flex: 2; background: var(--accent-green); }
+    .mix-seg-prog { flex: 4; background: var(--accent-cyan); }
+    .mix-seg-queue { flex: 1; background: var(--accent-gold); }
+
+    .mix-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text-med);
+    }
+    .mix-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+    }
+
+    /* Activity Histogram Chart */
+    .bar-chart-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      height: 76px;
+      padding-top: 14px;
+      gap: 6px;
+    }
+    .chart-col {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 6px;
+    }
+    .bar-pill {
+      width: 100%;
+      background: var(--bg-elevated);
+      border-radius: 4px;
+      transition: height 0.3s;
+    }
+    .bar-pill.highlight {
+      background: var(--accent-primary);
+      box-shadow: 0 0 12px var(--accent-primary-glow);
+    }
+    .col-day {
+      font-size: 10px;
+      color: var(--text-low);
+      font-weight: 600;
+    }
+
+    /* ==========================================================================
+       SCREEN 8: SETTINGS & APPEARANCE (CUEMARK SCREEN 13)
+       ========================================================================== */
+    .settings-group-label {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-low);
+      margin-top: 6px;
+    }
+
+    .settings-list-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .settings-row:last-child { border-bottom: none; }
+    .settings-row:active { background: var(--bg-elevated); }
+    .settings-row-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .settings-icon-holder {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      color: var(--accent-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .settings-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-high);
+    }
+    .settings-desc {
+      font-size: 11px;
+      color: var(--text-low);
+    }
+
+    .theme-selector-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .theme-swatch {
+      height: 36px;
+      border-radius: var(--radius-md);
+      border: 2px solid transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .theme-swatch.active { border-color: #fff; }
+
+    /* ==========================================================================
+       BOTTOM DOCKED NAVIGATION DOCK
+       ========================================================================== */
+    .bottom-dock-nav {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: var(--nav-height);
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      padding: 0 8px 6px;
+      z-index: 90;
+    }
+
+    .nav-tab-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-low);
+      text-decoration: none;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      cursor: pointer;
+      background: transparent;
+      border: none;
+      transition: color 0.15s, transform 0.15s;
+    }
+    .nav-tab-btn svg {
+      width: 22px;
+      height: 22px;
+      stroke-width: 2;
+      stroke: currentColor;
+      fill: none;
+    }
+    .nav-tab-btn.active {
+      color: var(--accent-primary);
+    }
+    .nav-tab-btn:active { transform: scale(0.92); }
+
+    /* Floating Action Pill (+) */
+    .floating-fab {
+      position: absolute;
+      bottom: calc(var(--nav-height) + 14px);
+      right: 18px;
+      width: 50px;
+      height: 50px;
+      border-radius: var(--radius-full);
+      background: var(--accent-primary);
+      border: none;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px var(--accent-primary-glow);
+      cursor: pointer;
+      z-index: 80;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .floating-fab:active { transform: scale(0.9) rotate(45deg); }
+
+    /* Interactive Feedback Toast */
+    .toast-pill {
+      position: absolute;
+      top: 50px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-card);
+      color: var(--text-high);
+      padding: 8px 16px;
+      border-radius: var(--radius-full);
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: var(--shadow-deep);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 100;
+      white-space: nowrap;
+    }
+    .toast-pill.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- MOBILE SHELL FRAME -->
+  <div class="mobile-shell">
+    
+    <!-- Phone Status Header -->
+    <div class="status-bar">
+      <span>10:32</span>
+      <div class="island-pill"></div>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.9-1.9C9.22 19.57 10.57 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9z"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20V2z"/></svg>
+        <span>60%</span>
+      </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div class="toast-pill" id="appToast">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+      <span id="toastMsg">Action recorded</span>
+    </div>
+
+    <!-- VIEWPORT SWITCHER -->
+    <div class="view-viewport">
+
+      <!-- ========================================================
+           SCREEN 1: MY COLLECTION & HOME (CUEMARK & LAZYWATCH)
+           ======================================================== -->
+      <section class="screen-view active" id="view-collection">
+        <!-- LazyWatch Segmented Controls -->
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+          <h1 class="view-title">My <span>collection</span></h1>
+          <div class="segment-toggle">
+            <button class="segment-btn active" onclick="toggleSegment(this)">Shows</button>
+            <button class="segment-btn" onclick="toggleSegment(this)">Movies</button>
+          </div>
+        </div>
+
+        <!-- Subtabs: Watching | Upcoming | Library -->
+        <div class="subtabs-bar">
+          <span class="subtab-link active" onclick="switchSubTab(this, 'watching')">Watching</span>
+          <span class="subtab-link" onclick="navigateTab('view-schedule')">Upcoming</span>
+          <span class="subtab-link" onclick="navigateTab('view-catalog')">Library</span>
+        </div>
+
+        <!-- CueMark Category Filter Chips -->
+        <div class="category-strip">
+          <div class="cat-chip active" onclick="filterCategory(this)">
+            <svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>
+            TV Series
+          </div>
+          <div class="cat-chip" onclick="filterCategory(this)">
+            <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+            Movie
+          </div>
+          <div class="cat-chip" onclick="filterCategory(this)">
+            <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Anime
+          </div>
+          <div class="cat-chip" onclick="filterCategory(this)">
+            <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Novel
+          </div>
+        </div>
+
+        <!-- Search Bar with Refine Button -->
+        <div class="search-bar-wrap">
+          <div class="search-input-box">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" class="search-input" placeholder="Search your collection..." oninput="filterLocalCollection(this.value)">
+          </div>
+          <button class="icon-btn" title="Refine Filters" onclick="triggerToast('Filters modal opened')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6"/></svg>
+          </button>
+        </div>
+
+        <!-- LazyWatch Continue Watching Hero Banner -->
+        <div class="hero-resume-card" onclick="openLanternsDetail()">
+          <div class="hero-badge-tag">Continue Watching</div>
+          <div class="hero-info">
+            <h2>Lanterns</h2>
+            <p>S1 E8 · Dirt and Stars (Finale)</p>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" id="heroProgressFill" style="width: 88%;"></div>
+            </div>
+          </div>
+          <div class="hero-btn-row" onclick="event.stopPropagation()">
+            <button class="btn-resume" onclick="triggerToast('Resuming S1:E8 Dirt and Stars...')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Resume
+            </button>
+            <button class="check-circle-btn" id="heroCheckBtn" onclick="toggleHeroEpisode(this)" title="Mark episode finished">
+              <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- CueMark In Progress Accordion -->
+        <div>
+          <div class="accordion-header-toggle" onclick="toggleAccordion('inProgressSection', this)">
+            <div class="left">
+              <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--accent-cyan);"></span>
+              <span>In Progress</span>
+              <span class="counter-badge" id="activeProgCounter">2</span>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+
+          <div id="inProgressSection" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+            <!-- Friends Card -->
+            <div class="media-card-item" onclick="openFriendsDetail()">
+              <img class="card-thumb" src="https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&w=120&q=80" alt="Friends">
+              <div class="card-body">
+                <div class="card-title-row">
+                  <div class="card-title">Friends</div>
+                  <div class="badge-tag">TV Series</div>
+                </div>
+                <div class="card-meta">In Progress · S09E20</div>
+                <div class="card-progress-row">
+                  <div class="progress-bar-track" style="margin-bottom: 0;">
+                    <div class="progress-bar-fill" id="friendsProgFill" style="width: 90%;"></div>
+                  </div>
+                  <div class="card-pct" id="friendsPctLabel">90%</div>
+                </div>
+              </div>
+              <button class="check-circle-btn checked" onclick="event.stopPropagation(); toggleListEpisode(this, 'friendsProgFill', 90, 100, 'friendsPctLabel')">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+
+            <!-- Sherlock Card -->
+            <div class="media-card-item" onclick="triggerToast('Opening Sherlock details...')">
+              <img class="card-thumb" src="https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=120&q=80" alt="Sherlock">
+              <div class="card-body">
+                <div class="card-title-row">
+                  <div class="card-title">Sherlock</div>
+                  <div class="badge-tag">TV Series</div>
+                </div>
+                <div class="card-meta">In Progress · S01E02</div>
+                <div class="card-progress-row">
+                  <div class="progress-bar-track" style="margin-bottom: 0;">
+                    <div class="progress-bar-fill" id="sherlockProgFill" style="width: 17%;"></div>
+                  </div>
+                  <div class="card-pct" id="sherlockPctLabel">17%</div>
+                </div>
+              </div>
+              <button class="check-circle-btn" onclick="event.stopPropagation(); toggleListEpisode(this, 'sherlockProgFill', 17, 33, 'sherlockPctLabel')">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- LazyWatch Not Started Queue Section -->
+        <div>
+          <div class="section-label-bar" style="margin-bottom: 10px;">
+            <span>Not started</span>
+            <span class="counter-badge">2</span>
+          </div>
+          <div class="not-started-grid">
+            <div class="poster-queue-card" onclick="triggerToast('Opening Black Clover...')">
+              <img class="poster-queue-img" src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=260&q=80" alt="Black Clover">
+              <div class="poster-queue-overlay">
+                <div class="poster-queue-title">Black Clover</div>
+                <div style="font-size: 10px; color: var(--text-med);">S01 · 170 eps</div>
+              </div>
+              <div class="poster-queue-badge">
+                <button class="check-circle-btn" onclick="event.stopPropagation(); this.classList.toggle('checked');">
+                  <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="poster-queue-card" onclick="triggerToast('Opening East of Eden...')">
+              <img class="poster-queue-img" src="https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=260&q=80" alt="East of Eden">
+              <div class="poster-queue-overlay">
+                <div class="poster-queue-title">East of Eden</div>
+                <div style="font-size: 10px; color: var(--text-med);">S01 · 6 eps</div>
+              </div>
+              <div class="poster-queue-badge">
+                <button class="check-circle-btn checked" onclick="event.stopPropagation(); this.classList.toggle('checked');">
+                  <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 2: TV TIME SHOW DETAILS (LANTERNS - FULL SPEC)
+           ======================================================== -->
+      <section class="screen-view" id="view-details-lanterns">
+        <div class="detail-backdrop-hero">
+          <div class="detail-top-nav">
+            <button class="icon-btn" onclick="navigateTab('view-collection')">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <div class="detail-actions-tray">
+              <button class="icon-btn" title="Favorite" onclick="triggerToast('Saved to Favorites')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              </button>
+              <button class="icon-btn" title="Alerts" onclick="triggerToast('Push notifications set for new airtimes')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="detail-hero-content">
+            <h1 class="detail-title">Lanterns</h1>
+            <div class="detail-meta-tags">
+              <span>2026</span>
+              <span>•</span>
+              <span>Returning</span>
+              <span>•</span>
+              <span class="rating-badge">★ 8.4</span>
+            </div>
+            <div style="font-size: 11px; color: var(--text-med); margin-top: 2px;">• Drama, Sci-Fi & Fantasy, Mystery</div>
+          </div>
+        </div>
+
+        <!-- TV Time Progress & Action Bar -->
+        <div>
+          <div class="progress-bar-yellow">
+            <div class="progress-bar-yellow-fill" id="lanternsDetailYellowFill"></div>
+          </div>
+          <div class="show-progress-summary">
+            <span>7/8 episodes · 88%</span>
+            <span>last watched 2m ago</span>
+          </div>
+        </div>
+
+        <div class="action-deck-row">
+          <button class="btn-mark-all-watched" onclick="markAllLanternsWatched()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            Mark all watched
+          </button>
+          <button class="btn-action-outline" onclick="triggerToast('Added to custom lists')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add
+          </button>
+          <button class="btn-action-square">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+          </button>
+        </div>
+        <div class="remove-action-link" onclick="triggerToast('Removed from tracking')">Remove</div>
+
+        <p class="synopsis-paragraph">
+          Two intergalactic cops, new recruit John Stewart and Lantern legend Hal Jordan, are drawn into a dark, Earth-based mystery as they investigate a murder in the American heartland.
+        </p>
+
+        <!-- Cast & Characters -->
+        <div>
+          <div class="section-label-bar" style="margin-bottom: 8px;">Cast</div>
+          <div class="cast-scroll-track">
+            <div class="cast-card">
+              <img class="cast-avatar" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=140&q=80" alt="Kyle">
+              <div class="cast-actor">Kyle Chandler</div>
+              <div class="cast-role">Hal Jordan / ...</div>
+            </div>
+            <div class="cast-card">
+              <img class="cast-avatar" src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=140&q=80" alt="Aaron">
+              <div class="cast-actor">Aaron Pierre</div>
+              <div class="cast-role">John Stewart</div>
+            </div>
+            <div class="cast-card">
+              <img class="cast-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=140&q=80" alt="Kelly">
+              <div class="cast-actor">Kelly...</div>
+              <div class="cast-role">Sheriff Kerry...</div>
+            </div>
+            <div class="cast-card">
+              <img class="cast-avatar" src="https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=140&q=80" alt="Jason">
+              <div class="cast-actor">Jason R.</div>
+              <div class="cast-role">Special Agent</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trailer -->
+        <div>
+          <div class="section-label-bar" style="margin-bottom: 8px;">Trailer</div>
+          <div class="trailer-banner-card" onclick="triggerToast('Playing official HBO Max trailer...')">
+            <div style="width:48px; height:48px; border-radius:50%; background:rgba(255,255,255,0.2); backdrop-filter:blur(8px); border:2px solid #fff; display:flex; align-items:center; justify-content:center; color:#fff;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+            </div>
+          </div>
+          <div class="trailer-youtube-link" onclick="triggerToast('Opening YouTube player app...')">
+            Watch on YouTube
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </div>
+        </div>
+
+        <!-- TV Time Miniseries Episode Checklist -->
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: var(--bg-surface); border-radius: var(--radius-md); margin-bottom: 10px;">
+            <div>
+              <div style="font-weight: 700; font-size: 14px;">Miniseries</div>
+              <div style="font-size: 11px; color: var(--text-med);">7/8 episodes watched</div>
+            </div>
+            <button class="btn-action-outline" style="height: 32px; font-size: 11px; padding: 0 12px;" onclick="markAllLanternsWatched()">Mark as watched</button>
+          </div>
+
+          <div id="lanternsEpList">
+            <!-- S01E01 -->
+            <div class="ep-card-row">
+              <div class="ep-left-content">
+                <div class="ep-header-code">S01E01 Pilot</div>
+                <div class="ep-summary-snippet">After a fatal shooting, Green Lantern Hal Jordan and new recruit John Stewart set out to prove it...</div>
+                <div class="ep-meta-airdate">16 Aug</div>
+              </div>
+              <button class="check-circle-btn checked" onclick="toggleEpisodeWithAir(this)">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+
+            <!-- S01E02 -->
+            <div class="ep-card-row">
+              <div class="ep-left-content">
+                <div class="ep-header-code">S01E02 Trust Fall</div>
+                <div class="ep-summary-snippet">While John's middling errand ultimately proves eventful, Hal makes waves in Rushville - which...</div>
+                <div class="ep-meta-airdate">23 Aug</div>
+              </div>
+              <button class="check-circle-btn checked" onclick="toggleEpisodeWithAir(this)">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+
+            <!-- S01E03 -->
+            <div class="ep-card-row">
+              <div class="ep-left-content">
+                <div class="ep-header-code">S01E03 OutKast</div>
+                <div class="ep-summary-snippet">When his dad misunderstands a contact attempt from the Guardians, John is put forth as th...</div>
+                <div class="ep-meta-airdate">30 Aug</div>
+              </div>
+              <button class="check-circle-btn checked" onclick="toggleEpisodeWithAir(this)">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+
+            <!-- S01E04 -->
+            <div class="ep-card-row">
+              <div class="ep-left-content">
+                <div class="ep-header-code">S01E04 The Weenie</div>
+                <div class="ep-summary-snippet">As the 48-hour deadline nears, John develops a new theory about the Manhunter's location, leading...</div>
+                <div class="ep-meta-airdate">6 Sept</div>
+              </div>
+              <button class="check-circle-btn checked" onclick="toggleEpisodeWithAir(this)">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+
+            <!-- S01E05 -->
+            <div class="ep-card-row">
+              <div class="ep-left-content">
+                <div class="ep-header-code">S01E05 Lights Out</div>
+                <div class="ep-summary-snippet">As the Macon family's history unravels, Rushville mobilizes in the face of the escalating threat....</div>
+                <div class="ep-meta-airdate">13 Sept</div>
+              </div>
+              <button class="check-circle-btn checked" onclick="toggleEpisodeWithAir(this)">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+
+            <!-- S01E06 -->
+            <div class="ep-card-row">
+              <div class="ep-left-content">
+                <div class="ep-header-code">S01E06 Bad Optics</div>
+                <div class="ep-summary-snippet">Now in business with his brother Marcus, John is on the verge of landing a major investor for his...</div>
+                <div class="ep-meta-airdate">20 Sept</div>
+              </div>
+              <button class="check-circle-btn checked" onclick="toggleEpisodeWithAir(this)">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Similar Shows -->
+        <div>
+          <div class="section-label-bar">
+            <span>✨ Similar</span>
+          </div>
+          <div style="font-size: 11px; color: var(--text-low); margin-bottom: 8px;">From TMDB recommendations for this title.</div>
+          <div class="similar-scroll-track">
+            <div class="similar-card">
+              <img class="similar-poster" src="https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=150&q=80" alt="Gotham">
+              <div class="similar-title">Gotham</div>
+              <div class="similar-sub"><span>2014</span> <span class="rating-badge" style="padding:1px 4px;">★ 7.6</span></div>
+              <button class="btn-similar-action following" onclick="this.classList.toggle('following'); this.innerText = this.classList.contains('following') ? '✓ Following' : '+ Add';">✓ Following</button>
+            </div>
+
+            <div class="similar-card">
+              <img class="similar-poster" src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=150&q=80" alt="Powers">
+              <div class="similar-title">Powers</div>
+              <div class="similar-sub"><span>2015</span> <span class="rating-badge" style="padding:1px 4px;">★ 6.7</span></div>
+              <button class="btn-similar-action" onclick="this.classList.toggle('following'); this.innerText = this.classList.contains('following') ? '✓ Following' : '+ Add';">+ Add</button>
+            </div>
+
+            <div class="similar-card">
+              <img class="similar-poster" src="https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=150&q=80" alt="Irregulars">
+              <div class="similar-title">The Irregulars</div>
+              <div class="similar-sub"><span>2021</span> <span class="rating-badge" style="padding:1px 4px;">★ 7.1</span></div>
+              <button class="btn-similar-action" onclick="this.classList.toggle('following'); this.innerText = this.classList.contains('following') ? '✓ Following' : '+ Add';">+ Add</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TV Time User Review Box -->
+        <div class="review-box-card">
+          <div class="section-label-bar" style="margin-top:0;">Your review</div>
+          <div class="star-rating-row" id="lanternsStarRow">
+            <svg viewBox="0 0 24 24" onclick="setStars(1)"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24" onclick="setStars(2)"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24" onclick="setStars(3)"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24" onclick="setStars(4)"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <svg viewBox="0 0 24 24" onclick="setStars(5)"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          </div>
+          <textarea class="review-textarea" placeholder="Write your thoughts (optional)..."></textarea>
+          <div class="review-bottom-row">
+            <label class="spoiler-check-label">
+              <input type="checkbox"> Contains spoilers
+            </label>
+            <button class="btn-resume" style="height: 34px; padding: 0 16px; flex: none;" onclick="triggerToast('Review saved successfully!')">Save review</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 3: SHOW DETAIL 2 - FRIENDS (CUEMARK SCREEN 16)
+           ======================================================== -->
+      <section class="screen-view" id="view-details-friends">
+        <div class="view-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button class="icon-btn" onclick="navigateTab('view-collection')">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <span style="font-size: 16px; font-weight: 700;">TV Series</span>
+          </div>
+          <button class="icon-btn" style="color: var(--accent-rose);" onclick="triggerToast('Deleted Friends from tracker')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+
+        <!-- CueMark Header Card -->
+        <div class="friends-header-card">
+          <img class="friends-poster" src="https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&w=160&q=80" alt="Friends">
+          <div class="friends-header-meta">
+            <div style="font-size: 20px; font-weight: 800;">Friends</div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px;">
+              <span class="badge-tag">Ended</span>
+              <span class="badge-tag">TVmaze</span>
+              <span class="badge-tag badge-cached">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                Cached metadata
+              </span>
+            </div>
+            <div style="font-size: 11px; color: var(--text-med); margin-top: 4px;">TV Series • ~30min/ep • NBC</div>
+            <div class="progress-bar-track" style="margin-top: 8px; margin-bottom: 2px;">
+              <div class="progress-bar-fill" style="width: 90%;"></div>
+            </div>
+            <div style="font-size: 11px; color: var(--text-low); text-align: right;">90% complete</div>
+          </div>
+        </div>
+
+        <button class="btn-big-next" onclick="triggerToast('Playing Episode 20...')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+          Next: Episode 20
+        </button>
+
+        <div class="dual-action-row">
+          <button class="btn-action-outline" style="justify-content: center;" onclick="triggerToast('Marked previous episodes watched')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            Mark previous watched
+          </button>
+          <button class="btn-action-outline" style="justify-content: center;" onclick="triggerToast('Added to dashboard feed')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Added to dashboard
+          </button>
+        </div>
+
+        <p class="synopsis-paragraph">
+          Six young (20-something) people from New York City (Manhattan), on their own and struggling to survive in the real world, find the companionship, comfort and support they get from each other to be the perfect antidote to the pressures of life.
+        </p>
+
+        <!-- Tracking Metadata Links -->
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div class="section-label-bar">Tracking</div>
+          <div class="tracking-setting-row">
+            <span>Add to list</span>
+            <span class="val">TV Series <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </div>
+          <div class="tracking-setting-row">
+            <span>Status</span>
+            <span class="val">In Progress <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </div>
+        </div>
+
+        <!-- Season Accordion & Filters -->
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg-surface); border-radius: var(--radius-md);">
+            <span style="font-weight: 700; font-size: 14px;">Season 9</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+
+          <div class="filter-pills-row">
+            <span class="pill-opt active">All</span>
+            <span class="pill-opt">Watched</span>
+            <span class="pill-opt">Unwatched</span>
+            <span class="pill-opt">Upcoming</span>
+            <span class="pill-opt">Filler</span>
+            <span class="pill-opt">Recap</span>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Ep 1 -->
+            <div class="media-card-item">
+              <img class="card-thumb" style="width: 70px; height: 48px; border-radius: 6px;" src="https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&w=120&q=80" alt="Ep1">
+              <div class="card-body">
+                <div class="card-title" style="font-size: 13px;">1. The One Where No One Proposes</div>
+                <div class="card-meta" style="font-size: 11px;">2002-09-26 • 30m • ★ 8.9</div>
+              </div>
+              <button class="check-circle-btn checked" onclick="this.classList.toggle('checked');">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+
+            <!-- Ep 2 -->
+            <div class="media-card-item">
+              <img class="card-thumb" style="width: 70px; height: 48px; border-radius: 6px;" src="https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&w=120&q=80" alt="Ep2">
+              <div class="card-body">
+                <div class="card-title" style="font-size: 13px;">2. The One Where Emma Cries</div>
+                <div class="card-meta" style="font-size: 11px;">2002-10-03 • 30m • ★ 8.8</div>
+              </div>
+              <button class="check-circle-btn checked" onclick="this.classList.toggle('checked');">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 4: SEARCH / CATALOG (CUEMARK SCREEN 12 & TV TIME)
+           ======================================================== -->
+      <section class="screen-view" id="view-catalog">
+        <div class="view-header">
+          <h1 class="view-title">Browse <span>Catalog</span></h1>
+          <button class="icon-btn" onclick="triggerToast('Switched layout grid')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          </button>
+        </div>
+
+        <div class="category-strip">
+          <div class="cat-chip active">TV Series</div>
+          <div class="cat-chip">Movie</div>
+          <div class="cat-chip">Anime</div>
+          <div class="cat-chip">Novel</div>
+        </div>
+
+        <!-- Filter Selectors Row (TV Time Screen 8) -->
+        <div class="filter-selectors-row">
+          <div class="filter-select-btn" onclick="triggerToast('Sorted by Popularity')">
+            <span>Popular</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="filter-select-btn" onclick="triggerToast('Filter by Release Year')">
+            <span>Year (All)</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+        </div>
+
+        <div class="search-bar-wrap">
+          <div class="search-input-box">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" class="search-input" placeholder="Search tv series (Band of Brothers, Gravity Falls...)" oninput="filterCatalogList(this.value)">
+          </div>
+        </div>
+
+        <!-- Exact Items from CueMark Screen 12 -->
+        <div class="catalog-list" id="catalogCardsContainer">
+          <!-- Band of Brothers -->
+          <div class="catalog-item-card" onclick="triggerToast('Opening Band of Brothers...')">
+            <img class="catalog-thumb" src="https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=120&q=80" alt="Band of Brothers">
+            <div class="catalog-details">
+              <div class="catalog-name">Band of Brothers</div>
+              <div class="catalog-meta">2001 • Scripted • <span class="rating-badge">★ 9.0</span></div>
+              <span class="catalog-source-tag">TVmaze</span>
+            </div>
+            <button class="icon-btn" onclick="event.stopPropagation(); triggerToast('Added Band of Brothers')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+
+          <!-- Sherlock -->
+          <div class="catalog-item-card" onclick="triggerToast('Opening Sherlock...')">
+            <img class="catalog-thumb" src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=80" alt="Sherlock">
+            <div class="catalog-details">
+              <div class="catalog-name">Sherlock</div>
+              <div class="catalog-meta">2010 • Scripted • <span class="rating-badge">★ 8.9</span></div>
+              <span class="catalog-source-tag">TVmaze</span>
+            </div>
+            <button class="icon-btn" onclick="event.stopPropagation(); triggerToast('Added Sherlock')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+
+          <!-- Gravity Falls -->
+          <div class="catalog-item-card" onclick="triggerToast('Opening Gravity Falls...')">
+            <img class="catalog-thumb" src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=120&q=80" alt="Gravity Falls">
+            <div class="catalog-details">
+              <div class="catalog-name">Gravity Falls</div>
+              <div class="catalog-meta">2012 • Animation • <span class="rating-badge">★ 8.8</span></div>
+              <span class="catalog-source-tag">TVmaze</span>
+            </div>
+            <button class="icon-btn" onclick="event.stopPropagation(); triggerToast('Added Gravity Falls')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+
+          <!-- Downton Abbey -->
+          <div class="catalog-item-card" onclick="triggerToast('Opening Downton Abbey...')">
+            <img class="catalog-thumb" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80" alt="Downton Abbey">
+            <div class="catalog-details">
+              <div class="catalog-name">Downton Abbey</div>
+              <div class="catalog-meta">2010 • Scripted • <span class="rating-badge">★ 8.7</span></div>
+              <span class="catalog-source-tag">TVmaze</span>
+            </div>
+            <button class="icon-btn" onclick="event.stopPropagation(); triggerToast('Added Downton Abbey')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+
+          <!-- Star Trek: TNG -->
+          <div class="catalog-item-card" onclick="triggerToast('Opening Star Trek...')">
+            <img class="catalog-thumb" src="https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=120&q=80" alt="Star Trek">
+            <div class="catalog-details">
+              <div class="catalog-name">Star Trek: The Next Generation</div>
+              <div class="catalog-meta">1987 • Scripted • <span class="rating-badge">★ 8.7</span></div>
+              <span class="catalog-source-tag">TVmaze</span>
+            </div>
+            <button class="icon-btn" onclick="event.stopPropagation(); triggerToast('Added Star Trek')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+
+          <!-- Line of Duty -->
+          <div class="catalog-item-card" onclick="triggerToast('Opening Line of Duty...')">
+            <img class="catalog-thumb" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80" alt="Line of Duty">
+            <div class="catalog-details">
+              <div class="catalog-name">Line of Duty</div>
+              <div class="catalog-meta">2012 • Scripted • <span class="rating-badge">★ 8.6</span></div>
+              <span class="catalog-source-tag">TVmaze</span>
+            </div>
+            <button class="icon-btn" onclick="event.stopPropagation(); triggerToast('Added Line of Duty')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 5: SCHEDULE & AIRING SOON (LAZYWATCH & TV TIME)
+           ======================================================== -->
+      <section class="screen-view" id="view-schedule">
+        <div class="view-header">
+          <h1 class="view-title">Airing <span>Timeline</span></h1>
+          <button class="icon-btn" onclick="triggerToast('Timeline synced with local time (IST)')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </button>
+        </div>
+
+        <!-- TV Time Watch Next Hero Card (Screen 5) -->
+        <div class="ui-card" style="display: flex; gap: 12px; align-items: center; cursor: pointer;" onclick="openLanternsDetail()">
+          <img style="width: 48px; height: 68px; border-radius: 6px; object-fit: cover;" src="https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=120&q=80" alt="Lanterns">
+          <div style="flex: 1;">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--accent-primary); font-weight: 800;">Watch Next</div>
+            <div style="font-size: 15px; font-weight: 700; color: #fff;">Lanterns</div>
+            <div style="font-size: 12px; color: var(--text-med);">S01E08 · Dirt and Stars</div>
+            <div class="progress-bar-track" style="margin-top: 6px; margin-bottom: 0;">
+              <div class="progress-bar-fill" style="width: 88%;"></div>
+            </div>
+          </div>
+          <button class="check-circle-btn" onclick="event.stopPropagation(); this.classList.toggle('checked');">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+        </div>
+
+        <!-- Group 1: Today -->
+        <div class="schedule-temporal-tag">
+          <span>Today</span>
+          <span class="day-date">Sunday, 4 Oct</span>
+        </div>
+        <div class="schedule-row-card">
+          <img class="schedule-thumb" src="https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=120&q=80" alt="Lanterns">
+          <div class="schedule-info">
+            <div class="schedule-show-name">Lanterns</div>
+            <div class="schedule-ep-code">S01E08 · Dirt and Stars</div>
+            <div class="schedule-air-time">6:30 AM · HBO Max</div>
+          </div>
+          <button class="check-circle-btn" onclick="this.classList.toggle('checked')">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+        </div>
+
+        <!-- Group 2: Tomorrow (LazyWatch Screen 10) -->
+        <div class="schedule-temporal-tag">
+          <span>Tomorrow</span>
+          <span class="day-date">Mon 5 Oct</span>
+        </div>
+        <div class="schedule-row-card">
+          <img class="schedule-thumb" src="https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?auto=format&fit=crop&w=120&q=80" alt="Simpsons">
+          <div class="schedule-info">
+            <div class="schedule-show-name">The Simpsons</div>
+            <div class="schedule-ep-code">S38E02 · Diary of a Chimpy Kid</div>
+            <div class="schedule-air-time">5:30 AM · FOX</div>
+          </div>
+          <button class="check-circle-btn" onclick="this.classList.toggle('checked')">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+        </div>
+
+        <!-- Group 3: This Week -->
+        <div class="schedule-temporal-tag">
+          <span>In 6 days</span>
+          <span class="day-date">Sat 10 Oct</span>
+        </div>
+        <div class="schedule-row-card">
+          <img class="schedule-thumb" src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=120&q=80" alt="Black Clover">
+          <div class="schedule-info">
+            <div class="schedule-show-name">Black Clover</div>
+            <div class="schedule-ep-code">S02E02 · Episode 2</div>
+            <div class="schedule-air-time">8:00 PM · TV Tokyo</div>
+          </div>
+          <button class="check-circle-btn" onclick="this.classList.toggle('checked')">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+        </div>
+
+        <div class="schedule-row-card">
+          <img class="schedule-thumb" src="https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=120&q=80" alt="AHS">
+          <div class="schedule-info">
+            <div class="schedule-show-name">American Horror Story</div>
+            <div class="schedule-ep-code">S13E07 · The Baddest Witch of Them All</div>
+            <div class="schedule-air-time">Fri 7:30 AM · FX</div>
+          </div>
+          <button class="check-circle-btn" onclick="this.classList.toggle('checked')">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+        </div>
+
+        <!-- TV Time Recent Activity Feed (Screen 6) -->
+        <div class="section-label-bar" style="margin-top: 6px;">Recent activity</div>
+        <div class="activity-feed-card">
+          <img class="activity-feed-thumb" src="https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=100&q=80" alt="Lanterns">
+          <div style="flex: 1;">
+            <div style="font-size: 13px; font-weight: 700; color: #fff;">Lanterns</div>
+            <div style="font-size: 11px; color: var(--text-med);">S01E01 · Pilot</div>
+          </div>
+          <span style="font-size: 11px; color: var(--text-low);">3m ago</span>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 6: EXPLORE & METADATA SOURCES (CUEMARK SCREEN 14)
+           ======================================================== -->
+      <section class="screen-view" id="view-explore">
+        <div class="view-header">
+          <h1 class="view-title">Explore <span>Hub</span></h1>
+          <button class="icon-btn" onclick="triggerToast('Syncing all external sources...')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          </button>
+        </div>
+
+        <div class="section-label-bar">Insights & Activity</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div class="ui-card" style="cursor: pointer;" onclick="navigateTab('view-schedule')">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <div style="font-weight: 700; margin-top: 8px;">Timeline</div>
+            <div style="font-size: 11px; color: var(--text-low);">Airing calendar</div>
+          </div>
+          <div class="ui-card" style="cursor: pointer;" onclick="navigateTab('view-stats')">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-gold)" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            <div style="font-weight: 700; margin-top: 8px;">Statistics</div>
+            <div style="font-size: 11px; color: var(--text-low);">Collection health</div>
+          </div>
+        </div>
+
+        <!-- Full Metadata Sources List from CueMark Screen 14 -->
+        <div class="section-label-bar">Metadata Sources</div>
+        <div class="source-list">
+          <div class="source-card">
+            <div class="source-left">
+              <div class="source-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg></div>
+              <div>
+                <div class="source-title">TVmaze</div>
+                <div class="source-desc">TV Series, K-Drama, C-Drama, Anime</div>
+              </div>
+            </div>
+            <div class="source-ping" title="Connected"></div>
+          </div>
+
+          <div class="source-card">
+            <div class="source-left">
+              <div class="source-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
+              <div>
+                <div class="source-title">Wikidata</div>
+                <div class="source-desc">Movie, Game</div>
+              </div>
+            </div>
+            <div class="source-ping" title="Connected"></div>
+          </div>
+
+          <div class="source-card">
+            <div class="source-left">
+              <div class="source-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+              <div>
+                <div class="source-title">Open Library</div>
+                <div class="source-desc">Manga, Novel</div>
+              </div>
+            </div>
+            <div class="source-ping" title="Connected"></div>
+          </div>
+
+          <div class="source-card">
+            <div class="source-left">
+              <div class="source-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+              <div>
+                <div class="source-title">AniList</div>
+                <div class="source-desc">Anime, Manga, K-Drama, C-Drama</div>
+              </div>
+            </div>
+            <div class="source-ping" title="Connected"></div>
+          </div>
+
+          <div class="source-card">
+            <div class="source-left">
+              <div class="source-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+              <div>
+                <div class="source-title">MyAnimeList (Jikan)</div>
+                <div class="source-desc">Anime, Manga</div>
+              </div>
+            </div>
+            <div class="source-ping" title="Connected"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 7: STATISTICS & HEALTH (CUEMARK SCREEN 15)
+           ======================================================== -->
+      <section class="screen-view" id="view-stats">
+        <div class="view-header">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="icon-btn" onclick="navigateTab('view-collection')">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <h1 class="view-title">Statistics</h1>
+          </div>
+        </div>
+
+        <!-- Filter category chips from Screen 15 -->
+        <div class="category-strip">
+          <div class="cat-chip active">All categories</div>
+          <div class="cat-chip">TV Series</div>
+          <div class="cat-chip">Movie</div>
+          <div class="cat-chip">Anime</div>
+        </div>
+
+        <!-- Completion Arc Metric -->
+        <div class="ui-card health-stats-row">
+          <div>
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-low); font-weight: 700;">Completion rate</div>
+            <div class="health-metric-large">65%</div>
+            <div style="font-size: 12px; color: var(--text-med); margin-top: 4px;">Across 7 tracked items</div>
+          </div>
+          <div class="donut-holder">
+            <svg viewBox="0 0 80 80">
+              <circle class="donut-bg" cx="40" cy="40" r="36" />
+              <circle class="donut-fill" cx="40" cy="40" r="36" />
+            </svg>
+            <div class="donut-label">65%</div>
+          </div>
+        </div>
+
+        <!-- 3-Way Summary Grid -->
+        <div class="stats-tri-grid">
+          <div class="stat-tile">
+            <span class="stat-tile-num" style="color: var(--accent-green);">2</span>
+            <span class="stat-tile-label">Completed</span>
+            <span style="font-size:10px; color:var(--text-low);">Finished</span>
+          </div>
+          <div class="stat-tile">
+            <span class="stat-tile-num" style="color: var(--accent-cyan);">4</span>
+            <span class="stat-tile-label">In progress</span>
+            <span style="font-size:10px; color:var(--text-low);">Active now</span>
+          </div>
+          <div class="stat-tile">
+            <span class="stat-tile-num" style="color: var(--accent-gold);">1</span>
+            <span class="stat-tile-label">In queue</span>
+            <span style="font-size:10px; color:var(--text-low);">Ready</span>
+          </div>
+        </div>
+
+        <!-- Library Mix Bar -->
+        <div class="ui-card">
+          <div class="section-label-bar" style="margin-top:0;">
+            <span>Status breakdown</span>
+            <span class="badge-tag">7 tracked</span>
+          </div>
+          <div class="mix-bar">
+            <div class="mix-seg-done"></div>
+            <div class="mix-seg-prog"></div>
+            <div class="mix-seg-queue"></div>
+          </div>
+          <div class="mix-legend">
+            <span><div class="dot" style="background: var(--accent-green);"></div> Completed 2</span>
+            <span><div class="dot" style="background: var(--accent-cyan);"></div> In progress 4</span>
+            <span><div class="dot" style="background: var(--accent-gold);"></div> Queue 1</span>
+          </div>
+        </div>
+
+        <!-- Time Invested -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div class="stat-tile">
+            <span style="font-size: 10px; color: var(--text-low); font-weight:700;">TIME INVESTED</span>
+            <span style="font-size: 18px; font-weight: 800; color: var(--accent-cyan);">4d 19h</span>
+            <span style="font-size:10px; color:var(--text-low);">Estimated completed</span>
+          </div>
+          <div class="stat-tile">
+            <span style="font-size: 10px; color: var(--text-low); font-weight:700;">REMAINING</span>
+            <span style="font-size: 18px; font-weight: 800; color: var(--accent-rose);">1d 7h</span>
+            <span style="font-size:10px; color:var(--text-low);">Estimated to finish</span>
+          </div>
+        </div>
+
+        <!-- Activity Chart -->
+        <div class="ui-card">
+          <div class="section-label-bar" style="margin-top:0;">
+            <span>Watch time · This week</span>
+            <span style="font-size:11px; color:var(--text-low);">4d 21h</span>
+          </div>
+          <div class="bar-chart-row">
+            <div class="chart-col"><div class="bar-pill" style="height: 35%;"></div><span class="col-day">M</span></div>
+            <div class="chart-col"><div class="bar-pill" style="height: 50%;"></div><span class="col-day">T</span></div>
+            <div class="chart-col"><div class="bar-pill" style="height: 20%;"></div><span class="col-day">W</span></div>
+            <div class="chart-col"><div class="bar-pill" style="height: 80%;"></div><span class="col-day">T</span></div>
+            <div class="chart-col"><div class="bar-pill" style="height: 60%;"></div><span class="col-day">F</span></div>
+            <div class="chart-col"><div class="bar-pill highlight" style="height: 95%;"></div><span class="col-day" style="color:var(--accent-primary); font-weight:800;">S</span></div>
+            <div class="chart-col"><div class="bar-pill" style="height: 40%;"></div><span class="col-day">S</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================
+           SCREEN 8: SETTINGS (CUEMARK SCREEN 13 FULL SPEC)
+           ======================================================== -->
+      <section class="screen-view" id="view-settings">
+        <div class="view-header">
+          <h1 class="view-title">Settings</h1>
+        </div>
+        <div style="font-size: 12px; color: var(--text-med); margin-top: -12px;">Personalize CueMark</div>
+
+        <div class="search-bar-wrap">
+          <div class="search-input-box">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" class="search-input" placeholder="Search all settings...">
+          </div>
+        </div>
+
+        <!-- PERSONALIZE -->
+        <div class="settings-group-label">Personalize</div>
+        <div class="settings-list-card">
+          <div class="settings-row" onclick="triggerToast('Customized Theme & Colors')">
+            <div class="settings-row-left">
+              <div class="settings-icon-holder"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 0 0 20v-4a6 6 0 0 1 0-12z"/></svg></div>
+              <div>
+                <div class="settings-title">Appearance</div>
+                <div class="settings-desc">Theme, accessibility, and visual preferences.</div>
+              </div>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-row-left">
+              <div class="settings-icon-holder"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></div>
+              <div>
+                <div class="settings-title">Dashboard & Navigation</div>
+                <div class="settings-desc">Dashboard layout and navigation preferences.</div>
+              </div>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-row-left">
+              <div class="settings-icon-holder"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+              <div>
+                <div class="settings-title">Tracking</div>
+                <div class="settings-desc">Statuses, progress, and category setup.</div>
+              </div>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        </div>
+
+        <!-- YOUR LIBRARY -->
+        <div class="settings-group-label">Your Library</div>
+        <div class="settings-list-card">
+          <div class="settings-row" onclick="triggerToast('Cloud sync started')">
+            <div class="settings-row-left">
+              <div class="settings-icon-holder"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/></svg></div>
+              <div>
+                <div class="settings-title">Backup & Sync</div>
+                <div class="settings-desc">Backups, imports, exports, and sync.</div>
+              </div>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+
+          <div class="settings-row" onclick="triggerToast('Local posters cache cleared')">
+            <div class="settings-row-left">
+              <div class="settings-icon-holder"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></div>
+              <div>
+                <div class="settings-title">Metadata & Storage</div>
+                <div class="settings-desc">Cache and device storage.</div>
+              </div>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        </div>
+
+        <!-- Live Accent Switcher -->
+        <div class="ui-card">
+          <div class="section-label-bar" style="margin-top:0;">Accent Lighting</div>
+          <div class="theme-selector-grid">
+            <div class="theme-swatch active" style="background: #8b5cf6;" onclick="applyAppTheme('default', this)">Violet</div>
+            <div class="theme-swatch" style="background: #f59e0b;" onclick="applyAppTheme('amber', this)">Amber</div>
+            <div class="theme-swatch" style="background: #10b981;" onclick="applyAppTheme('emerald', this)">Emerald</div>
+            <div class="theme-swatch" style="background: #f43f5e;" onclick="applyAppTheme('rose', this)">Rose</div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- FLOATING ACTION BUTTON (+) -->
+    <button class="floating-fab" onclick="navigateTab('view-catalog')">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+
+    <!-- BOTTOM APP NAVIGATION DOCK -->
+    <nav class="bottom-dock-nav">
+      <button class="nav-tab-btn active" id="tab-nav-home" onclick="navigateTab('view-collection', this)">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span>Home</span>
+      </button>
+
+      <button class="nav-tab-btn" onclick="navigateTab('view-schedule', this)">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>Timeline</span>
+      </button>
+
+      <button class="nav-tab-btn" onclick="navigateTab('view-catalog', this)">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span>Catalog</span>
+      </button>
+
+      <button class="nav-tab-btn" onclick="navigateTab('view-explore', this)">
+        <svg viewBox="0 0 24 24"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
+        <span>Explore</span>
+      </button>
+
+      <button class="nav-tab-btn" onclick="navigateTab('view-settings', this)">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- SCRIPT CONTROLLER -->
+  <script>
+    /* Tab Routing Engine */
+    function navigateTab(viewId, btnElem) {
+      document.querySelectorAll('.screen-view').forEach(v => v.classList.remove('active'));
+      const target = document.getElementById(viewId);
+      if (target) {
+        target.classList.add('active');
+        target.scrollTop = 0;
+      }
+
+      if (btnElem) {
+        document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
+        btnElem.classList.add('active');
+      }
+    }
+
+    /* Subtab Toggle */
+    function switchSubTab(elem, mode) {
+      document.querySelectorAll('.subtab-link').forEach(l => l.classList.remove('active'));
+      elem.classList.add('active');
+      triggerToast('Viewing ' + elem.innerText);
+    }
+
+    /* Shows/Movies Segment Toggle */
+    function toggleSegment(btn) {
+      document.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      triggerToast('Switched to ' + btn.innerText);
+    }
+
+    /* Accordion Toggle */
+    function toggleAccordion(id, header) {
+      const el = document.getElementById(id);
+      const icon = header.querySelector('svg');
+      if (el.style.display === 'none') {
+        el.style.display = 'flex';
+        icon.style.transform = 'rotate(0deg)';
+      } else {
+        el.style.display = 'none';
+        icon.style.transform = 'rotate(-90deg)';
+      }
+    }
+
+    /* Deep Dive Navigation */
+    function openLanternsDetail() {
+      navigateTab('view-details-lanterns');
+    }
+    function openFriendsDetail() {
+      navigateTab('view-details-friends');
+    }
+
+    /* Category Filter Chip */
+    function filterCategory(chip) {
+      document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      triggerToast('Filtered by ' + chip.innerText.trim());
+    }
+
+    /* Local Collection Filtering */
+    function filterLocalCollection(query) {
+      const q = query.toLowerCase();
+      document.querySelectorAll('#inProgressSection .media-card-item').forEach(card => {
+        const title = card.querySelector('.card-title').innerText.toLowerCase();
+        card.style.display = title.includes(q) ? 'flex' : 'none';
+      });
+    }
+
+    /* Catalog Filtering */
+    function filterCatalogList(query) {
+      const q = query.toLowerCase();
+      document.querySelectorAll('#catalogCardsContainer .catalog-item-card').forEach(card => {
+        const title = card.querySelector('.catalog-name').innerText.toLowerCase();
+        card.style.display = title.includes(q) ? 'flex' : 'none';
+      });
+    }
+
+    /* Hero Checkmark Episode Action */
+    function toggleHeroEpisode(btn) {
+      btn.classList.toggle('checked');
+      const isChecked = btn.classList.contains('checked');
+      const bar = document.getElementById('heroProgressFill');
+      bar.style.width = isChecked ? '100%' : '88%';
+      triggerToast(isChecked ? 'Completed S1:E8 Dirt and Stars' : 'Marked S1:E8 unwatched');
+    }
+
+    /* In-Progress List Checkmark */
+    function toggleListEpisode(btn, fillId, minPct, maxPct, labelId) {
+      btn.classList.toggle('checked');
+      const isChecked = btn.classList.contains('checked');
+      const bar = document.getElementById(fillId);
+      const val = isChecked ? maxPct : minPct;
+      if (bar) bar.style.width = val + '%';
+      if (labelId) document.getElementById(labelId).innerText = val + '%';
+      triggerToast(isChecked ? 'Marked episode watched' : 'Marked episode unwatched');
+    }
+
+    /* Episode checklist toggle */
+    function toggleEpisodeWithAir(btn) {
+      btn.classList.toggle('checked');
+      triggerToast(btn.classList.contains('checked') ? 'Marked watched' : 'Marked unwatched');
+    }
+
+    /* Mark all Lanterns watched */
+    function markAllLanternsWatched() {
+      document.querySelectorAll('#lanternsEpList .check-circle-btn').forEach(b => b.classList.add('checked'));
+      const yellow = document.getElementById('lanternsDetailYellowFill');
+      if (yellow) yellow.style.width = '100%';
+      triggerToast('All 8 episodes marked as watched!');
+    }
+
+    /* Interactive 5-Star Rating */
+    function setStars(score) {
+      const stars = document.getElementById('lanternsStarRow').children;
+      for (let i = 0; i < stars.length; i++) {
+        if (i < score) {
+          stars[i].classList.add('active');
+        } else {
+          stars[i].classList.remove('active');
+        }
+      }
+      triggerToast('Rated ' + score + ' / 5 stars');
+    }
+
+    /* Accent Customizer */
+    function applyAppTheme(name, elem) {
+      document.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+      elem.classList.add('active');
+      if (name === 'default') {
+        document.documentElement.removeAttribute('data-theme');
+      } else {
+        document.documentElement.setAttribute('data-theme', name);
+      }
+      triggerToast('Applied ' + elem.innerText + ' accent theme');
+    }
+
+    /* Toast Notification */
+    let toastTimer;
+    function triggerToast(msg) {
+      const t = document.getElementById('appToast');
+      document.getElementById('toastMsg').innerText = msg;
+      t.classList.add('visible');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        t.classList.remove('visible');
+      }, 2000);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,2282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CueMark - Universal Media Tracking Suite</title>
+  
+  <!-- Modern Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    /* ==========================================================================
+       1. DESIGN SYSTEM TOKENS & DYNAMIC THEMES
+       ========================================================================== */
+    :root {
+      --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+
+      /* Base Canvas Scale (OLED Pure Black default) */
+      --bg-canvas: #000000;
+      --bg-base: #06070a;
+      --bg-surface: #0e111a;
+      --bg-elevated: #151824;
+      --bg-card: #12141f;
+      --bg-glass: rgba(14, 17, 26, 0.88);
+      --bg-glass-heavy: rgba(6, 7, 10, 0.95);
+
+      /* Dynamic Signature Theme Colors */
+      --brand-primary: #8b5cf6;
+      --brand-primary-hover: #7c3aed;
+      --brand-primary-light: #a78bfa;
+      --brand-glow: rgba(139, 92, 246, 0.38);
+      --brand-subtle: rgba(139, 92, 246, 0.14);
+
+      /* Semantic 6-Format System */
+      --format-tv: #06b6d4;
+      --format-tv-subtle: rgba(6, 182, 212, 0.16);
+      --format-movie: #f59e0b;
+      --format-movie-subtle: rgba(245, 158, 11, 0.16);
+      --format-game: #10b981;
+      --format-game-subtle: rgba(16, 185, 129, 0.16);
+      --format-anime: #ec4899;
+      --format-anime-subtle: rgba(236, 72, 153, 0.16);
+      --format-manga: #f97316;
+      --format-manga-subtle: rgba(249, 115, 22, 0.16);
+      --format-novel: #a855f7;
+      --format-novel-subtle: rgba(168, 85, 247, 0.16);
+
+      /* Semantic Accents */
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-cyan: #06b6d4;
+      --accent-rose: #f43f5e;
+      --accent-yellow: #f5c518;
+
+      /* Text Scale */
+      --text-white: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+
+      /* Borders & Shadows */
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-card: rgba(255, 255, 255, 0.12);
+      --border-focus: rgba(139, 92, 246, 0.55);
+
+      --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.6);
+      --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.85);
+      --shadow-glow: 0 0 24px var(--brand-glow);
+
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-xl: 28px;
+      --radius-full: 9999px;
+
+      --nav-height: 70px;
+      --status-height: 44px;
+    }
+
+    /* Selectable Accent Palettes */
+    [data-theme="amber"] {
+      --brand-primary: #f59e0b;
+      --brand-primary-hover: #d97706;
+      --brand-primary-light: #fbbf24;
+      --brand-glow: rgba(245, 158, 11, 0.42);
+      --brand-subtle: rgba(245, 158, 11, 0.16);
+      --border-focus: rgba(245, 158, 11, 0.6);
+    }
+    [data-theme="emerald"] {
+      --brand-primary: #10b981;
+      --brand-primary-hover: #059669;
+      --brand-primary-light: #34d399;
+      --brand-glow: rgba(16, 185, 129, 0.42);
+      --brand-subtle: rgba(16, 185, 129, 0.16);
+      --border-focus: rgba(16, 185, 129, 0.6);
+    }
+    [data-theme="rose"] {
+      --brand-primary: #f43f5e;
+      --brand-primary-hover: #e11d48;
+      --brand-primary-light: #fb7185;
+      --brand-glow: rgba(244, 63, 94, 0.42);
+      --brand-subtle: rgba(244, 63, 94, 0.16);
+      --border-focus: rgba(244, 63, 94, 0.6);
+    }
+    [data-theme="cyan"] {
+      --brand-primary: #06b6d4;
+      --brand-primary-hover: #0891b2;
+      --brand-primary-light: #67e8f9;
+      --brand-glow: rgba(6, 182, 212, 0.42);
+      --brand-subtle: rgba(6, 182, 212, 0.16);
+      --border-focus: rgba(6, 182, 212, 0.6);
+    }
+
+    /* ==========================================================================
+       2. RESET & HARNESS
+       ========================================================================== */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg-canvas);
+      background-image: 
+        radial-gradient(circle at 50% 0%, rgba(139, 92, 246, 0.12) 0%, transparent 60%),
+        radial-gradient(circle at 100% 100%, rgba(6, 182, 212, 0.06) 0%, transparent 50%);
+      color: var(--text-white);
+      font-family: var(--font-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 16px 12px 32px;
+      overflow-x: hidden;
+      transition: background-color 0.3s ease;
+    }
+
+    input, textarea, button, select {
+      font-family: inherit;
+      color: inherit;
+    }
+
+    /* Desktop Navigation Top Bar */
+    .desktop-toolbar {
+      width: 100%;
+      max-width: 1100px;
+      background: var(--bg-glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 12px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      box-shadow: var(--shadow-md);
+      z-index: 120;
+    }
+
+    .brand-cluster {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      font-size: 17px;
+      letter-spacing: -0.5px;
+      color: #fff;
+    }
+    .brand-icon-box {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--brand-primary), #ec4899);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 14px var(--brand-glow);
+    }
+
+    .desktop-screen-switcher {
+      display: flex;
+      background: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-full);
+      padding: 4px;
+      gap: 3px;
+      overflow-x: auto;
+      max-width: 100%;
+    }
+    .desktop-nav-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .desktop-nav-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .desktop-nav-btn.active {
+      background: var(--brand-primary);
+      color: #fff;
+      box-shadow: 0 2px 10px var(--brand-glow);
+    }
+
+    .btn-toolbar {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-white);
+      padding: 8px 14px;
+      border-radius: var(--radius-full);
+      font-size: 12.5px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-toolbar:hover {
+      background: var(--bg-elevated);
+      border-color: var(--border-card);
+    }
+    .btn-toolbar-primary {
+      background: linear-gradient(135deg, var(--brand-primary), #7c3aed);
+      border: none;
+      box-shadow: 0 4px 14px var(--brand-glow);
+    }
+
+    /* Device Hardware Wrapper */
+    .device-shell {
+      width: 100%;
+      max-width: 424px;
+      height: 900px;
+      background: var(--bg-base);
+      border-radius: 48px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 
+        0 30px 100px rgba(0, 0, 0, 0.95),
+        0 0 0 10px #131722,
+        0 0 0 11px rgba(255, 255, 255, 0.08);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: max-width 0.35s ease, height 0.35s ease, border-radius 0.35s ease;
+    }
+    .device-shell.expanded-mode {
+      max-width: 720px;
+      height: 95vh;
+      border-radius: 24px;
+    }
+
+    /* Device Top Status Bar */
+    .status-bar {
+      height: var(--status-height);
+      padding: 0 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--text-white);
+      z-index: 80;
+      background: linear-gradient(180deg, rgba(6, 7, 10, 0.98) 0%, rgba(6, 7, 10, 0) 100%);
+      pointer-events: none;
+    }
+    .dynamic-island {
+      width: 114px;
+      height: 24px;
+      background: #000;
+      border-radius: 20px;
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    .island-lens {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #141722;
+      border: 1px solid #23283a;
+    }
+    .island-pulse {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 6px var(--accent-green);
+    }
+
+    /* Screen Stage Viewport */
+    .screen-viewport {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    .screen-view {
+      position: absolute;
+      inset: 0;
+      bottom: var(--nav-height);
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 12px 18px 24px;
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+      scrollbar-width: none;
+    }
+    .screen-view::-webkit-scrollbar { display: none; }
+    .screen-view.active {
+      display: flex;
+      animation: viewSlide 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes viewSlide {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ==========================================================================
+       3. ATOMIC UI COMPONENTS & FORMAT BADGES
+       ========================================================================== */
+    .view-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 4px;
+    }
+    .view-title-main {
+      font-size: 27px;
+      font-weight: 800;
+      letter-spacing: -0.7px;
+      color: #fff;
+    }
+    .view-title-main span {
+      color: var(--brand-primary);
+    }
+    .view-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .icon-btn-pill {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-white);
+      height: 38px;
+      padding: 0 14px;
+      border-radius: var(--radius-full);
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+    }
+    .icon-btn-pill:hover {
+      background: var(--bg-elevated);
+      border-color: var(--border-card);
+    }
+
+    .icon-btn-circle {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-white);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      flex-shrink: 0;
+    }
+    .icon-btn-circle:hover {
+      background: var(--bg-elevated);
+      border-color: var(--border-card);
+      transform: translateY(-1px);
+    }
+
+    /* Format Badge System */
+    .format-badge {
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      padding: 3px 8px;
+      border-radius: var(--radius-full);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .badge-tv { background: var(--format-tv-subtle); color: var(--format-tv); border: 1px solid rgba(6,182,212,0.3); }
+    .badge-movie { background: var(--format-movie-subtle); color: var(--format-movie); border: 1px solid rgba(245,158,11,0.3); }
+    .badge-game { background: var(--format-game-subtle); color: var(--format-game); border: 1px solid rgba(16,185,129,0.3); }
+    .badge-anime { background: var(--format-anime-subtle); color: var(--format-anime); border: 1px solid rgba(236,72,153,0.3); }
+    .badge-manga { background: var(--format-manga-subtle); color: var(--format-manga); border: 1px solid rgba(249,115,22,0.3); }
+    .badge-novel { background: var(--format-novel-subtle); color: var(--format-novel); border: 1px solid rgba(168,85,247,0.3); }
+
+    .source-origin-tag {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-dim);
+      background: var(--bg-elevated);
+      padding: 2px 7px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    /* Tactile TV Time Checkmark Button */
+    .tactile-check-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: transparent;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      color: transparent;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+      flex-shrink: 0;
+    }
+    .tactile-check-btn svg {
+      width: 17px;
+      height: 17px;
+      stroke-width: 3.2;
+      stroke: currentColor;
+    }
+    .tactile-check-btn:hover {
+      border-color: rgba(255, 255, 255, 0.45);
+      transform: scale(1.05);
+    }
+    .tactile-check-btn:active { transform: scale(0.88); }
+    .tactile-check-btn.checked {
+      background: var(--accent-amber);
+      border-color: var(--accent-amber);
+      color: #000;
+      box-shadow: 0 0 16px rgba(245, 158, 11, 0.45);
+    }
+
+    /* Multi-Format Progress Steppers */
+    .stepper-btn-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .stepper-quick-pill {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-white);
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .stepper-quick-pill:hover {
+      background: var(--brand-primary);
+      border-color: transparent;
+    }
+
+    /* Horizontal Category Strip */
+    .category-scroll-strip {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      margin: 0 -18px;
+      padding: 2px 18px;
+      scrollbar-width: none;
+    }
+    .category-scroll-strip::-webkit-scrollbar { display: none; }
+
+    .cat-chip-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: var(--radius-full);
+      font-size: 12.5px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .cat-chip-btn:hover { color: #fff; border-color: var(--border-card); }
+    .cat-chip-btn.active {
+      background: var(--brand-primary);
+      color: #fff;
+      border-color: transparent;
+      box-shadow: 0 3px 14px var(--brand-glow);
+    }
+
+    /* Universal Search Box */
+    .search-input-wrap {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .search-input-wrap:focus-within {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px var(--brand-subtle);
+    }
+    .search-input-wrap input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #fff;
+      font-size: 13.5px;
+      width: 100%;
+    }
+    .search-input-wrap input::placeholder { color: var(--text-dim); }
+
+    /* Cards Foundation */
+    .app-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      position: relative;
+    }
+
+    /* ==========================================================================
+       4. SCREEN 1: OMNI-COLLECTION & FOCUS HERO
+       ========================================================================== */
+    .hero-continue-banner {
+      position: relative;
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+      min-height: 220px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      border: 1px solid var(--border-card);
+      background: 
+        linear-gradient(180deg, rgba(6, 7, 10, 0.15) 0%, rgba(6, 7, 10, 0.98) 95%),
+        url('https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=750&q=80') center/cover;
+      box-shadow: var(--shadow-lg);
+      cursor: pointer;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .hero-continue-banner:hover { border-color: rgba(255, 255, 255, 0.25); }
+
+    .hero-top-cluster {
+      align-self: flex-start;
+      margin-bottom: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .hero-status-pill {
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .live-dot-pulse {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--brand-primary-light);
+      box-shadow: 0 0 8px var(--brand-primary);
+      animation: pulseAnim 2s infinite;
+    }
+    @keyframes pulseAnim {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .hero-title-group h2 {
+      font-size: 24px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.4px;
+    }
+    .hero-title-group p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+
+    .progress-bar-track {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: var(--radius-full);
+      overflow: hidden;
+      margin: 10px 0 14px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--brand-primary), #a855f7);
+      border-radius: var(--radius-full);
+      transition: width 0.35s ease;
+    }
+
+    .btn-resume-large {
+      flex: 1;
+      height: 44px;
+      background: var(--brand-primary);
+      border: none;
+      border-radius: var(--radius-md);
+      color: #fff;
+      font-size: 13.5px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px var(--brand-glow);
+      transition: all 0.2s;
+    }
+    .btn-resume-large:hover {
+      background: var(--brand-primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .section-bar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      font-weight: 800;
+      color: #fff;
+      cursor: pointer;
+    }
+    .counter-pill {
+      font-size: 11px;
+      background: var(--bg-elevated);
+      color: var(--brand-primary-light);
+      border: 1px solid var(--border-subtle);
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      font-weight: 700;
+      margin-left: 6px;
+    }
+
+    /* In-Progress Shelf Items */
+    .in-progress-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .media-shelf-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .media-shelf-card:hover {
+      border-color: var(--border-card);
+      transform: translateY(-1px);
+    }
+
+    .poster-art-thumb {
+      width: 52px;
+      height: 72px;
+      border-radius: var(--radius-sm);
+      object-fit: cover;
+      background: var(--bg-elevated);
+      flex-shrink: 0;
+      border: 1px solid var(--border-subtle);
+    }
+    .shelf-card-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+    .shelf-card-row1 {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .shelf-card-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .shelf-card-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* ==========================================================================
+       5. SCREEN 2: POLYMORPHIC DETAIL VIEW (ADAPTIVE ADAPTER)
+       ========================================================================== */
+    .details-hero-backdrop {
+      position: relative;
+      margin: -12px -18px 0;
+      height: 250px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 16px 18px 18px;
+      background-size: cover;
+      background-position: center;
+    }
+    .details-hero-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(6, 7, 10, 0.25) 0%, var(--bg-base) 100%);
+      pointer-events: none;
+    }
+
+    .adaptive-control-panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Episode Checklist items */
+    .episode-line-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .episode-row-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* ==========================================================================
+       6. SCREEN 4: 11-METADATA PROVIDER MONITOR
+       ========================================================================== */
+    .provider-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .provider-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .provider-card:hover { background: var(--bg-elevated); }
+    .provider-icon-badge {
+      width: 38px;
+      height: 38px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      color: var(--brand-primary-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    /* ==========================================================================
+       7. SCREEN 6: OMNI-STATISTICS
+       ========================================================================== */
+    .stats-triad-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .stat-tile {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .stat-tile-num {
+      font-size: 21px;
+      font-weight: 800;
+    }
+
+    .format-mix-bar {
+      height: 8px;
+      border-radius: var(--radius-full);
+      display: flex;
+      overflow: hidden;
+      gap: 2px;
+      margin: 10px 0 6px;
+    }
+    .format-mix-seg { height: 100%; transition: width 0.4s ease; }
+
+    /* Radial Chart */
+    .radial-svg-box {
+      width: 84px;
+      height: 84px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .radial-svg-box svg {
+      transform: rotate(-90deg);
+      width: 100%;
+      height: 100%;
+    }
+    .radial-svg-box circle {
+      fill: none;
+      stroke-width: 8;
+      stroke-linecap: round;
+    }
+
+    /* ==========================================================================
+       8. BOTTOM DOCKED NAVIGATION
+       ========================================================================== */
+    .bottom-app-dock {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: var(--nav-height);
+      background: var(--bg-glass-heavy);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      padding: 0 8px 6px;
+      z-index: 100;
+    }
+    .nav-dock-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-dim);
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      background: transparent;
+      border: none;
+      padding: 6px 4px;
+      transition: all 0.2s ease;
+    }
+    .nav-dock-btn svg {
+      width: 21px;
+      height: 21px;
+      stroke-width: 2.2;
+      stroke: currentColor;
+      fill: none;
+    }
+    .nav-dock-btn.active { color: var(--brand-primary-light); }
+
+    .floating-fab {
+      position: absolute;
+      bottom: calc(var(--nav-height) + 14px);
+      right: 18px;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand-primary), #ec4899);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      box-shadow: 0 8px 24px var(--brand-glow);
+      cursor: pointer;
+      z-index: 90;
+      transition: transform 0.2s;
+    }
+    .floating-fab:hover { transform: scale(1.08); }
+    .floating-fab:active { transform: scale(0.92); }
+
+    /* Modals & Toasts */
+    .modal-backdrop-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      z-index: 150;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-backdrop-overlay.open { display: flex; }
+    .modal-dialog-box {
+      width: 100%;
+      max-width: 380px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-card);
+      border-radius: var(--radius-xl);
+      padding: 20px;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .toast-system-pill {
+      position: fixed;
+      bottom: 24px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-focus);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: var(--radius-full);
+      font-size: 13px;
+      font-weight: 700;
+      box-shadow: var(--shadow-lg);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 9999;
+      pointer-events: none;
+    }
+    .toast-system-pill.visible {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- DESKTOP TOP MANAGEMENT TOOLBAR -->
+  <header class="desktop-toolbar">
+    <div class="brand-cluster">
+      <div class="brand-icon-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </div>
+      <span>CueMark <span style="font-weight:400; color:var(--text-muted); font-size:14px;">Universal Studio</span></span>
+    </div>
+
+    <!-- Desktop Direct Screen Switcher -->
+    <div class="desktop-screen-switcher" role="tablist">
+      <button class="desktop-nav-btn active" onclick="CueRouter.navigate('collection')">1. Collection</button>
+      <button class="desktop-nav-btn" onclick="CueRouter.navigate('schedule')">2. Timeline</button>
+      <button class="desktop-nav-btn" onclick="CueRouter.navigate('catalog')">3. Catalog</button>
+      <button class="desktop-nav-btn" onclick="CueRouter.navigate('sources')">4. 11x Metadata Hub</button>
+      <button class="desktop-nav-btn" onclick="CueRouter.navigate('stats')">5. Health & Analytics</button>
+      <button class="desktop-nav-btn" onclick="CueRouter.navigate('settings')">6. Settings</button>
+    </div>
+
+    <div class="desktop-actions-group">
+      <button class="btn-toolbar" onclick="toggleViewportFrame()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+        <span id="btnFrameToggleText">Expand Frame</span>
+      </button>
+
+      <button class="btn-toolbar btn-toolbar-primary" onclick="CueExporter.exportJsonBackup()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export Library JSON
+      </button>
+    </div>
+  </header>
+
+  <!-- DEVICE SIMULATOR SHELL -->
+  <main class="device-shell" id="mainDeviceShell">
+    
+    <!-- Phone Top Status Bar -->
+    <div class="status-bar">
+      <span id="liveClockDisplay">10:32</span>
+      <div class="dynamic-island" onclick="triggerToast('CueMark Engine: 11 APIs Connected 🟢')">
+        <div class="island-lens"></div>
+        <div class="island-pulse"></div>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"/><line x1="22" y1="11" x2="22" y2="13"/></svg>
+        <span style="font-size:11px;">94%</span>
+      </div>
+    </div>
+
+    <!-- Active Screens Flow Container -->
+    <div class="screen-viewport">
+
+      <!-- ====================================================
+           SCREEN 1: OMNI-COLLECTION & FOCUS HERO
+           ==================================================== -->
+      <section id="screen-collection" class="screen-view active">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title-main">My <span>Collection</span></h1>
+            <p class="view-subtitle" id="omniCollectionStats">7 items · 6 formats connected</p>
+          </div>
+          <button class="icon-btn-pill" onclick="CueRouter.navigate('schedule')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Timeline
+          </button>
+        </div>
+
+        <!-- 6-Format Selector Strip -->
+        <div class="category-scroll-strip" id="formatCategoryFilterStrip">
+          <button class="cat-chip-btn active" onclick="filterByFormat(this, 'all')">All Formats</button>
+          <button class="cat-chip-btn" onclick="filterByFormat(this, 'game')">🎮 Games</button>
+          <button class="cat-chip-btn" onclick="filterByFormat(this, 'tv')">📺 TV Series</button>
+          <button class="cat-chip-btn" onclick="filterByFormat(this, 'anime')">⛩️ Anime</button>
+          <button class="cat-chip-btn" onclick="filterByFormat(this, 'manga')">📖 Manga</button>
+          <button class="cat-chip-btn" onclick="filterByFormat(this, 'novel')">📚 Novels</button>
+          <button class="cat-chip-btn" onclick="filterByFormat(this, 'movie')">🎬 Movies</button>
+        </div>
+
+        <!-- Live Search Field -->
+        <div class="search-input-wrap">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="collectionSearchInput" placeholder="Search collection (Cyberpunk, Lanterns, Dune, Berserk)..." oninput="CueStore.filterCollection(this.value)">
+        </div>
+
+        <!-- High-Attention Focus Hero (Dynamic Polymorphic Banner) -->
+        <div class="hero-continue-banner" id="mainFocusHero" onclick="CueRouter.openDetail('cyberpunk')">
+          <div class="hero-top-cluster">
+            <div class="hero-status-pill">
+              <span class="live-dot-pulse"></span>
+              Current Focus
+            </div>
+            <span class="format-badge badge-game">Steam PC</span>
+          </div>
+
+          <div class="hero-title-group">
+            <h2 id="heroShowTitle">Cyberpunk 2077</h2>
+            <p id="heroShowSubtitle">64/90 hrs played · 38/54 Achievements (71%)</p>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" id="heroProgressFillBar" style="width: 71%;"></div>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:10px; align-items:center;" onclick="event.stopPropagation()">
+            <button class="btn-resume-large" onclick="triggerToast('Launching game via Steam URL Protocol...')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Resume Game
+            </button>
+            <div class="stepper-btn-group">
+              <button class="stepper-quick-pill" onclick="CueStore.logGameHours('cyberpunk', 1)">+1h</button>
+              <button class="stepper-quick-pill" onclick="CueStore.logGameHours('cyberpunk', 3)">+3h</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- In-Progress Accordion Section -->
+        <div>
+          <div class="section-bar-header" onclick="toggleSectionAccordion('inProgressShelf', this)">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--brand-primary-light);"></span>
+              <span>In Active Progress</span>
+              <span class="counter-pill" id="inProgressBadgeCount">5</span>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+
+          <div class="in-progress-list" id="inProgressShelf">
+            <!-- Dynamic Media Shelf Cards Rendered Here -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SCREEN 2: ADAPTIVE POLYMORPHIC DETAIL SCREEN
+           ==================================================== -->
+      <section id="screen-detail-view" class="screen-view">
+        <div class="details-hero-backdrop" id="detailBackdrop">
+          <div class="details-hero-overlay"></div>
+          
+          <div style="display:flex; justify-content:space-between; align-items:center; z-index:10;">
+            <button class="icon-btn-circle" onclick="CueRouter.navigate('collection')">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <span class="source-origin-tag" id="detailSourceBadge">TVmaze</span>
+              <button class="icon-btn-circle" onclick="openTrailerModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div style="z-index:10; display:flex; flex-direction:column; gap:4px;">
+            <div style="display:flex; gap:6px; align-items:center;">
+              <span class="format-badge" id="detailFormatBadge">TV Series</span>
+              <span class="source-origin-tag" style="color:var(--accent-amber);" id="detailRatingBadge">★ 8.4</span>
+            </div>
+            <h1 class="view-title-main" style="font-size:26px;" id="detailTitleText">Title</h1>
+            <p style="font-size:12px; color:var(--text-muted);" id="detailMetaSubtext">Platform · Genre</p>
+          </div>
+        </div>
+
+        <!-- Polymorphic Action & Progress Adapter Panel -->
+        <div class="adaptive-control-panel" id="adaptiveControllerMount">
+          <!-- Injected dynamically based on format: Game, Manga, Novel, TV, Anime, Movie -->
+        </div>
+
+        <!-- Synopsis Paragraph -->
+        <div>
+          <span style="font-size:13px; font-weight:800; color:#fff; display:block; margin-bottom:4px;">Overview</span>
+          <p style="font-size:13px; line-height:1.6; color:var(--text-muted);" id="detailSynopsisText">Overview content...</p>
+        </div>
+
+        <!-- Sub-Component (e.g. Granular Episode Stack for TV / Chapters for Manga) -->
+        <div id="detailSublistContainer">
+          <!-- Dynamic episodes or chapters mount here -->
+        </div>
+
+        <!-- Metadata Sources Transparency Card -->
+        <div class="app-card">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:13px; font-weight:700;">Metadata Lineage</span>
+            <span class="source-origin-tag" id="detailMetaProviderName">Provider</span>
+          </div>
+          <p style="font-size:11.5px; color:var(--text-muted); margin-top:6px;" id="detailMetaDescription">
+            Enriched using primary open data endpoints and cached local storage.
+          </p>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SCREEN 3: AIRING TIMELINE & BROADCAST SCHEDULE
+           ==================================================== -->
+      <section id="screen-schedule" class="screen-view">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title-main">Airing <span>Timeline</span></h1>
+            <p class="view-subtitle">Broadcast calendar & alerts</p>
+          </div>
+          <button class="icon-btn-pill" onclick="triggerToast('iCal calendar export generated')">Sync iCal</button>
+        </div>
+
+        <!-- Airing Today -->
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; font-weight:800; color:var(--brand-primary-light);">
+            <span>Today's Releases</span>
+            <span style="color:var(--text-dim);">Sunday, 4 Oct</span>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+            <div class="media-shelf-card" onclick="CueRouter.openDetail('lanterns')">
+              <img class="poster-art-thumb" src="https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=120&q=80" alt="Lanterns">
+              <div class="shelf-card-info">
+                <div class="shelf-card-row1">
+                  <span class="shelf-card-title">Lanterns</span>
+                  <span style="font-family:var(--font-mono); font-size:11px; color:var(--accent-amber); font-weight:700;">6:30 AM</span>
+                </div>
+                <span class="shelf-card-subtitle">S01 E08 · Dirt and Stars (Finale) · HBO Max</span>
+              </div>
+              <button class="tactile-check-btn checked" onclick="event.stopPropagation(); triggerToast('Marked Lanterns Finale watched!')">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tomorrow -->
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; font-weight:800; color:var(--brand-primary-light);">
+            <span>Tomorrow</span>
+            <span style="color:var(--text-dim);">Monday, 5 Oct</span>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+            <div class="media-shelf-card">
+              <img class="poster-art-thumb" src="https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=120&q=80" alt="Simpsons">
+              <div class="shelf-card-info">
+                <div class="shelf-card-row1">
+                  <span class="shelf-card-title">The Simpsons</span>
+                  <span style="font-family:var(--font-mono); font-size:11px; color:var(--accent-amber); font-weight:700;">5:30 AM</span>
+                </div>
+                <span class="shelf-card-subtitle">S38 E02 · Diary of a Chimpy Kid · FOX</span>
+              </div>
+              <span class="format-badge badge-tv">TV</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Later this week -->
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; font-weight:800; color:var(--brand-primary-light);">
+            <span>Later This Week</span>
+            <span style="color:var(--text-dim);">10 - 14 Oct</span>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+            <div class="media-shelf-card">
+              <img class="poster-art-thumb" src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=120&q=80" alt="Black Clover">
+              <div class="shelf-card-info">
+                <div class="shelf-card-row1">
+                  <span class="shelf-card-title">Black Clover</span>
+                  <span class="source-origin-tag" style="color:var(--accent-amber);">In 6 days</span>
+                </div>
+                <span class="shelf-card-subtitle">S02 E02 · Episode 2 · Tokyo TV</span>
+              </div>
+              <span class="format-badge badge-anime">Anime</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SCREEN 4: UNIVERSAL CATALOG (TVmaze, Steam, MangaDex, etc.)
+           ==================================================== -->
+      <section id="screen-catalog" class="screen-view">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title-main">Universal <span>Catalog</span></h1>
+            <p class="view-subtitle">Powered by 11 indexed sources</p>
+          </div>
+          <button class="icon-btn-pill" onclick="openAddEntryModal()">+ Custom</button>
+        </div>
+
+        <div class="search-input-wrap">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="catalogLiveInput" placeholder="Search 80,000+ titles (Band of Brothers, Downton Abbey)..." oninput="CueStore.filterCatalog(this.value)">
+        </div>
+
+        <div class="in-progress-list" id="catalogListMount">
+          <!-- Catalog rendered dynamically -->
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SCREEN 5: 11-METADATA PROVIDER MONITOR HUB
+           ==================================================== -->
+      <section id="screen-sources" class="screen-view">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title-main">Metadata <span>Hub</span></h1>
+            <p class="view-subtitle">Live health status of 11 open data providers</p>
+          </div>
+          <button class="icon-btn-pill" onclick="testAllApis()">Ping All</button>
+        </div>
+
+        <div class="provider-grid">
+          <div class="provider-card" onclick="triggerToast('TVmaze API: Connected (32ms)')">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div class="provider-icon-badge" style="color:var(--format-tv);">TVM</div>
+              <div>
+                <div style="font-size:13.5px; font-weight:700;">TVmaze</div>
+                <div style="font-size:11px; color:var(--text-muted);">TV Series, K-Drama, C-Drama, Anime</div>
+              </div>
+            </div>
+            <span class="source-origin-tag" style="color:var(--accent-green);">32ms · Online</span>
+          </div>
+
+          <div class="provider-card" onclick="triggerToast('Steam + SteamDB: Connected (24ms)')">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div class="provider-icon-badge" style="color:var(--format-game);">STM</div>
+              <div>
+                <div style="font-size:13.5px; font-weight:700;">Steam & SteamDB</div>
+                <div style="font-size:11px; color:var(--text-muted);">PC Games, Playtime, Achievements</div>
+              </div>
+            </div>
+            <span class="source-origin-tag" style="color:var(--accent-green);">24ms · Online</span>
+          </div>
+
+          <div class="provider-card" onclick="triggerToast('MangaDex: v5 REST Online (41ms)')">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div class="provider-icon-badge" style="color:var(--format-manga);">MDX</div>
+              <div>
+                <div style="font-size:13.5px; font-weight:700;">MangaDex</div>
+                <div style="font-size:11px; color:var(--text-muted);">Manga, Chapters, Scanlation feeds</div>
+              </div>
+            </div>
+            <span class="source-origin-tag" style="color:var(--accent-green);">41ms · Online</span>
+          </div>
+
+          <div class="provider-card" onclick="triggerToast('Open Library: Connected (38ms)')">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div class="provider-icon-badge" style="color:var(--format-novel);">OPL</div>
+              <div>
+                <div style="font-size:13.5px; font-weight:700;">Open Library</div>
+                <div style="font-size:11px; color:var(--text-muted);">Manga, Novels, Classic Editions</div>
+              </div>
+            </div>
+            <span class="source-origin-tag" style="color:var(--accent-green);">38ms · Online</span>
+          </div>
+
+          <div class="provider-card" onclick="triggerToast('AniList: GraphQL Connected (21ms)')">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div class="provider-icon-badge" style="color:var(--format-anime);">ANI</div>
+              <div>
+                <div style="font-size:13.5px; font-weight:700;">AniList</div>
+                <div style="font-size:11px; color:var(--text-muted);">Anime, Manga, Seasonal Releases</div>
+              </div>
+            </div>
+            <span class="source-origin-tag" style="color:var(--accent-green);">21ms · Online</span>
+          </div>
+
+          <div class="provider-card" onclick="triggerToast('Wikidata + TMDB: Operational')">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div class="provider-icon-badge" style="color:var(--format-movie);">WIK</div>
+              <div>
+                <div style="font-size:13.5px; font-weight:700;">Wikidata & TMDB</div>
+                <div style="font-size:11px; color:var(--text-muted);">Movies, Video Games, Encyclopedias</div>
+              </div>
+            </div>
+            <span class="source-origin-tag" style="color:var(--accent-green);">48ms · Online</span>
+          </div>
+
+          <div class="provider-card" onclick="triggerToast('Google Books API: Ready')">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div class="provider-icon-badge" style="color:var(--format-novel);">GOK</div>
+              <div>
+                <div style="font-size:13.5px; font-weight:700;">Google Books</div>
+                <div style="font-size:11px; color:var(--text-muted);">Novels, Page counts, ISBN lookup</div>
+              </div>
+            </div>
+            <span class="source-origin-tag" style="color:var(--accent-green);">29ms · Online</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SCREEN 6: HEALTH, STATS & COMPLETION ANALYTICS
+           ==================================================== -->
+      <section id="screen-stats" class="screen-view">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title-main">Collection <span>Health</span></h1>
+            <p class="view-subtitle">Consolidated hours across all 6 formats</p>
+          </div>
+          <button class="icon-btn-pill" onclick="CueExporter.exportJsonBackup()">Export</button>
+        </div>
+
+        <!-- Radial Health Card -->
+        <div class="app-card" style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <span style="font-size:11px; font-weight:800; color:var(--text-dim); text-transform:uppercase;">Completion Rate</span>
+            <div style="font-size:40px; font-weight:800; color:var(--brand-primary); line-height:1; margin-top:4px;" id="statsRadialNum">65%</div>
+            <p style="font-size:12px; color:var(--text-muted); margin-top:4px;" id="statsTrackedCountText">Across 7 tracked items</p>
+          </div>
+          <div class="radial-svg-box">
+            <svg viewBox="0 0 80 80">
+              <circle cx="40" cy="40" r="36" stroke="rgba(255,255,255,0.08)"/>
+              <circle id="statsSvgDonutCircle" cx="40" cy="40" r="36" stroke="var(--brand-primary)" stroke-dasharray="226" stroke-dashoffset="79"/>
+            </svg>
+            <span style="position:absolute; font-size:15px; font-weight:800;" id="statsDonutCenterPct">65%</span>
+          </div>
+        </div>
+
+        <!-- Triad Stats Grid -->
+        <div class="stats-triad-grid">
+          <div class="stat-tile">
+            <span class="stat-tile-num" style="color:var(--accent-green);" id="statsCompletedCount">2</span>
+            <span style="font-size:11.5px; font-weight:700;">Completed</span>
+            <span style="font-size:10px; color:var(--text-dim);">100% finished</span>
+          </div>
+          <div class="stat-tile">
+            <span class="stat-tile-num" style="color:var(--format-tv);" id="statsInProgressCount">5</span>
+            <span style="font-size:11.5px; font-weight:700;">In Progress</span>
+            <span style="font-size:10px; color:var(--text-dim);">Active now</span>
+          </div>
+          <div class="stat-tile">
+            <span class="stat-tile-num" style="color:var(--accent-amber);" id="statsQueueCount">1</span>
+            <span style="font-size:11.5px; font-weight:700;">In Queue</span>
+            <span style="font-size:10px; color:var(--text-dim);">Watchlist ready</span>
+          </div>
+        </div>
+
+        <!-- Format Mix Breakdown -->
+        <div class="app-card">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:13.5px; font-weight:700;">Format Balance</span>
+            <span class="source-origin-tag" id="statsTotalMediaTag">6 Formats</span>
+          </div>
+          <div class="format-mix-bar">
+            <div class="format-mix-seg" style="width:25%; background:var(--format-game);" title="Games"></div>
+            <div class="format-mix-seg" style="width:20%; background:var(--format-manga);" title="Manga"></div>
+            <div class="format-mix-seg" style="width:20%; background:var(--format-novel);" title="Novels"></div>
+            <div class="format-mix-seg" style="width:18%; background:var(--format-anime);" title="Anime"></div>
+            <div class="format-mix-seg" style="width:17%; background:var(--format-tv);" title="TV Series"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted); margin-top:6px;">
+            <span>🎮 Games</span>
+            <span>📖 Manga</span>
+            <span>📚 Books</span>
+            <span>⛩️ Anime</span>
+            <span>📺 TV</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================
+           SCREEN 7: SETTINGS & PERSONALIZATION
+           ==================================================== -->
+      <section id="screen-settings" class="screen-view">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title-main">App <span>Settings</span></h1>
+            <p class="view-subtitle">Appearance, themes & sync</p>
+          </div>
+        </div>
+
+        <!-- Dynamic Lighting Theme Swatches -->
+        <div class="app-card">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:13.5px; font-weight:700;">Theme Signature Accent</span>
+            <span class="source-origin-tag" id="activeThemeBadge">Violet</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin-top:10px;">
+            <button class="btn-toolbar" style="background:#8b5cf6; justify-content:center;" onclick="setTheme('default', 'Violet')"></button>
+            <button class="btn-toolbar" style="background:#f59e0b; justify-content:center;" onclick="setTheme('amber', 'Amber')"></button>
+            <button class="btn-toolbar" style="background:#10b981; justify-content:center;" onclick="setTheme('emerald', 'Emerald')"></button>
+            <button class="btn-toolbar" style="background:#f43f5e; justify-content:center;" onclick="setTheme('rose', 'Rose')"></button>
+            <button class="btn-toolbar" style="background:#06b6d4; justify-content:center;" onclick="setTheme('cyan', 'Cyan')"></button>
+          </div>
+        </div>
+
+        <div class="app-card" style="display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="CueExporter.exportJsonBackup()">
+            <div>
+              <div style="font-size:13.5px; font-weight:700;">Export Universal Library (JSON)</div>
+              <div style="font-size:11px; color:var(--text-muted);">Includes TV, Games, Books, Manga, Anime & Steam hours</div>
+            </div>
+            <span style="font-size:12px; font-weight:800; color:var(--accent-green);">Export</span>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="CueExporter.purgeCache()">
+            <div>
+              <div style="font-size:13.5px; font-weight:700;">Purge Poster Texture Cache</div>
+              <div style="font-size:11px; color:var(--text-muted);" id="cacheSizeText">14.2 MB cached locally</div>
+            </div>
+            <span style="font-size:12px; font-weight:800; color:var(--accent-rose);">Clear</span>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="CueStore.resetFactoryData()">
+            <div>
+              <div style="font-size:13.5px; font-weight:700;">Reset Demo Data</div>
+              <div style="font-size:11px; color:var(--text-muted);">Restore 6-format starter catalog</div>
+            </div>
+            <span style="font-size:12px; font-weight:800; color:var(--text-dim);">Reset</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- FLOATING QUICK ADD BUTTON (+) -->
+    <button class="floating-fab" onclick="openAddEntryModal()" title="Add Media Title">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+
+    <!-- FIXED BOTTOM NAVIGATION DOCK -->
+    <nav class="bottom-app-dock">
+      <button class="nav-dock-btn active" id="dock-btn-collection" onclick="CueRouter.navigate('collection')">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span>Library</span>
+      </button>
+
+      <button class="nav-dock-btn" id="dock-btn-schedule" onclick="CueRouter.navigate('schedule')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>Timeline</span>
+      </button>
+
+      <button class="nav-dock-btn" id="dock-btn-catalog" onclick="CueRouter.navigate('catalog')">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span>Catalog</span>
+      </button>
+
+      <button class="nav-dock-btn" id="dock-btn-sources" onclick="CueRouter.navigate('sources')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        <span>11 APIs</span>
+      </button>
+
+      <button class="nav-dock-btn" id="dock-btn-stats" onclick="CueRouter.navigate('stats')">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <span>Health</span>
+      </button>
+
+      <button class="nav-dock-btn" id="dock-btn-settings" onclick="CueRouter.navigate('settings')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+    <!-- ====================================================
+         MODALS
+         ==================================================== -->
+    <!-- Add Custom Entry Modal -->
+    <div class="modal-backdrop-overlay" id="addEntryModal">
+      <div class="modal-dialog-box">
+        <h3 style="font-size:18px; font-weight:800;">Add Tracking Entry</h3>
+        <p style="font-size:12px; color:var(--text-muted); margin-top:3px;">Select format & target units</p>
+        
+        <div style="display:flex; flex-direction:column; gap:10px; margin-top:14px;">
+          <input type="text" id="modalEntryTitle" class="search-input-wrap" style="height:42px;" placeholder="Title name (e.g. Elden Ring, Chainsaw Man)...">
+          
+          <select id="modalEntryFormat" class="btn-toolbar" style="width:100%; border-radius:var(--radius-sm);">
+            <option value="game">Video Game (Steam / FreeToGame)</option>
+            <option value="tv">TV Series (TVmaze)</option>
+            <option value="anime">Anime (AniList / MAL)</option>
+            <option value="manga">Manga (MangaDex)</option>
+            <option value="novel">Novel / Light Novel (Google Books)</option>
+            <option value="movie">Movie (Wikidata / TMDB)</option>
+          </select>
+
+          <input type="number" id="modalEntryTarget" class="search-input-wrap" style="height:42px;" placeholder="Target count (Hours, Chapters, Pages, Episodes)">
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+          <button class="btn-toolbar" onclick="closeAddEntryModal()">Cancel</button>
+          <button class="btn-toolbar btn-toolbar-primary" onclick="submitModalEntry()">Add to Shelf</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Official Trailer Modal -->
+    <div class="modal-backdrop-overlay" id="trailerPlayerModal">
+      <div class="modal-dialog-box" style="padding:0; overflow:hidden;">
+        <div style="position:relative; height:190px; background:#000; display:flex; align-items:center; justify-content:center;">
+          <img style="width:100%; height:100%; object-fit:cover; opacity:0.6;" src="https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=700&q=80" alt="Video">
+          <div style="position:absolute; width:52px; height:52px; border-radius:50%; background:var(--brand-primary); display:flex; align-items:center; justify-content:center; color:#fff; box-shadow:0 0 20px var(--brand-glow);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+          </div>
+        </div>
+        <div style="padding:16px;">
+          <h3 id="trailerModalTitle" style="font-size:16px; font-weight:800;">Official Trailer</h3>
+          <p style="font-size:12px; color:var(--text-muted); margin-top:4px;">Stream source: High Bitrate CDN</p>
+          <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px;">
+            <button class="btn-toolbar" onclick="closeTrailerModal()">Close</button>
+            <button class="btn-toolbar btn-toolbar-primary" onclick="triggerToast('Opening native player...'); closeTrailerModal();">Play Now</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- FLOATING SYSTEM TOAST -->
+  <div class="toast-system-pill" id="appSystemToast">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary-light)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    <span id="systemToastMessage">Action recorded</span>
+  </div>
+
+  <!-- ==========================================================================
+       9. MASTER REACTIVE STATE & CONTROLLER
+       ========================================================================== -->
+  <script>
+    /**
+     * CueMark Unified Reactive Database
+     */
+    const INITIAL_MASTER_DB = {
+      shows: {
+        cyberpunk: {
+          id: 'cyberpunk',
+          title: 'Cyberpunk 2077',
+          format: 'game',
+          provider: 'Steam + SteamDB',
+          year: 2020,
+          status: 'In Progress',
+          rating: 8.8,
+          poster: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=300&q=80',
+          backdrop: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=800&q=80',
+          synopsis: 'An open-world, action-adventure RPG set in the megalopolis of Night City, where you play as a cyberpunk mercenary.',
+          hoursPlayed: 64,
+          targetHours: 90,
+          achievementsUnlocked: 38,
+          achievementsTotal: 54,
+          platform: 'Steam PC'
+        },
+        lanterns: {
+          id: 'lanterns',
+          title: 'Lanterns',
+          format: 'tv',
+          provider: 'TVmaze',
+          year: 2026,
+          status: 'In Progress',
+          rating: 8.4,
+          poster: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=300&q=80',
+          backdrop: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=800&q=80',
+          synopsis: 'Two intergalactic cops, new recruit John Stewart and Lantern legend Hal Jordan, investigate an ancient murder in the American heartland.',
+          episodesWatched: 7,
+          totalEpisodes: 8,
+          episodes: [
+            { num: 1, title: 'Pilot', runtime: '58m', rating: 8.8 },
+            { num: 2, title: 'Trust Fall', runtime: '52m', rating: 8.6 },
+            { num: 3, title: 'OutKast', runtime: '49m', rating: 8.5 },
+            { num: 4, title: 'The Weenie', runtime: '54m', rating: 8.7 },
+            { num: 5, title: 'Lights Out', runtime: '56m', rating: 8.9 },
+            { num: 6, title: 'Bad Optics', runtime: '51m', rating: 8.4 },
+            { num: 7, title: 'Parallax View', runtime: '55m', rating: 9.1 },
+            { num: 8, title: 'Dirt and Stars', runtime: '64m', rating: 9.4 }
+          ]
+        },
+        berserk: {
+          id: 'berserk',
+          title: 'Berserk',
+          format: 'manga',
+          provider: 'MangaDex + AniList',
+          year: 1989,
+          status: 'In Progress',
+          rating: 9.4,
+          poster: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=300&q=80',
+          backdrop: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=800&q=80',
+          synopsis: 'Guts, a former mercenary now known as the "Black Swordsman," is out for revenge in a dark fantasy world.',
+          chaptersRead: 381,
+          totalChapters: 412,
+          currentVolume: 41
+        },
+        dune_novel: {
+          id: 'dune_novel',
+          title: 'Dune (Deluxe Edition)',
+          format: 'novel',
+          provider: 'Google Books + Open Library',
+          year: 1965,
+          status: 'In Progress',
+          rating: 9.2,
+          poster: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=300&q=80',
+          backdrop: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=800&q=80',
+          synopsis: 'Set on the desert planet Arrakis, Dune is the story of the boy Paul Atreides, heir to a noble family tasked with ruling.',
+          pagesRead: 480,
+          totalPages: 612
+        },
+        friends: {
+          id: 'friends',
+          title: 'Friends',
+          format: 'tv',
+          provider: 'TVmaze',
+          year: 1994,
+          status: 'In Progress',
+          rating: 8.9,
+          poster: 'https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&w=300&q=80',
+          backdrop: 'https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&w=800&q=80',
+          synopsis: 'Six young people from Manhattan navigate life, romance, and careers in New York City.',
+          episodesWatched: 218,
+          totalEpisodes: 236
+        },
+        frieren: {
+          id: 'frieren',
+          title: 'Frieren: Beyond Journey’s End',
+          format: 'anime',
+          provider: 'AniList + MAL',
+          year: 2023,
+          status: 'In Progress',
+          rating: 9.3,
+          poster: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=300&q=80',
+          backdrop: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=800&q=80',
+          synopsis: 'An elf mage and her former fellow adventurers have defeated the Demon King and brought peace to the land.',
+          episodesWatched: 24,
+          totalEpisodes: 28
+        },
+        oppenheimer: {
+          id: 'oppenheimer',
+          title: 'Oppenheimer',
+          format: 'movie',
+          provider: 'Wikidata + TMDB',
+          year: 2023,
+          status: 'Completed',
+          rating: 8.9,
+          poster: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=300&q=80',
+          backdrop: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80',
+          synopsis: 'The story of American scientist J. Robert Oppenheimer and his role in the development of the atomic bomb.',
+          episodesWatched: 1,
+          totalEpisodes: 1
+        }
+      }
+    };
+
+    class CueMarkMasterStore {
+      constructor() {
+        this.storageKey = 'cuemark_master_db_unified_v4';
+        this.data = this.loadPersistentData();
+      }
+
+      loadPersistentData() {
+        try {
+          const raw = localStorage.getItem(this.storageKey);
+          if (raw) return JSON.parse(raw);
+        } catch(e) {}
+        return JSON.parse(JSON.stringify(INITIAL_MASTER_DB));
+      }
+
+      save() {
+        try {
+          localStorage.setItem(this.storageKey, JSON.stringify(this.data));
+        } catch(e) {}
+        renderAllViews();
+      }
+
+      getShow(id) {
+        return this.data.shows[id];
+      }
+
+      logGameHours(id, delta) {
+        const item = this.data.shows[id];
+        if (item && item.format === 'game') {
+          item.hoursPlayed = Math.min(item.targetHours, item.hoursPlayed + delta);
+          this.save();
+          triggerToast(`Logged +${delta}h on ${item.title}`);
+        }
+      }
+
+      logMangaChapter(id, delta) {
+        const item = this.data.shows[id];
+        if (item && item.format === 'manga') {
+          item.chaptersRead = Math.min(item.totalChapters, Math.max(0, item.chaptersRead + delta));
+          this.save();
+          triggerToast(`Read Chapter ${item.chaptersRead} of ${item.title}`);
+        }
+      }
+
+      logBookPages(id, delta) {
+        const item = this.data.shows[id];
+        if (item && item.format === 'novel') {
+          item.pagesRead = Math.min(item.totalPages, Math.max(0, item.pagesRead + delta));
+          this.save();
+          triggerToast(`Advanced to page ${item.pagesRead} of ${item.title}`);
+        }
+      }
+
+      toggleEpisode(id) {
+        const item = this.data.shows[id];
+        if (item) {
+          if (item.episodesWatched >= item.totalEpisodes) {
+            item.episodesWatched = 0;
+            triggerToast(`Reset progress on ${item.title}`);
+          } else {
+            item.episodesWatched++;
+            triggerToast(`Watched ep ${item.episodesWatched}/${item.totalEpisodes} of ${item.title}`);
+          }
+          this.save();
+        }
+      }
+
+      filterCollection(query) {
+        const q = query.toLowerCase().trim();
+        document.querySelectorAll('#inProgressShelf .media-shelf-card').forEach(card => {
+          const title = (card.getAttribute('data-title') || '').toLowerCase();
+          card.style.display = title.includes(q) ? 'flex' : 'none';
+        });
+      }
+
+      filterCatalog(query) {
+        const q = query.toLowerCase().trim();
+        document.querySelectorAll('#catalogListMount .media-shelf-card').forEach(card => {
+          const title = (card.getAttribute('data-title') || '').toLowerCase();
+          card.style.display = title.includes(q) ? 'flex' : 'none';
+        });
+      }
+
+      resetFactoryData() {
+        this.data = JSON.parse(JSON.stringify(INITIAL_MASTER_DB));
+        this.save();
+        triggerToast('Factory master demo data restored');
+      }
+    }
+
+    const CueStore = new CueMarkMasterStore();
+
+    /**
+     * Parametric Router
+     */
+    const CueRouter = {
+      currentView: 'collection',
+
+      navigate(viewKey) {
+        this.currentView = viewKey;
+        document.querySelectorAll('.screen-view').forEach(v => v.classList.remove('active'));
+
+        const target = document.getElementById('screen-' + viewKey);
+        if (target) {
+          target.classList.add('active');
+          target.scrollTop = 0;
+        }
+
+        // Update Desktop Nav Buttons
+        document.querySelectorAll('.desktop-screen-switcher .desktop-nav-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('onclick').includes(viewKey));
+        });
+
+        // Update Mobile Bottom Nav Dock
+        const dockMap = {
+          'collection': 'dock-btn-collection',
+          'schedule': 'dock-btn-schedule',
+          'catalog': 'dock-btn-catalog',
+          'sources': 'dock-btn-sources',
+          'stats': 'dock-btn-stats',
+          'settings': 'dock-btn-settings'
+        };
+        document.querySelectorAll('.nav-dock-btn').forEach(b => b.classList.remove('active'));
+        const activeDockId = dockMap[viewKey] || 'dock-btn-collection';
+        const activeBtn = document.getElementById(activeDockId);
+        if (activeBtn) activeBtn.classList.add('active');
+      },
+
+      openDetail(showId) {
+        renderAdaptiveDetailView(showId);
+        this.navigate('detail-view');
+      }
+    };
+
+    /**
+     * Render Engines
+     */
+    function renderAllViews() {
+      renderCollectionShelf('all');
+      renderCatalogView();
+      renderStatsView();
+    }
+
+    /* Shelf Renderer */
+    let currentFilter = 'all';
+    function renderCollectionShelf(formatFilter) {
+      currentFilter = formatFilter;
+      const mount = document.getElementById('inProgressShelf');
+      if (!mount) return;
+
+      const shows = Object.values(CueStore.data.shows);
+      const filtered = formatFilter === 'all' ? shows : shows.filter(s => s.format === formatFilter);
+
+      mount.innerHTML = filtered.map(show => {
+        let pct = 0;
+        let progressSub = '';
+        let actionWidget = '';
+
+        if (show.format === 'game') {
+          pct = Math.round((show.hoursPlayed / show.targetHours) * 100);
+          progressSub = `${show.hoursPlayed}/${show.targetHours} hrs · ${show.achievementsUnlocked}/${show.achievementsTotal} Ach`;
+          actionWidget = `
+            <div class="stepper-btn-group" onclick="event.stopPropagation()">
+              <button class="stepper-quick-pill" onclick="CueStore.logGameHours('${show.id}', 1)">+1h</button>
+            </div>
+          `;
+        } else if (show.format === 'manga') {
+          pct = Math.round((show.chaptersRead / show.totalChapters) * 100);
+          progressSub = `Ch. ${show.chaptersRead} / ${show.totalChapters} · Vol. ${show.currentVolume}`;
+          actionWidget = `
+            <div class="stepper-btn-group" onclick="event.stopPropagation()">
+              <button class="stepper-quick-pill" onclick="CueStore.logMangaChapter('${show.id}', 1)">+1 Ch</button>
+            </div>
+          `;
+        } else if (show.format === 'novel') {
+          pct = Math.round((show.pagesRead / show.totalPages) * 100);
+          progressSub = `Page ${show.pagesRead} of ${show.totalPages} pages`;
+          actionWidget = `
+            <div class="stepper-btn-group" onclick="event.stopPropagation()">
+              <button class="stepper-quick-pill" onclick="CueStore.logBookPages('${show.id}', 25)">+25p</button>
+            </div>
+          `;
+        } else {
+          pct = Math.round((show.episodesWatched / show.totalEpisodes) * 100);
+          progressSub = `${show.episodesWatched}/${show.totalEpisodes} episodes watched`;
+          actionWidget = `
+            <button class="tactile-check-btn ${show.episodesWatched === show.totalEpisodes ? 'checked' : ''}" onclick="event.stopPropagation(); CueStore.toggleEpisode('${show.id}')">
+              <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+          `;
+        }
+
+        return `
+          <div class="media-shelf-card" data-title="${show.title}" onclick="CueRouter.openDetail('${show.id}')">
+            <img class="poster-art-thumb" src="${show.poster}" alt="${show.title}">
+            <div class="shelf-card-info">
+              <div class="shelf-card-row1">
+                <span class="shelf-card-title">${show.title}</span>
+                <span class="format-badge badge-${show.format}">${show.format}</span>
+              </div>
+              <span class="shelf-card-subtitle">${progressSub}</span>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+                <div class="progress-bar-track" style="margin:0; flex:1;">
+                  <div class="progress-bar-fill" style="width: ${pct}%;"></div>
+                </div>
+                <span style="font-size:10.5px; font-weight:700; color:var(--text-dim); min-width:30px; text-align:right;">${pct}%</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
+                <span class="source-origin-tag">${show.provider}</span>
+                <span class="source-origin-tag" style="color:var(--accent-amber);">★ ${show.rating}</span>
+              </div>
+            </div>
+            ${actionWidget}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function filterByFormat(btn, formatKey) {
+      document.querySelectorAll('#formatCategoryFilterStrip .cat-chip-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderCollectionShelf(formatKey);
+      triggerToast('Filtered: ' + btn.textContent);
+    }
+
+    /* Adaptive Detail Screen */
+    function renderAdaptiveDetailView(showId) {
+      const show = CueStore.getShow(showId);
+      if (!show) return;
+
+      const backdrop = document.getElementById('detailBackdrop');
+      backdrop.style.backgroundImage = `url('${show.backdrop}')`;
+
+      document.getElementById('detailTitleText').textContent = show.title;
+      document.getElementById('detailSourceBadge').textContent = show.provider;
+      document.getElementById('detailMetaProviderName').textContent = show.provider;
+      document.getElementById('detailRatingBadge').textContent = `★ ${show.rating}`;
+      document.getElementById('detailSynopsisText').textContent = show.synopsis;
+
+      const formatBadge = document.getElementById('detailFormatBadge');
+      formatBadge.textContent = show.format.toUpperCase();
+      formatBadge.className = `format-badge badge-${show.format}`;
+
+      const controlMount = document.getElementById('adaptiveControllerMount');
+      const sublistMount = document.getElementById('detailSublistContainer');
+      sublistMount.innerHTML = '';
+
+      if (show.format === 'game') {
+        const pct = Math.round((show.hoursPlayed / show.targetHours) * 100);
+        controlMount.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <span style="font-size:11px; font-weight:800; color:var(--text-dim); text-transform:uppercase;">Steam Playtime Log</span>
+              <h3 style="font-size:20px; font-weight:800; color:var(--format-game);">${show.hoursPlayed} Hours Played</h3>
+              <span style="font-size:12px; color:var(--text-muted);">Target: ${show.targetHours}h for main + extra story</span>
+            </div>
+            <span class="format-badge badge-game">${show.platform}</span>
+          </div>
+
+          <div class="progress-bar-track" style="margin:4px 0;">
+            <div class="progress-bar-fill" style="width:${pct}%; background:var(--format-game);"></div>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:12px; color:var(--text-muted);">Achievements: <b>${show.achievementsUnlocked}/${show.achievementsTotal}</b></span>
+            <div style="display:flex; gap:8px;">
+              <button class="btn-toolbar" onclick="CueStore.logGameHours('${show.id}', 1); renderAdaptiveDetailView('${show.id}');">+1 Hour</button>
+              <button class="btn-toolbar btn-toolbar-primary" onclick="CueStore.logGameHours('${show.id}', 5); renderAdaptiveDetailView('${show.id}');">+5 Hours</button>
+            </div>
+          </div>
+        `;
+      } else if (show.format === 'manga') {
+        const pct = Math.round((show.chaptersRead / show.totalChapters) * 100);
+        controlMount.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <span style="font-size:11px; font-weight:800; color:var(--text-dim); text-transform:uppercase;">MangaDex Chapter Tracker</span>
+              <h3 style="font-size:20px; font-weight:800; color:var(--format-manga);">Chapter ${show.chaptersRead}</h3>
+              <span style="font-size:12px; color:var(--text-muted);">${show.totalChapters - show.chaptersRead} chapters left</span>
+            </div>
+            <span class="format-badge badge-manga">Vol. ${show.currentVolume}</span>
+          </div>
+
+          <div class="progress-bar-track" style="margin:4px 0;">
+            <div class="progress-bar-fill" style="width:${pct}%; background:var(--format-manga);"></div>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <button class="btn-toolbar" onclick="CueStore.logMangaChapter('${show.id}', -1); renderAdaptiveDetailView('${show.id}');">-1 Ch</button>
+            <button class="btn-toolbar btn-toolbar-primary" style="flex:1; justify-content:center; margin:0 8px;" onclick="CueStore.logMangaChapter('${show.id}', 1); renderAdaptiveDetailView('${show.id}');">Mark Next Chapter</button>
+            <button class="btn-toolbar" onclick="CueStore.logMangaChapter('${show.id}', 5); renderAdaptiveDetailView('${show.id}');">+5 Ch</button>
+          </div>
+        `;
+      } else if (show.format === 'novel') {
+        const pct = Math.round((show.pagesRead / show.totalPages) * 100);
+        controlMount.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <span style="font-size:11px; font-weight:800; color:var(--text-dim); text-transform:uppercase;">Google Books Reading Pace</span>
+              <h3 style="font-size:20px; font-weight:800; color:var(--format-novel);">${show.pagesRead} / ${show.totalPages} Pages</h3>
+              <span style="font-size:12px; color:var(--text-muted);">${pct}% read · Est. 2.4 hrs remaining</span>
+            </div>
+            <span class="format-badge badge-novel">Novel</span>
+          </div>
+
+          <div class="progress-bar-track" style="margin:4px 0;">
+            <div class="progress-bar-fill" style="width:${pct}%; background:var(--format-novel);"></div>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <button class="btn-toolbar" onclick="CueStore.logBookPages('${show.id}', -10); renderAdaptiveDetailView('${show.id}');">-10p</button>
+            <button class="btn-toolbar btn-toolbar-primary" style="flex:1; justify-content:center; margin:0 8px;" onclick="CueStore.logBookPages('${show.id}', 25); renderAdaptiveDetailView('${show.id}');">+25 Pages</button>
+            <button class="btn-toolbar" onclick="CueStore.logBookPages('${show.id}', 50); renderAdaptiveDetailView('${show.id}');">+50p</button>
+          </div>
+        `;
+      } else {
+        const pct = Math.round((show.episodesWatched / show.totalEpisodes) * 100);
+        controlMount.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <span style="font-size:11px; font-weight:800; color:var(--text-dim); text-transform:uppercase;">TVmaze / AniList Feed</span>
+              <h3 style="font-size:20px; font-weight:800;">${show.episodesWatched} of ${show.totalEpisodes} Episodes</h3>
+              <span style="font-size:12px; color:var(--text-muted);">${show.totalEpisodes - show.episodesWatched} episodes unwatched</span>
+            </div>
+            <span class="format-badge badge-tv">${pct}% complete</span>
+          </div>
+
+          <div class="progress-bar-track" style="margin:4px 0;">
+            <div class="progress-bar-fill" style="width:${pct}%;"></div>
+          </div>
+
+          <button class="btn-resume-large" style="width:100%; margin-top:4px;" onclick="CueStore.toggleEpisode('${show.id}'); renderAdaptiveDetailView('${show.id}');">
+            ${show.episodesWatched === show.totalEpisodes ? 'Reset Progress' : 'Check Off Next Episode ✓'}
+          </button>
+        `;
+
+        if (show.episodes) {
+          sublistMount.innerHTML = `
+            <div class="section-bar-header" style="margin-top:14px;">
+              <span>Granular Episode Checklist</span>
+              <span class="source-origin-tag">${show.episodes.length} Episodes</span>
+            </div>
+            <div class="episode-line-stack">
+              ${show.episodes.map(ep => `
+                <div class="episode-row-card">
+                  <div class="shelf-card-info">
+                    <span style="font-size:13.5px; font-weight:700;">E0${ep.num} ·${ep.title}</span>
+                    <span style="font-size:11px; color:var(--text-muted);">${ep.runtime} · ★ ${ep.rating}</span>
+                  </div>
+                  <button class="tactile-check-btn ${ep.num <= show.episodesWatched ? 'checked' : ''}" onclick="CueStore.toggleEpisode('${show.id}'); renderAdaptiveDetailView('${show.id}');">
+                    <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                  </button>
+                </div>
+              `).join('')}
+            </div>
+          `;
+        }
+      }
+    }
+
+    /* Catalog Renderer */
+    function renderCatalogView() {
+      const mount = document.getElementById('catalogListMount');
+      if (!mount) return;
+
+      const shows = Object.values(CueStore.data.shows);
+      mount.innerHTML = shows.map(s => `
+        <div class="media-shelf-card" data-title="${s.title}" onclick="CueRouter.openDetail('${s.id}')">
+          <img class="poster-art-thumb" src="${s.poster}" alt="${s.title}">
+          <div class="shelf-card-info">
+            <div class="shelf-card-row1">
+              <span class="shelf-card-title">${s.title}</span>
+              <span class="format-badge badge-${s.format}">${s.format}</span>
+            </div>
+            <span class="shelf-card-subtitle">${s.year} · ${s.synopsis.slice(0, 48)}...</span>
+            <div style="display:flex; gap:6px; align-items:center; margin-top:4px;">
+              <span class="source-origin-tag">${s.provider}</span>
+              <span class="source-origin-tag" style="color:var(--accent-amber);">★ ${s.rating}</span>
+            </div>
+          </div>
+          <button class="icon-btn-pill">View</button>
+        </div>
+      `).join('');
+    }
+
+    /* Stats View Renderer */
+    function renderStatsView() {
+      const shows = Object.values(CueStore.data.shows);
+      let completedCount = 0;
+      let inProgressCount = 0;
+      let queueCount = 0;
+
+      shows.forEach(s => {
+        if (s.status === 'Completed') completedCount++;
+        else if (s.status === 'In Progress') inProgressCount++;
+        else queueCount++;
+      });
+
+      const total = shows.length;
+      const pct = Math.round((completedCount / total) * 100) || 65;
+
+      const radialNum = document.getElementById('statsRadialNum');
+      const centerPct = document.getElementById('statsDonutCenterPct');
+      const donutCircle = document.getElementById('statsSvgDonutCircle');
+
+      if (radialNum) radialNum.textContent = pct + '%';
+      if (centerPct) centerPct.textContent = pct + '%';
+      if (donutCircle) {
+        const offset = 226 - (226 * (pct / 100));
+        donutCircle.style.strokeDashoffset = offset;
+      }
+
+      document.getElementById('statsCompletedCount').textContent = completedCount;
+      document.getElementById('statsInProgressCount').textContent = inProgressCount;
+      document.getElementById('statsQueueCount').textContent = queueCount;
+    }
+
+    /**
+     * UI Utilities & Modals
+     */
+    function toggleSectionAccordion(id, header) {
+      const el = document.getElementById(id);
+      const svg = header.querySelector('svg');
+      if (el.style.display === 'none') {
+        el.style.display = 'flex';
+        svg.style.transform = 'rotate(0deg)';
+      } else {
+        el.style.display = 'none';
+        svg.style.transform = 'rotate(-90deg)';
+      }
+    }
+
+    function openAddEntryModal() {
+      document.getElementById('addEntryModal').classList.add('open');
+    }
+    function closeAddEntryModal() {
+      document.getElementById('addEntryModal').classList.remove('open');
+    }
+
+    function submitModalEntry() {
+      const title = document.getElementById('modalEntryTitle').value.trim();
+      const format = document.getElementById('modalEntryFormat').value;
+      const target = parseInt(document.getElementById('modalEntryTarget').value, 10) || 12;
+
+      if (!title) {
+        triggerToast('Please provide a title name');
+        return;
+      }
+
+      const id = title.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const providerMap = {
+        game: 'SteamDB',
+        tv: 'TVmaze',
+        anime: 'AniList',
+        manga: 'MangaDex',
+        novel: 'Google Books',
+        movie: 'Wikidata'
+      };
+
+      CueStore.data.shows[id] = {
+        id: id,
+        title: title,
+        format: format,
+        provider: providerMap[format] || 'Universal Hub',
+        year: 2026,
+        status: 'In Progress',
+        rating: 8.5,
+        poster: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=300&q=80',
+        backdrop: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=800&q=80',
+        synopsis: 'Custom user-tracked media item.',
+        hoursPlayed: 0,
+        targetHours: target,
+        achievementsUnlocked: 0,
+        achievementsTotal: 20,
+        chaptersRead: 0,
+        totalChapters: target,
+        currentVolume: 1,
+        pagesRead: 0,
+        totalPages: target,
+        episodesWatched: 0,
+        totalEpisodes: target
+      };
+
+      CueStore.save();
+      closeAddEntryModal();
+      triggerToast(`Added ${title} (${format.toUpperCase()}) to tracker! 🚀`);
+      CueRouter.navigate('collection');
+    }
+
+    function openTrailerModal() {
+      document.getElementById('trailerPlayerModal').classList.add('open');
+    }
+    function closeTrailerModal() {
+      document.getElementById('trailerPlayerModal').classList.remove('open');
+    }
+
+    function testAllApis() {
+      triggerToast('Pinged all 11 providers: 100% online (Avg 31ms) 🚀');
+    }
+
+    function setTheme(themeKey, label) {
+      if (themeKey === 'default') {
+        document.documentElement.removeAttribute('data-theme');
+      } else {
+        document.documentElement.setAttribute('data-theme', themeKey);
+      }
+      document.getElementById('activeThemeBadge').textContent = label;
+      triggerToast('Applied ' + label + ' theme');
+    }
+
+    function toggleViewportFrame() {
+      const shell = document.getElementById('mainDeviceShell');
+      const btnText = document.getElementById('btnFrameToggleText');
+      const isExpanded = shell.classList.toggle('expanded-mode');
+      btnText.textContent = isExpanded ? 'Phone Frame' : 'Expand Frame';
+      triggerToast(isExpanded ? 'Tablet Viewport Activated' : 'Mobile Compact Mode');
+    }
+
+    let toastTimer;
+    function triggerToast(msg) {
+      const toast = document.getElementById('appSystemToast');
+      document.getElementById('systemToastMessage').textContent = msg;
+      toast.classList.add('visible');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('visible');
+      }, 2300);
+    }
+
+    const CueExporter = {
+      exportJsonBackup() {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(CueStore.data, null, 2));
+        const a = document.createElement('a');
+        a.setAttribute("href", dataStr);
+        a.setAttribute("download", `CueMark_Unified_Backup_${new Date().toISOString().slice(0,10)}.json`);
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        triggerToast('📦 Library JSON exported successfully!');
+      },
+      purgeCache() {
+        document.getElementById('cacheSizeText').textContent = '0.0 MB cached locally';
+        triggerToast('Local SQLite texture cache purged! 🧹');
+      }
+    };
+
+    function updateClock() {
+      const now = new Date();
+      let hours = now.getHours();
+      let minutes = now.getMinutes();
+      if (minutes < 10) minutes = '0' + minutes;
+      const el = document.getElementById('liveClockDisplay');
+      if (el) el.textContent = `${hours}:${minutes}`;
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      updateClock();
+      setInterval(updateClock, 30000);
+      renderAllViews();
+    });
+  </script>
+</body>
+</html>

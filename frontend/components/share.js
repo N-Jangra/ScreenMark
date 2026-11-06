@@ -1,4 +1,4 @@
-// Share a Home group as images that look like the Home list (cover, title, subtitle, rating, status).
+// Share a Home group as images that look like the Home list (cover, title, subtitle, status).
 (() => {
   const DEFAULT_PER_PAGE = 15, LONG_CHUNK = 45, W = 1080, ROW = 196, HEAD = 200, FOOT = 84, PAD = 40;
   const native = () => window.Capacitor?.Plugins?.ShareIntent;
@@ -69,7 +69,6 @@
       ctx.fillStyle = C.muted; ctx.font = `500 27px ${font}`; if (entry.subtitle) ctx.fillText(fit(ctx, entry.subtitle, maxW), tx, y + 98);
       let px = tx; const py = y + 112, ph = 38;
       const pill = (text, bg, fg) => { ctx.font = `700 24px ${font}`; const w = ctx.measureText(text).width + 32; ctx.fillStyle = bg; roundRect(ctx, px, py, w, ph, 12); ctx.fill(); ctx.fillStyle = fg; ctx.textBaseline = "middle"; ctx.fillText(text, px + 16, py + ph / 2 + 1); ctx.textBaseline = "alphabetic"; px += w + 12; };
-      if (entry.rating) pill(entry.rating, "rgba(245,158,11,.18)", "#d97706");
       if (entry.status) { const c = C.status(entry.status); pill(entry.status, withAlpha(c, .18), c); }
       if (entry.progressText) { ctx.font = `700 26px ${font}`; ctx.fillStyle = C.text; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText(entry.progressText, W - 48, py + ph / 2 + 1); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; }
       if (entry.percent != null) {
@@ -177,7 +176,7 @@
     // Rendered pages live in IndexedDB (keyed by the page's content), so reopening a group is instant.
     const hash = text => { let h = 5381; for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
     const blobToDataUrl = blob => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(blob); });
-    const pageSig = d => "v4:" + hash(JSON.stringify([themeKey(), title, count, d.index, d.pages, d.group.map(e => [e.id, e.title, e.subtitle, e.rating, e.status, e.progressText, e.percent])]));
+    const pageSig = d => "v5:" + hash(JSON.stringify([themeKey(), title, count, d.index, d.pages, d.group.map(e => [e.id, e.title, e.subtitle, e.status, e.progressText, e.percent])]));
     const render = index => {
       const key = `${mode}:${index}`;
       if (!cache.has(key)) {
@@ -216,7 +215,7 @@
       q("[data-share-all-row]").hidden = pdf || images.length < 2;
       q("[data-share-pdf-cap]").textContent = `All ${count} ${count === 1 ? "title" : "titles"}`;
       const info = q("[data-share-pdf-info]"); info.hidden = !pdf;
-      info.innerHTML = `<strong>${count} ${count === 1 ? "title" : "titles"} in one PDF</strong><small>A clean list in your theme colours: number, cover, name, tags, rating and viewing progress for every title, about ${pdfPages} ${pdfPages === 1 ? "page" : "pages"}. The text stays selectable.</small>`;
+      info.innerHTML = `<strong>${count} ${count === 1 ? "title" : "titles"} in one PDF</strong><small>A clean list in your theme colours: number, cover, name, tags and viewing progress for every title, about ${pdfPages} ${pdfPages === 1 ? "page" : "pages"}. The text stays selectable.</small>`;
       if (!pdf) paint();
     };
     let pdfCache = null;
@@ -229,7 +228,7 @@
       }
       const C = themeColors();
       say("Building PDF…", "busy");
-      const { bytes } = await window.SplitAppListPdf.build({ title, entries: entries.map(e => ({ title: e.title, tags: e.tagsText || e.subtitle, rating: e.rating ? e.rating.replace("★", "").trim() : "", progress: e.progressText })), covers, theme: { page: C.page, text: C.text, muted: C.muted, line: C.line, accent: C.accent, card2: C.card2 }, onProgress: info => say(`Building PDF… ${info.pct}%${info.etaMs > 2500 ? ` · about ${Math.ceil(info.etaMs / 1000)} s left` : ""}${info.note ? ` · ${info.note}` : ""}`, "busy") });
+      const { bytes } = await window.SplitAppListPdf.build({ title, entries: entries.map(e => ({ title: e.title, tags: e.tagsText || e.subtitle, progress: e.progressText })), covers, theme: { page: C.page, text: C.text, muted: C.muted, line: C.line, accent: C.accent, card2: C.card2 }, onProgress: info => say(`Building PDF… ${info.pct}%${info.etaMs > 2500 ? ` · about ${Math.ceil(info.etaMs / 1000)} s left` : ""}${info.note ? ` · ${info.note}` : ""}`, "busy") });
       pdfCache = bytes; return bytes;
     };
     const setMode = next => {

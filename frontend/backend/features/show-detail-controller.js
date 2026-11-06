@@ -12,7 +12,7 @@
     image: data.image || data.portraitImage || data.thumbnail || item.image || "",
     portraitImage: data.portraitImage || data.image || data.thumbnail || item.image || "",
     landscapeImage: data.landscapeImage || data.backgroundImage || "",
-    year: data.year || item.year || "", rating: data.rating || item.rating || 0,
+    year: data.year || item.year || "", rating: data.rating || 0,
     goal: data.goal || item.goal || 0, progress: Number(item.progress) || 0,
     url: data.url || item.url || "", fields: (data.fields || []).filter(row => row && row.value !== undefined && row.value !== null && row.value !== "" && !(Array.isArray(row.value) && !row.value.length)),
     links: (data.links || []).filter(row => row?.url),
@@ -290,7 +290,7 @@
       const map = config.detailMap || {}, root = loaded?.root || {}, text = path => loaded?.pickText(root, path) || "", list = path => loaded?.pickList(root, path) || [];
       const shots = list(map.screenshots).map((image, index) => ({ title: `Image ${index + 1}`, image, url: image })).filter(row => /^https?:/i.test(row.image));
       const runtime = numberFrom(text(map.runtime)), episodes = numberFrom(text(map.episodes));
-      return details(source.key, item, { title: text(map.title) || item.title, description: text(map.description) || item.description, image: text(map.image) || item.image, year: text(map.released).slice(0, 4) || item.year, rating: Number(text(map.rating)) || item.rating, url: text(map.url) || item.url, goal: episodes || item.goal, sections: shots.length ? [{ title: "Images", kind: "gallery", items: shots }] : [], tags: list(map.tags), links: item.url ? [{ label: `Open on ${source.name}`, url: item.url }] : [], watch: { runtimeMinutes: runtime, episodeCount: episodes, seasonCount: numberFrom(text(map.seasons)) }, fields: [["Released", text(map.released)], ["Genres", list(map.genres)], ["Director", list(map.directors)], ["Cast", list(map.cast)], ["Network", text(map.network)], ["Runtime", runtime ? `${runtime} min` : ""], ["Episodes", episodes || ""], ["Seasons", text(map.seasons)], ["Language", text(map.language)], ["Country", text(map.country)], ["Awards", text(map.awards)]].map(([label, value]) => ({ label, value })) });
+      return details(source.key, item, { title: text(map.title) || item.title, description: text(map.description) || item.description, image: text(map.image) || item.image, year: text(map.released).slice(0, 4) || item.year, rating: Number(text(map.rating)) || 0, url: text(map.url) || item.url, goal: episodes || item.goal, sections: shots.length ? [{ title: "Images", kind: "gallery", items: shots }] : [], tags: list(map.tags), links: item.url ? [{ label: `Open on ${source.name}`, url: item.url }] : [], watch: { runtimeMinutes: runtime, episodeCount: episodes, seasonCount: numberFrom(text(map.seasons)) }, fields: [["Released", text(map.released)], ["Genres", list(map.genres)], ["Director", list(map.directors)], ["Cast", list(map.cast)], ["Network", text(map.network)], ["Runtime", runtime ? `${runtime} min` : ""], ["Episodes", episodes || ""], ["Seasons", text(map.seasons)], ["Language", text(map.language)], ["Country", text(map.country)], ["Awards", text(map.awards)]].map(([label, value]) => ({ label, value })) });
     }
     if (!source || typeof loaders[source.key] !== "function") throw new Error(`This ${appKey} app does not support ${item.metadataSource} details for ${item.category}.`);
     if (!metadata.isEnabled(source.key, settings)) throw new Error(`${source.name} is disabled in Metadata Sources.`);

@@ -462,7 +462,7 @@
               const sameRevision = saved && String(saved.id) === id && saved.category === item.category
                 && (Number(saved.updatedAt) || 0) === (Number(item.updatedAt) || 0)
                 && saved.title === item.title && saved.status === item.status
-                && Number(saved.progress) === Number(item.progress) && Number(saved.rating) === Number(item.rating);
+                && Number(saved.progress) === Number(item.progress);
               if (sameRevision) {
                 const savedImages = Array.isArray(saved.localImageFiles) ? saved.localImageFiles : [];
                 if (savedImages.every(file => existingNames.has(file.fileName))) {

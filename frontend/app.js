@@ -13,11 +13,11 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "light", textSize: "normal", dateFormat: "auto", iconStyle: "tiles", imageStorage: "all", favoritesOnly: false, reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, font: "system", mainColor: "#6366f1", categoryColors: {},
+    theme: "system", textSize: "normal", dateFormat: "auto", iconStyle: "tiles", imageStorage: "all", favoritesOnly: false, reduceMotion: false, animationSpeed: "normal", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "rise", animationStagger: true, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: true, progressAnimation: true, skeletonShimmer: true, mainColor: "#6366f1",
     showSidebar: true, showScrollbars: false, bottomBarStyle: "box", bottomBarCorners: "round", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { dashboard: "home", search: "search", discover: "bookmark", explore: "compass", timeline: "calendar-days", statistics: "pie-chart", settings: "settings" },
     navBar: { order: navKeys, visible: { dashboard: true, discover: true, explore: true, timeline: false, statistics: false, settings: true } },
     metadataSourceOrder: ["tvmaze", "anilist", "omdb"], customSources: [],
-    dashboardView: "list", dashboardDefaultCategory: "remember", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true, showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars",
+    dashboardView: "list", dashboardDefaultCategory: "series", cardCorners: "rounded", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true,
     automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1,
     metadataSyncWorkers: 2, syncTimeout: 25, syncRetries: 1, syncRetryDelay: 2, syncMaxSources: 0, syncRequestDelay: 0, syncScope: "needed",
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30,
@@ -27,27 +27,7 @@
   };
   const themePalettes = {
     light: { mode:"light", background:"#f8fafc", shell:"#f8fafc", surface:"#ffffff", surface2:"#f1f5f9", line:"rgba(15,23,42,.10)", text:"#0f172a", muted:"#64748b" },
-    dark: { mode:"dark", background:"#030712", shell:"#0b0f19", surface:"#161c2d", surface2:"#111827", line:"rgba(255,255,255,.09)", text:"#f8fafc", muted:"#94a3b8" },
-    grey: { mode:"dark", background:"#0b0f19", shell:"#111827", surface:"#1f2937", surface2:"#283548", line:"rgba(255,255,255,.10)", text:"#f9fafb", muted:"#9ca3af" },
-    amoled: { mode:"dark", background:"#000000", shell:"#000000", surface:"#101010", surface2:"#1a1a1a", line:"rgba(255,255,255,.12)", text:"#f8fafc", muted:"#a1a1aa" },
-    flashbang: { mode:"light", background:"#f8fafc", shell:"#f8fafc", surface:"#ffffff", surface2:"#f1f5f9", line:"rgba(15,23,42,.14)", text:"#0f172a", muted:"#475569" },
-    "material-you": { mode:"dark", background:"#080a12", shell:"#10131d", surface:"#1a1e2b", surface2:"#252a3a", line:"rgba(255,255,255,.10)", text:"#f8fafc", muted:"#a3a8bb" },
-    ocean: { mode:"dark", background:"#04111c", shell:"#081b2b", surface:"#10283a", surface2:"#18364b", line:"rgba(186,230,253,.12)", text:"#e0f2fe", muted:"#93b4c8" },
-    forest: { mode:"dark", background:"#091710", shell:"#10221b", surface:"#173126", surface2:"#203e31", line:"rgba(187,247,208,.12)", text:"#ecfdf5", muted:"#9eb8a9" },
-    sunset: { mode:"dark", background:"#180d0b", shell:"#261714", surface:"#38221d", surface2:"#482d25", line:"rgba(255,237,213,.13)", text:"#fff7ed", muted:"#c9a99a" },
-    rose: { mode:"dark", background:"#170d15", shell:"#251722", surface:"#382333", surface2:"#482b40", line:"rgba(255,228,230,.12)", text:"#fff1f2", muted:"#c9a3b6" },
-    lavender: { mode:"dark", background:"#120f20", shell:"#211d35", surface:"#302949", surface2:"#3d355b", line:"rgba(237,233,254,.13)", text:"#f5f3ff", muted:"#b4a8d4" },
-    nord: { mode:"dark", background:"#151b25", shell:"#242d3b", surface:"#303b4b", surface2:"#3b485a", line:"rgba(236,239,244,.12)", text:"#eceff4", muted:"#aab6c5" },
-    sand: { mode:"light", background:"#f7f0e3", shell:"#faf4e8", surface:"#fffaf0", surface2:"#f0e7d7", line:"rgba(68,54,38,.14)", text:"#29231d", muted:"#756858" },
-    mint: { mode:"light", background:"#e8f6ef", shell:"#effaf5", surface:"#fafffc", surface2:"#e2f2eb", line:"rgba(18,53,45,.13)", text:"#12352d", muted:"#5d7d70" }
-  };
-  const fontFamilies = {
-    system:"system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", inter:"Inter,sans-serif", outfit:"Outfit,sans-serif",
-    serif:"Georgia,'Times New Roman',serif", monospace:"ui-monospace,SFMono-Regular,Menlo,monospace", mono:"ui-monospace,SFMono-Regular,Menlo,monospace", rounded:"ui-rounded,'Arial Rounded MT Bold',sans-serif",
-    poppins:"Poppins,sans-serif", roboto:"Roboto,sans-serif", nunito:"Nunito,sans-serif", lato:"Lato,sans-serif", merriweather:"Merriweather,serif",
-    "jetbrains-mono":"'JetBrains Mono',monospace", "open-sans":"'Open Sans',sans-serif", montserrat:"Montserrat,sans-serif", oswald:"Oswald,sans-serif",
-    raleway:"Raleway,sans-serif", ubuntu:"Ubuntu,sans-serif", "playfair-display":"'Playfair Display',serif", "fira-sans":"'Fira Sans',sans-serif",
-    rubik:"Rubik,sans-serif", quicksand:"Quicksand,sans-serif", caveat:"Caveat,cursive"
+    amoled: { mode:"dark", background:"#000000", shell:"#000000", surface:"#101010", surface2:"#1a1a1a", line:"rgba(255,255,255,.12)", text:"#f8fafc", muted:"#a1a1aa" }
   };
   function safeLucideName(value, fallback = "circle") {
     const name = String(value || "");
@@ -64,7 +44,6 @@
   delete prefs.appLook;
   delete prefs.recentlyAddedLimit;
   delete prefs.appDisplayName;
-  prefs.categoryColors = { ...prefsDefaults.categoryColors, ...(stored.preferences?.categoryColors || {}) };
   prefs.apiKeys = { ...prefsDefaults.apiKeys, ...(stored.preferences?.apiKeys || {}) };
   prefs.sourceOptions = { ...(stored.preferences?.sourceOptions || {}) };
   prefs.metadataSources = { ...prefsDefaults.metadataSources, ...(stored.preferences?.metadataSources || {}) };
@@ -109,11 +88,10 @@
   let page = initialRoute[0] === "search" ? "dashboard" : initialRoute[0] in titles ? initialRoute[0] : "dashboard";
   let settingsGroup = page === "settings" ? (initialRoute[1] === "manage-backups" ? "backups" : initialRoute[1] || null) : null;
   let settingsParam = initialRoute[0] === "settings" ? new URLSearchParams(initialHashQuery).get("id") || "" : "", settingsFrom = "", renderedSettingsGroup;
-  const statsSections = ["watchtime", "library", "activity", "ratings"];
+  const statsSections = ["watchtime", "library", "activity"];
   const normalizeStatsSection = section => section === "playtime" ? "watchtime" : section === "breakdown" ? "library" : section;
   let statsSubpage = page === "statistics" && statsSections.includes(initialRoute[1]) ? normalizeStatsSection(initialRoute[1]) : "";
-  let statsLimits = { rated: 10, quick: 8 };
-  let renderedRoute = null, inAppNav = false, mixCache = null, mixRequest = 0, mixCategory = "", statsRange = "week", statsActivityDate = "", addCategory = "", discoverCategoryChoice = "";
+  let renderedRoute = null, inAppNav = false, mixCache = null, mixRequest = 0, mixCategory = "", statsRange = "week", statsActivityDate = "", statsWatchtimePage = 0, addCategory = "", discoverCategoryChoice = "";
   let metadataSourceFilter = "all";
   let entryDraftId = null, addReturnPage = "dashboard";
   let libraryQuery = new URLSearchParams(location.search).get("q") || "";
@@ -131,13 +109,17 @@
   if (!["list", "compact-list", "grid", "detailed-grid", "compact-grid", "large-grid", "timeline"].includes(prefs.dashboardView)) prefs.dashboardView = "list";
   if (prefs.dashboardSort === "title") prefs.dashboardSort = "alphabetical-asc";
   else if (prefs.dashboardSort === "recent") prefs.dashboardSort = "created-desc";
-  else if (prefs.dashboardSort === "rating") prefs.dashboardSort = "rating-desc";
+  else if (["rating", "rating-desc", "highest-rated"].includes(prefs.dashboardSort)) prefs.dashboardSort = "alphabetical-asc";
   if (!["all", ...config.categories[0].statuses].includes(dashboardStatusFilter)) dashboardStatusFilter = prefs.dashboardStatusFilter = "all";
   delete prefs.defaultCategory;
-  let activeCategory = prefs.dashboardDefaultCategory === "remember" ? "all" : prefs.dashboardDefaultCategory || "all";
+  const oldCategoryPreference = prefs.dashboardDefaultCategory;
+  let activeCategory = oldCategoryPreference === "remember" ? "series" : oldCategoryPreference || "series";
+  if (!config.categories.some(category => category.key === activeCategory)) activeCategory = "series";
+  const migrateDashboardCategory = oldCategoryPreference === "remember" || !oldCategoryPreference;
+  if (migrateDashboardCategory) prefs.dashboardDefaultCategory = activeCategory;
   let toastTimer;
   const detailIdFromQuery = query => { const raw = String(query || ""); return raw.startsWith("=") ? decodeURIComponent(raw.slice(1)) : new URLSearchParams(raw).get("id") || ""; };
-  let detailTab = "", detailSeason = "", detailStack = [], detailRef = null, refData = null, refLoading = false, refError = "", refRequest = 0;
+  let detailTab = "", detailSeason = "", detailStack = [], detailRef = null, detailRefOffset = 0, refData = null, refLoading = false, refError = "", refRequest = 0;
   let detailItemId = initialRoute[0] === "details" ? detailIdFromQuery(initialHashQuery) || null : null, detailPreview = null, detailData = null, detailError = "", detailLoading = false, detailEditMode = false, detailReturnPage = "dashboard", detailRequest = 0;
   let detailImagePosition = 0;
   const dashboardPageSize = 40;
@@ -203,7 +185,7 @@
 
   // Saving is scoped so a change only touches what changed:
   //   persist()                    whole library (imports, resets, anything unspecified)
-  //   persist({ ids: [id, ...] })  only those titles (add / edit / status / progress / rating / sync)
+  //   persist({ ids: [id, ...] })  only those titles (add / edit / status / progress / sync)
   //   persist({ removed: [id] })   delete those titles
   //   persist({ meta: true })      preferences and history only
   // Bursts are coalesced into one write ~250ms after the last change.
@@ -220,6 +202,24 @@
     persistTimer = setTimeout(flushPersist, 250);
     return promise;
   }
+  const migrateLocalRatings = items.some(item => Object.prototype.hasOwnProperty.call(item, "rating") || Object.values(item.episodeNotes || {}).some(note => Object.prototype.hasOwnProperty.call(note || {}, "rating")));
+  const legacyPreferences = stored.preferences || {};
+  const migrateRemovedPreferences = ["showRatings", "ratingFormat", "dashboardDensity", "font", "categoryColors", "showThumbnails", "showProgress"].some(key => Object.prototype.hasOwnProperty.call(legacyPreferences, key)) || ["rating", "rating-desc", "highest-rated"].includes(legacyPreferences.dashboardSort) || Boolean(legacyPreferences.theme && !["system", "light", "amoled"].includes(legacyPreferences.theme));
+  const stripLocalScores = item => {
+    if (!item || typeof item !== "object") return item;
+    delete item.rating;
+    Object.entries(item.episodeNotes || {}).forEach(([id, note]) => {
+      if (note && typeof note === "object") delete note.rating;
+      if (!note || !Object.keys(note).length) delete item.episodeNotes[id];
+    });
+    if (item.episodeNotes && !Object.keys(item.episodeNotes).length) delete item.episodeNotes;
+    return item;
+  };
+  items.forEach(stripLocalScores);
+  delete prefs.showRatings; delete prefs.ratingFormat; delete prefs.dashboardDensity; delete prefs.font; delete prefs.categoryColors; delete prefs.showThumbnails; delete prefs.showProgress;
+  if (!["system", "light", "amoled"].includes(prefs.theme)) prefs.theme = "system";
+  if (migrateLocalRatings) persist();
+  else if (migrateDashboardCategory || migrateRemovedPreferences) persist({ meta: true });
   function flushPersist() {
     clearTimeout(persistTimer); persistTimer = 0;
     const waiters = persistWaiters; persistWaiters = [];
@@ -285,10 +285,10 @@
   }
   function applyPreferences() {
     document.body.dataset.page = page;
-    const selectedTheme = prefs.theme === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : prefs.theme;
-    const palette = themePalettes[selectedTheme] || themePalettes.dark;
+    const selectedTheme = prefs.theme === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "amoled" : "light") : prefs.theme;
+    const palette = themePalettes[selectedTheme] || themePalettes.amoled;
     document.body.dataset.theme = palette.mode;
-    document.body.dataset.palette = themePalettes[selectedTheme] ? selectedTheme : "dark";
+    document.body.dataset.palette = themePalettes[selectedTheme] ? selectedTheme : "amoled";
     document.body.style.background = palette.background;
     document.body.style.color = palette.text;
     const root = document.documentElement;
@@ -319,7 +319,6 @@
     const lowEnd = Boolean(navigator.connection?.saveData) || (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
     root.dataset.lowend = String(lowEnd);
     document.body.dataset.corners = prefs.cardCorners;
-    document.body.dataset.density = prefs.dashboardDensity;
     document.body.dataset.dashboardView = prefs.dashboardView;
     document.body.dataset.oneHanded = prefs.oneHandedMode || "off";
     document.body.dataset.tabletColumns = String(prefs.tabletTwoColumn !== false);
@@ -344,9 +343,6 @@
     const easing = { smooth: ["cubic-bezier(.2,.7,.2,1)", "cubic-bezier(.32,.72,0,1)"], spring: ["cubic-bezier(.32,.72,0,1)", "cubic-bezier(.32,.72,0,1)"], bouncy: ["cubic-bezier(.34,1.56,.64,1)", "cubic-bezier(.34,1.56,.64,1)"], linear: ["linear", "linear"] }[prefs.animationEasing] || ["cubic-bezier(.2,.7,.2,1)", "cubic-bezier(.32,.72,0,1)"];
     document.documentElement.style.setProperty("--ease-out", easing[0]); document.documentElement.style.setProperty("--ease-spring", easing[1]);
     Object.entries({ pageAnim: prefs.pageTransition || "slide", cardAnim: prefs.cardEntrance || "rise", stagger: prefs.animationStagger !== false, sheetAnim: prefs.sheetAnimation || "slide", press: prefs.pressEffect || "shrink", hoverLift: prefs.hoverLift === true, navBounce: prefs.navBounce !== false, progressAnim: prefs.progressAnimation !== false, shimmer: prefs.skeletonShimmer !== false }).forEach(([key, value]) => { document.body.dataset[key] = String(value); });
-    const fontFamily = fontFamilies[prefs.font] || fontFamilies.inter;
-    root.style.setProperty("--font-family", fontFamily);
-    root.style.setProperty("--font-heading", fontFamily);
     $("#app-kicker").textContent = config.name.toUpperCase();
     document.title = `${config.name} · ${page === "settings" && settingsGroup ? settingsGroup : titles[page]}`;
     renderSidebar();
@@ -466,8 +462,8 @@
       historyJournalLoaded = true;
       window.SplitAppBackend?.readJournal?.("history").then(rows => { if (page === "settings" && settingsGroup === "history" && Array.isArray(rows)) { const local = changeLog; const keys = row => `${row.action}|${row.at}|${row.detail || ""}`; changeLog = [...new Map([...rows, ...local].map(row => [keys(row), row])).values()].sort((a, b) => (Number(b.at) || Date.parse(b.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0)); try { localStorage.setItem(`${storageKey}_history`, JSON.stringify(changeLog.slice(0, 2000))); } catch (_) {} render(); } }).catch(() => {});
     }
-    return { statsLimits, statsSubpage, statsActivityDate, statsRange, metadataSyncState, changeLog, logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, history, logEntries, roles, trackedStatuses, statusIcon, activeCategory, discoverCategory: currentDiscoverCategory(), libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", mixCategory: mixCategory || (activeCategory !== "all" ? activeCategory : "all"), statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
-      detailData, detailError, detailLoading, detailReturnPage, detailRef, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, refItem: detailRef?.type === "episode" ? items.find(entry => entry.category === "series" && (entry.cachedDetails?.sections || []).some(section => section.kind === "episodes" && section.items.some(row => String(row.id) === String(detailRef.id)))) || null : null, category, labelCategory, defaultStatus, esc, safeLucideName };
+    return { statsSubpage, statsActivityDate, statsRange, statsWatchtimePage, metadataSyncState, changeLog, logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, history, logEntries, roles, trackedStatuses, statusIcon, activeCategory, discoverCategory: currentDiscoverCategory(), libraryQuery, discoverQuery, addMetadataQuery, mixQuery: mixCache?.query || "", mixCategory: mixCategory || (activeCategory !== "all" ? activeCategory : "all"), statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter,
+      detailData, detailError, detailLoading, detailReturnPage, detailRef, detailRefOffset, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, refItem: detailRef?.type === "episode" ? items.find(entry => entry.category === "series" && (entry.cachedDetails?.sections || []).some(section => section.kind === "episodes" && section.items.some(row => String(row.id) === String(detailRef.id)))) || null : null, category, labelCategory, defaultStatus, esc, safeLucideName };
   }
   function dashboardGroupItems(groupKey) {
     const library = window.SplitAppLibrary.create(pageContext());
@@ -659,13 +655,22 @@
   function render() {
     if (!metadataSync && metadataSyncState?.entries?.some(entry => ["queued", "running"].includes(entry.status)) && navigator.onLine && prefs.metadataMode !== "offline" && !document.hidden) queueMicrotask(() => startMetadataSync(null, true));
     document.body.dataset.page = page;
-    $("#page-title").textContent = titles[page];
-    $("#header-filter").hidden = page !== "dashboard";
+    if (page === "dashboard") $("#page-title").innerHTML = `Screen<span>Mark</span>`; else $("#page-title").textContent = titles[page];
+    $("#header-filter").hidden = true;
     const headerType = $("#header-type");
-    headerType.hidden = page !== "dashboard";
+    headerType.hidden = page !== "dashboard" && page !== "discover";
     if (page === "dashboard") {
       const count = key => key === "all" ? items.length : items.filter(item => item.category === key).length;
-      headerType.innerHTML = [["all", "All"], ...config.categories.map(row => [row.key, row.label])].map(([key, label]) => `<button type="button" class="ios-pill${activeCategory === key ? " active" : ""}" data-category-filter="${esc(key)}" aria-pressed="${activeCategory === key}">${esc(label)} <em>${count(key)}</em></button>`).join("");
+      headerType.innerHTML = [...config.categories].sort((x, y) => (y.key === "series") - (x.key === "series")).map(row => [row.key, row.key === "series" ? "Series" : row.label]).map(([key, label]) => `<button type="button" class="lens-tab${activeCategory === key ? " on" : ""}" data-category-filter="${esc(key)}" aria-pressed="${activeCategory === key}">${esc(label)} <span class="l-cnt">${count(key)}</span></button>`).join("");
+    } else if (page === "discover") {
+      const source = discoverSource ? window.SplitAppSources.list().find(row => row.key === discoverSource) : null;
+      const categories = config.categories.filter(row => !source || source.categories.includes(row.key));
+      headerType.hidden = categories.length < 2;
+      headerType.innerHTML = categories.map(row => {
+        const label = row.key === "movie" ? "Movies" : row.key === "series" ? "TV series" : row.label;
+        const selected = currentDiscoverCategory() === row.key;
+        return `<button type="button" class="lens-tab${selected ? " on" : ""}" data-discover-category="${esc(row.key)}" aria-pressed="${selected}">${esc(label)}</button>`;
+      }).join("");
     }
     if (page === "dashboard" || page === "details") { let touched = false; items.forEach(entry => { if (entry.cachedDetails && reconcileEpisodes(entry)) touched = true; }); if (touched) persist(); }
     const content = $("#page-content");
@@ -835,24 +840,19 @@
       persist({ meta: true }); applyPreferences(); render();
     }));
     content.querySelector("[data-close-dashboard-filter]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#dashboard-filter-dialog")); });
+    content.querySelector("[data-open-dashboard-filter]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showPopup($("#dashboard-filter-dialog")); });
     content.querySelector("[data-reset-dashboard-filter]")?.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
-      dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; activeCategory = "all"; prefs.favoritesOnly = false; libraryQuery = "";
+      dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; prefs.favoritesOnly = false; libraryQuery = "";
       prefs.dashboardView = "list"; prefs.dashboardSort = "alphabetical-asc"; prefs.dashboardGroupBy = "status";
       persist({ meta: true }); applyPreferences(); historyPush(); closePopup($("#dashboard-filter-dialog")); render();
     });
     const dashboardFilterForm = content.querySelector("#dashboard-filter-form");
     const applyDashboardFilter = () => {
       if (!dashboardFilterForm) return;
-      dashboardStatusFilter = dashboardFilterForm?.elements.status.value || "all";
-      prefs.dashboardStatusFilter = dashboardStatusFilter;
-      activeCategory = dashboardFilterForm?.elements.category?.value || "all";
       prefs.dashboardView = dashboardFilterForm?.elements.view?.value || prefs.dashboardView;
       prefs.dashboardSort = dashboardFilterForm.elements.sort?.value || prefs.dashboardSort;
-      prefs.theme = dashboardFilterForm.elements.theme?.value || prefs.theme;
-      prefs.dashboardDensity = dashboardFilterForm.elements.density?.value || prefs.dashboardDensity;
       prefs.dashboardGroupBy = dashboardFilterForm.elements.groupBy?.value || prefs.dashboardGroupBy;
-      ["showRatings", "showProgress", "showThumbnails"].forEach(key => { prefs[key] = Boolean(dashboardFilterForm.elements[key]?.checked); });
       persist({ meta: true }); applyPreferences(); closePopup($("#dashboard-filter-dialog")); render();
     };
     dashboardFilterForm?.addEventListener("submit", event => { event.preventDefault(); event.stopPropagation(); applyDashboardFilter(); });
@@ -909,11 +909,6 @@
       event.preventDefault(); event.stopPropagation();
       runStorageAction(button.dataset.storageAction).catch(error => toast(error.message || "Storage action failed."));
     }));
-    content.querySelectorAll("[data-log-action]").forEach(button => button.addEventListener("click", event => {
-      event.preventDefault(); event.stopPropagation();
-      if (button.dataset.logAction === "clear") { localStorage.removeItem(`${storageKey}_log`); render(); toast("Logs cleared."); }
-      else if (button.dataset.logAction === "clear-history") { localStorage.removeItem(`${storageKey}_history`); window.SplitAppBackend?.clearJournal?.("history"); render(); toast("History cleared."); }
-    }));
     content.querySelectorAll("[data-metadata-sync-action]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
       if (button.dataset.metadataSyncAction === "retry") retryMetadataSync(button.dataset.id || null);
@@ -939,7 +934,6 @@
       }
     }));
     content.querySelectorAll("[data-setting-picker]").forEach(button => button.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); openSettingPicker(button); }));
-    content.querySelector("[data-category-colors-picker]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); openCategoryColorsPicker(); });
     content.querySelectorAll("[data-detail-image-src]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation(); showDetailImage($$('[data-detail-image-src]', content).indexOf(button));
     }));
@@ -1061,9 +1055,24 @@
     const names = (await caches.keys()).filter(name => name.startsWith(prefix) && (kind === "temporary" || name.includes(kind === "images" ? "image" : "metadata")));
     await Promise.all(names.map(name => caches.delete(name)));
   }
+  async function clearLogcat() {
+    localStorage.removeItem(`${storageKey}_log`);
+    await window.SplitAppBackend?.clearJournal?.("logcat");
+  }
+  async function clearLibraryHistory() {
+    history = [];
+    localStorage.removeItem(`${storageKey}_history`);
+    await Promise.all([persist(), window.SplitAppBackend?.clearJournal?.("history")]);
+  }
   async function runStorageAction(action) {
     if (action === "metadata" || action === "images" || action === "temporary") {
       await clearAppCaches(action); render(); toast("Temporary cache cleared."); return;
+    }
+    if (action === "logcat") {
+      await clearLogcat(); render(); toast("Logs cleared."); return;
+    }
+    if (action === "library-history") {
+      await clearLibraryHistory(); render(); toast("History cleared."); return;
     }
     if (action === "clear-data") {
       if (!(await appConfirm("Clear all tracked movies, series and activity history from this device?", { title: "Clear tracked data", confirmLabel: "Clear", danger: true }))) return;
@@ -1079,7 +1088,7 @@
       Object.assign(prefs, JSON.parse(JSON.stringify(prefsDefaults)));
       prefs.navIcons = { ...prefsDefaults.navIcons };
       prefs.navBar = { order: [...navKeys], visible: { ...prefsDefaults.navBar.visible } };
-      prefs.categoryColors = {}; prefs.apiKeys = {}; prefs.sourceOptions = {};
+      prefs.apiKeys = {}; prefs.sourceOptions = {};
       refreshSourceRegistry();
       persist(); applyPreferences(); render(); toast("ScreenMark has been reset.");
     }
@@ -1191,19 +1200,12 @@
     const results = $("#add-metadata-results"); if (results) { results.innerHTML = ""; results._results = []; }
   }
 
-  function updateRatingOptions(chosen = "") {
-    const select = $("#item-form")?.elements.rating;
-    if (!select) return;
-    const max = prefs.ratingFormat === "10-point" ? 10 : 5;
-    const current = chosen || select.value;
-    select.innerHTML = `<option value="">No rating</option>${Array.from({ length: max }, (_, index) => `<option value="${index + 1}">${index + 1}</option>`).join("")}`;
-    if (current) select.value = String(current);
-  }
   function saveItem(event) {
     const form = event.currentTarget; const data = new FormData(form); const id = data.get("id");
     const old = items.find(item => item.id === id); const key = data.get("category") || old?.category || config.categories[0]?.key;
     const image = String(data.get("image") || "");
-    const entry = { ...old, id: id || crypto.randomUUID(), title: String(data.get("title")).trim(), category: key, status: data.get("status") || defaultStatus(key), progress: Math.max(0, Number(data.get("progress")) || 0), rating: Number(data.get("rating")) || 0, goal: Math.max(0, Number(data.get("goal")) || 0), image, ...(image.startsWith("data:image/") ? { localThumbnailData: image } : {}), description: String(data.get("description") || "").trim(), metadataSource: String(data.get("metadataSource") || ""), providerId: String(data.get("providerId") || ""), url: String(data.get("url") || ""), year: String(data.get("year") || ""), createdAt: old?.createdAt || Date.now(), updatedAt: Date.now() };
+    const entry = { ...old, id: id || crypto.randomUUID(), title: String(data.get("title")).trim(), category: key, status: data.get("status") || defaultStatus(key), progress: Math.max(0, Number(data.get("progress")) || 0), goal: Math.max(0, Number(data.get("goal")) || 0), image, ...(image.startsWith("data:image/") ? { localThumbnailData: image } : {}), description: String(data.get("description") || "").trim(), metadataSource: String(data.get("metadataSource") || ""), providerId: String(data.get("providerId") || ""), url: String(data.get("url") || ""), year: String(data.get("year") || ""), createdAt: old?.createdAt || Date.now(), updatedAt: Date.now() };
+    stripLocalScores(entry);
     if (!entry.title) return;
     if (old) items[items.indexOf(old)] = entry; else { items.unshift(entry); recordLibraryChange("added", `Added ${entry.title}.`, [entry.id]); }
     if (old && JSON.stringify(old) !== JSON.stringify(entry)) recordLibraryChange("edited", `Updated ${entry.title}.`, [entry.id]);
@@ -1261,9 +1263,8 @@
   function currentDiscoverCategory() {
     const source = discoverSource ? window.SplitAppSources.list().find(row => row.key === discoverSource) : null;
     const allowed = source ? source.categories : config.categories.map(row => row.key);
-    const wanted = discoverCategoryChoice || (activeCategory !== "all" ? activeCategory : "all");
-    if (wanted === "all") return allowed.length > 1 ? "all" : allowed[0];
-    return allowed.includes(wanted) ? wanted : (allowed.length > 1 ? "all" : allowed[0]);
+    const preferred = discoverCategoryChoice || (activeCategory !== "all" ? activeCategory : "series");
+    return allowed.includes(preferred) ? preferred : allowed.includes("series") ? "series" : allowed[0];
   }
 
   function paintDiscoverResults(results, sourceKey) {
@@ -1292,7 +1293,7 @@
       catch (error) {
         if (requestId !== suggestionsRequest || page !== "discover") return;
         box.innerHTML = ""; if (empty) empty.hidden = false;
-        if (message && navigator.onLine) message.textContent = "Could not load suggestions. Search above to find a title.";
+        if (message && navigator.onLine) message.textContent = "Could not load suggestions right now.";
         return;
       }
       suggestionsCache = { key: cacheKey, sections };
@@ -1305,7 +1306,6 @@
     }).join("")}</div></section>`).join("");
     box.innerHTML = html || ""; box._results = flat;
     if (empty) empty.hidden = flat.length > 0;
-    if (message && flat.length && !message.textContent) message.textContent = "Suggestions from your enabled sources — or search above.";
   }
   async function discover() {
     const query = String(discoverQuery || "").trim(); const key = currentDiscoverCategory();
@@ -1375,7 +1375,7 @@
       }
       toast("That entry is already in your library."); return existing;
     }
-    const item = { ...result, metadataSource: result.source, id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, rating: 0, createdAt: Date.now(), updatedAt: Date.now() };
+    const item = stripLocalScores({ ...result, metadataSource: result.source, id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, createdAt: Date.now(), updatedAt: Date.now() });
     items.unshift(item); recordLibraryChange("added", `Added ${item.title} from ${origin}.`, [item.id]); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist({ ids: [item.id] }); toast("Added to your library."); hydrateSavedItem(item); return item;
   }
   // Keep the best value per fact across providers (a later source never blanks out earlier data).
@@ -1567,8 +1567,8 @@
     finally { if (requestId === detailRequest) { detailLoading = false; render(); if (page === "details") historyPush(true); } }
   }
   // In-app drill-down (cast, characters, staff, episodes, suggestions); each step keeps the page it came from for Back.
-  const detailSnapshot = () => ({ detailPreview, detailItemId, detailData, detailError, detailLoading, detailEditMode, detailReturnPage, detailRef, refData, refError, scroll: window.scrollY });
-  function clearDetailStack() { detailTab = ""; detailSeason = ""; detailStack = []; detailRef = null; refData = null; refError = ""; refLoading = false; refRequest++; }
+  const detailSnapshot = () => ({ detailPreview, detailItemId, detailData, detailError, detailLoading, detailEditMode, detailReturnPage, detailRef, detailRefOffset, refData, refError, scroll: window.scrollY });
+  function clearDetailStack() { detailTab = ""; detailSeason = ""; detailStack = []; detailRef = null; detailRefOffset = 0; refData = null; refError = ""; refLoading = false; refRequest++; }
   function openDetailRef(type, id, title, extra, replace = false) {
     if (!id) return;
     if (!replace) detailStack.push(detailSnapshot());
@@ -1579,6 +1579,7 @@
       else { detailItemId = null; detailPreview = { id: `tvmaze:${id}`, title: title || "Series", category: "series", source: "tvmaze", metadataSource: "tvmaze", providerId: String(id), status: defaultStatus("series") }; }
       render(); scrollPageTop(); historyPush(replace); loadDetails(); return;
     }
+    if (!replace) detailRefOffset = 0;
     detailRef = { type, id, title, extra }; refData = null; refError = ""; render(); scrollPageTop(); historyPush(replace); loadDetailRef();
   }
   async function loadDetailRef() {
@@ -1770,7 +1771,10 @@
     const next = info.eps.filter(entry => ids.has(String(entry.id))).length;
     const changed = next !== before || ids.size !== (item.watchedEpisodeIds || []).length;
     item.watchedEpisodeIds = [...ids]; item.progress = next;
-    if (!Number(item.goal) || Number(item.goal) !== info.total) item.goal = info.total;
+    // Keep the tracked goal stable when a metadata refresh adds a new episode.
+    // The newly listed episode remains the next item, while progress can still
+    // accurately read 62/62 until the user chooses to continue.
+    if (!(Number(item.goal) > 0)) item.goal = info.total;
     return changed;
   }
   // Move progress by `delta` episodes: forward marks the next unwatched ones, back unmarks the latest watched ones.
@@ -1779,14 +1783,15 @@
     const ids = new Set((item.watchedEpisodeIds || []).map(String));
     if (delta > 0) info.eps.filter(entry => !ids.has(String(entry.id))).slice(0, delta).forEach(entry => ids.add(String(entry.id)));
     else [...info.eps].reverse().filter(entry => ids.has(String(entry.id))).slice(0, -delta).forEach(entry => ids.delete(String(entry.id)));
-    item.watchedEpisodeIds = [...ids]; item.progress = ids.size; item.goal = info.total;
+    const currentGoal = Number(item.goal) || info.total;
+    item.watchedEpisodeIds = [...ids]; item.progress = ids.size; item.goal = ids.size > currentGoal ? info.total : currentGoal;
     return true;
   }
   function scrollPageTop() { const go = () => { window.scrollTo({ top: 0, behavior: "instant" }); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; }; go(); requestAnimationFrame(go); }
   function detailBack() {
     const previous = detailStack.pop(); if (!previous) return;
     refRequest++; detailRequest++;
-    ({ detailPreview, detailItemId, detailData, detailError, detailEditMode, detailReturnPage, detailRef, refData, refError } = previous);
+    ({ detailPreview, detailItemId, detailData, detailError, detailEditMode, detailReturnPage, detailRef, detailRefOffset = 0, refData, refError } = previous);
     detailLoading = false; refLoading = false;
     render(); window.scrollTo({ top: previous.scroll || 0, behavior: "instant" }); historyPush(true);
     if (!detailRef && !detailData && (detailPreview || detailItemId)) loadDetails();
@@ -1795,7 +1800,8 @@
     const item = items.find(entry => entry.id === itemId); if (!item) return;
     const watched = new Set((item.watchedEpisodeIds || []).map(String));
     ids.forEach(id => done ? watched.delete(id) : watched.add(id));
-    item.watchedEpisodeIds = [...watched]; item.goal = Number(item.goal) || Number(detailData?.goal) || watched.size; item.progress = watched.size;
+    const info = window.SplitAppLibrary.episodeInfo(item), currentGoal = Number(item.goal) || Number(detailData?.goal) || watched.size;
+    item.watchedEpisodeIds = [...watched]; item.goal = !done && info && watched.size > currentGoal ? info.total : currentGoal; item.progress = watched.size;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = roles.done;
     item.updatedAt = Date.now(); persist({ ids: [item.id] }); render();
   }
@@ -1803,6 +1809,7 @@
     const item = items.find(entry => entry.id === itemId); if (!item) return;
     const watched = new Set((item.watchedEpisodeIds || []).map(String));
     const id = String(episodeId);
+    const markingWatched = !watched.has(id);
     const previousStatus = item.status;
     let earlier = 0;
     if (watched.has(id)) watched.delete(id);
@@ -1813,7 +1820,8 @@
       watched.add(id);
     }
     item.watchedEpisodeIds = [...watched];
-    item.goal = Number(item.goal) || Number(detailData?.goal) || watched.size;
+    const info = window.SplitAppLibrary.episodeInfo(item), currentGoal = Number(item.goal) || Number(detailData?.goal) || watched.size;
+    item.goal = markingWatched && info && watched.size > currentGoal ? info.total : currentGoal;
     item.progress = watched.size;
     if (item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = roles.done;
     item.updatedAt = Date.now();
@@ -1872,7 +1880,6 @@
         target.cachedDetails = { ...target.cachedDetails, sections: [...(target.cachedDetails.sections || []), ...(source.cachedDetails.sections || [])] };
       } else if (!target.cachedDetails && source.cachedDetails) target.cachedDetails = source.cachedDetails;
       target.progress = Math.max(Number(target.progress) || 0, Number(source.progress) || 0);
-      target.rating = Number(target.rating) || Number(source.rating) || 0;
       target.favorite = Boolean(target.favorite || source.favorite); target.updatedAt = Date.now();
       history = history.map(entry => String(entry.itemId) === String(source.id) ? { ...entry, itemId: target.id, title: target.title } : entry);
       items = items.filter(item => item !== source);
@@ -2029,7 +2036,7 @@
     const tagList = Array.isArray(tags) ? tags : typeof tags === "string" ? tags.split(/,\s*/) : [tags];
     const info = detail ? [field(/^director|directors|created by$/i), field(/^runtime$/i), field(/^network|studio$/i), field(/^language$/i)].filter(Boolean) : [];
     const tagText = [...tagList.map(tag => typeof tag === "string" ? tag : tag?.name || tag?.title || ""), ...info].filter(Boolean).slice(0, 8).join(" · ");
-    return { id: String(item.id), title: item.title, subtitle: [category(item.category)?.label, item.year, tagText].filter(Boolean).join(" · "), status: item.status, rating: Number(item.rating) ? `★ ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}` : "", progressText: progress || goal ? `${progress}${goal ? ` / ${goal}` : ""}${unit ? ` ${unit}` : ""}` : "", percent: goal ? Math.min(100, Math.round(progress / goal * 100)) : null };
+    return { id: String(item.id), title: item.title, subtitle: [category(item.category)?.label, item.year, tagText].filter(Boolean).join(" · "), status: item.status, progressText: progress || goal ? `${progress}${goal ? ` / ${goal}` : ""}${unit ? ` ${unit}` : ""}` : "", percent: goal ? Math.min(100, Math.round(progress / goal * 100)) : null };
   }
   const shareCacheGet = (key, sig) => window.SplitAppIDB?.getShareCache?.(key, sig) || Promise.resolve(null);
   const shareCachePut = (key, sig, blob) => window.SplitAppIDB?.putShareCache?.(key, sig, blob).catch(() => {});
@@ -2071,7 +2078,7 @@
     const languages = (detail.languages || []).map(row => typeof row === "string" ? row : row?.name).filter(Boolean);
     const report = {
       title: item.title, category: item.category, subtitle: [category(item.category)?.label, item.year, item.status].filter(Boolean).join(" · "),
-      status: item.status, rating: entry.rating, progressText: entry.progressText, percent: entry.percent,
+      status: item.status, progressText: entry.progressText, percent: entry.percent,
       fields, description: overview, requirements: null,
       languages, tags: Array.isArray(tags) ? tags.map(row => typeof row === "string" ? row : row?.name).filter(Boolean) : String(tags).split(/,\s*/),
       shotUrls: images, coverPromise: shareLoadUrl(item.customCover || item.localPortraitData || item.localThumbnailData || item.localImageData?.image || detail.portraitImage || item.image || detail.image, 720)
@@ -2101,10 +2108,9 @@
     if (key === "bottomBarBackground" && value === "solid") prefs.bottomBarTransparency = 100;
     persist({ meta: true }); applyPreferences();
     if (key === "backgroundBackups" || key === "backupSchedule") syncBackupSchedule();
-    if (key === "ratingFormat") updateRatingOptions();
     if (key === "dashboardStatusFilter") dashboardStatusFilter = value || "all";
     if (key === "dashboardDefaultCategory") activeCategory = value === "remember" || value === "all" ? "all" : value;
-    if (["dashboardGroupBy", "dashboardSort", "showRatings", "showProgress", "showThumbnails", "dashboardDensity", "dashboardView", "dashboardStatusFilter", "dashboardDefaultCategory", "dashboardRowActions", "cardCorners", "oneHandedMode", "tabletTwoColumn", "theme", "ratingFormat"].includes(key)) render();
+    if (["dashboardGroupBy", "dashboardSort", "dashboardView", "dashboardStatusFilter", "dashboardDefaultCategory", "dashboardRowActions", "cardCorners", "oneHandedMode", "tabletTwoColumn", "theme"].includes(key)) render();
   }
   function openSettingPicker(trigger) {
     let options = [];
@@ -2117,15 +2123,16 @@
     if (!dialog || !list || !title) return;
     title.textContent = trigger.getAttribute("aria-label")?.split(":")[0] || "Choose an option";
     const themeInfo = {
-      light:["Clean white surfaces with indigo accents.","#f8fafc","#4f46e5","#0f172a"], dark:["Neutral charcoal surfaces with violet accents.","#111111","#8b5cf6","#f5f5f7"], grey:["Soft graphite surfaces with slate accents.","#111827","#64748b","#f9fafb"], amoled:["Pure black surfaces with raised charcoal cards.","#000000","#a78bfa","#f8fafc"], flashbang:["Bright white surfaces and bold charcoal details.","#f8fafc","#111827","#0f172a"], "material-you":["Layered charcoal surfaces with purple accents.","#10131d","#8b5cf6","#f8fafc"], ocean:["Midnight blue surfaces with clear aqua accents.","#081b2b","#38bdf8","#e0f2fe"], forest:["Deep evergreen surfaces with fresh mint accents.","#10221b","#4ade80","#ecfdf5"], sunset:["Warm espresso surfaces with golden orange accents.","#261714","#fb923c","#fff7ed"], rose:["Dark plum surfaces with soft rose accents.","#251722","#fb7185","#fff1f2"], lavender:["Smoky violet surfaces with lilac accents.","#211d35","#c4b5fd","#f5f3ff"], nord:["Cool blue-grey surfaces with icy blue accents.","#242d3b","#88c0d0","#eceff4"], sand:["Warm paper surfaces with terracotta accents.","#faf4e8","#c2410c","#29231d"], mint:["Pale green surfaces with deep teal accents.","#effaf5","#0f766e","#12352d"], system:["Match your device appearance setting.","#e2e8f0","#6366f1","#0f172a"]
+      system:["Match your device's light or dark appearance.","#f8fafc","#6366f1","#0f172a"],
+      light:["Clean white surfaces with indigo accents.","#f8fafc","#4f46e5","#0f172a"],
+      amoled:["Pure black surfaces with raised charcoal cards.","#000000","#a78bfa","#f8fafc"]
     };
-    const fontInfo = { system:"Uses the font built into your device.", inter:"Clean, neutral, and easy to scan.", outfit:"Rounded geometric lettering with a friendly feel.", serif:"Traditional letterforms with a bookish feel.", monospace:"Even-width characters with a technical feel.", rounded:"Soft, friendly rounded letterforms.", poppins:"Geometric sans serif with a warm feel.", roboto:"Compact, familiar Android-style lettering.", nunito:"Soft shapes with highly readable text.", lato:"Open, balanced letterforms for longer reading.", merriweather:"Serif lettering tuned for comfortable reading.", "jetbrains-mono":"Clear monospaced lettering for detail.", "open-sans":"Open, friendly lettering for everyday reading.", montserrat:"Bold geometric lettering with a modern feel.", oswald:"Tall, condensed lettering for strong headings.", raleway:"Elegant, light geometric lettering.", ubuntu:"Warm, humanist lettering with a distinct character.", "playfair-display":"High-contrast serif lettering for a refined feel.", "fira-sans":"Readable humanist lettering designed for screens.", rubik:"Rounded, clean lettering with a modern shape.", quicksand:"Rounded, light lettering with a relaxed feel.", caveat:"Casual handwritten lettering with a personal feel." };
     const settingPreviewIcons = {
       textSize: { small: "type", normal: "text", large: "text-cursor-input" },
       animationSpeed: { off: "pause", fast: "zap", normal: "gauge", slow: "turtle", custom: "sliders-horizontal" },
       dashboardView: { list: "list", "compact-list": "align-justify", grid: "layout-grid", "detailed-grid": "layout-dashboard", "compact-grid": "grid-3x3", "large-grid": "square", timeline: "calendar-days" },
       dashboardDefaultCategory: { remember: "history", all: "layers", movie: "film", series: "tv" },
-      dashboardSort: { "updated-desc": "clock-3", "created-desc": "calendar-plus", "progress-desc": "trending-up", "progress-asc": "trending-down", "rating-desc": "star", "release-desc": "calendar-days", "alphabetical-asc": "arrow-down-a-z", "alphabetical-desc": "arrow-up-z-a" },
+      dashboardSort: { "updated-desc": "clock-3", "created-desc": "calendar-plus", "progress-desc": "trending-up", "progress-asc": "trending-down", "release-desc": "calendar-days", "alphabetical-asc": "arrow-down-a-z", "alphabetical-desc": "arrow-up-z-a" },
       defaultStatus: { Watchlist: "bookmark", "In Progress": "play", Completed: "circle-check", "On Hold": "pause", Dropped: "circle-x" },
       dateFormat: { auto: "globe", dmy: "calendar", mdy: "calendar", iso: "calendar-days", long: "calendar-check" },
       iconStyle: { tiles: "layout-grid", inline: "list" },
@@ -2141,9 +2148,7 @@
       bottomBarLabels: { "icons-labels": "list", "icons-only": "layout-grid" },
       bottomBarLayout: { spread: "align-horizontal-space-between", center: "align-horizontal-justify-center", left: "align-horizontal-justify-start" },
       cardCorners: { rounded: "circle", soft: "squircle", square: "square" },
-      dashboardDensity: { comfortable: "rows-3", compact: "rows-2" },
       dashboardGroupBy: { none: "list", status: "circle-check", category: "folders", release: "calendar-days" },
-      ratingFormat: { "5-stars": "star", "10-point": "chart-no-axes-column-increasing" },
       automaticCompletion: { automatic: "refresh-cw", ask: "message-circle-question", manual: "hand" },
       defaultStatus: Object.fromEntries(config.categories[0].statuses.map(status => [status, statusIcon(status)])),
       progressIncrement: { 1: "signal-low", 5: "signal-medium", 10: "signal-high" },
@@ -2165,16 +2170,11 @@
       let preview;
       let description = "";
       if (kind === "theme") {
-        const palette = themeInfo[option.value] || themeInfo.dark;
+        const palette = themeInfo[option.value] || themeInfo.amoled;
         preview = document.createElement("span"); preview.className = "setting-theme-preview";
         preview.style.setProperty("--preview-bg", palette[1]); preview.style.setProperty("--preview-accent", palette[2]); preview.style.setProperty("--preview-text", palette[3]);
         preview.innerHTML = '<i></i><span><b></b><b></b></span>';
         description = palette[0];
-      } else if (kind === "font") {
-        preview = document.createElement("span"); preview.className = "setting-font-preview"; preview.textContent = "Aa";
-        preview.style.fontFamily = fontFamilies[option.value] || fontFamilies.inter;
-        button.style.fontFamily = fontFamilies[option.value] || fontFamilies.inter;
-        description = fontInfo[option.value] || "Preview this typeface throughout the app.";
       } else if (kind === "palette") {
         preview = document.createElement("span"); preview.className = "setting-color-preview"; preview.style.setProperty("--choice-color", option.value);
         description = `Use ${option.label.toLowerCase()} for buttons and highlights.`;
@@ -2203,38 +2203,15 @@
     window.lucide?.createIcons({ root: list, attrs: { "aria-hidden": "true" } });
     showPopup(dialog);
   }
-  function openCategoryColorsPicker() {
-    const dialog = $("#setting-picker-dialog");
-    const list = dialog ? $("[data-setting-picker-list]", dialog) : null;
-    const title = $("[data-setting-picker-title]", dialog);
-    if (!dialog || !list || !title) return;
-    title.textContent = "Category colors";
-    const draft = { ...prefs.categoryColors };
-    list.replaceChildren();
-    const note = document.createElement("p"); note.className = "setting-picker-note"; note.textContent = "Choose an accent color for each library category."; list.appendChild(note);
-    config.categories.forEach(category => {
-      const row = document.createElement("label"); row.className = "category-color-option";
-      const copy = document.createElement("span"); copy.className = "category-color-copy";
-      const icon = document.createElement("span"); icon.className = "category-color-icon"; icon.textContent = category.icon || "◦";
-      const name = document.createElement("strong"); name.textContent = category.label; copy.append(icon, name);
-      const color = document.createElement("input"); color.type = "color"; color.value = draft[category.key] || category.color || prefs.mainColor; color.setAttribute("aria-label", `${category.label} accent color`);
-      color.addEventListener("input", () => { draft[category.key] = color.value; });
-      row.append(copy, color); list.appendChild(row);
-    });
-    const save = document.createElement("button"); save.type = "button"; save.className = "setting-picker-save"; save.textContent = "Save colors";
-    save.addEventListener("click", () => { prefs.categoryColors = draft; persist({ meta: true }); render(); closePopup(dialog); toast("Category colors updated."); });
-    list.appendChild(save);
-    showPopup(dialog);
-  }
   // Native: stream the library in small chunks to a file the user picks with Android's "Save as" screen
   // (silent: straight into the backup folder, used before destructive actions). Browsers get a normal download.
   let exportRunning = false;
   async function exportNames(format) {
-    const columns = ["Title", "Category", "Year", "Status", "Rating", "Progress", "Goal", "Review"];
+    const columns = ["Title", "Category", "Year", "Status", "Progress", "Goal", "Review"];
     const quote = value => `"${String(value ?? "").replace(/"/g, '""')}"`;
     const content = format === "txt"
       ? items.map(item => String(item.title || "").trim()).filter(Boolean).join("\n") + "\n"
-      : [columns.map(quote).join(","), ...items.map(item => [item.title, item.category, item.year, item.status, item.rating, item.progress, item.goal, item.review || item.notes].map(quote).join(","))].join("\r\n");
+      : [columns.map(quote).join(","), ...items.map(item => [item.title, item.category, item.year, item.status, item.progress, item.goal, item.review || item.notes].map(quote).join(","))].join("\r\n");
     const mime = format === "txt" ? "text/plain;charset=utf-8" : "text/csv;charset=utf-8";
     const name = `${config.key}-titles-${new Date().toISOString().slice(0, 10)}`;
     try {
@@ -2297,14 +2274,14 @@
         const rows = parseCsv(text); if (!rows.length) throw new Error("The CSV file has no title rows.");
         const normalize = value => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
         const first = rows[0].map(normalize), hasHeader = first.some(value => ["title", "name"].includes(value));
-        const headers = hasHeader ? first : ["title", "category", "year", "status", "rating", "progress", "goal", "review"];
+        const headers = hasHeader ? first : ["title", "category", "year", "status", "progress", "goal", "review"];
         const records = (hasHeader ? rows.slice(1) : rows).map(row => Object.fromEntries(headers.map((header, index) => [header, row[index] || ""])));
         const fallbackCategory = activeCategory !== "all" ? activeCategory : config.categories[0].key;
         incoming = records.map(record => {
           const title = String(record.title || record.name || Object.values(record)[0] || "").trim();
           const categoryKey = config.categories.some(cat => cat.key === record.category) ? record.category : fallbackCategory;
           const cat = config.categories.find(entry => entry.key === categoryKey);
-          return { ...record, title, category: categoryKey, status: cat?.statuses.includes(record.status) ? record.status : defaultStatus(categoryKey), year: record.year || "", rating: Number(record.rating) || 0, progress: Number(record.progress) || 0, goal: Number(record.goal) || 0 };
+          return { ...record, title, category: categoryKey, status: cat?.statuses.includes(record.status) ? record.status : defaultStatus(categoryKey), year: record.year || "", progress: Number(record.progress) || 0, goal: Number(record.goal) || 0 };
         }).filter(item => item.title);
         data = { items: incoming };
       } else {
@@ -2319,12 +2296,13 @@
         if (item.id != null) idMap.set(String(item.id), id);
         const categoryKey = config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key;
         const statuses = config.categories.find(cat => cat.key === categoryKey)?.statuses || [];
-        return { ...item, id, category: categoryKey, status: item.status || defaultStatus(categoryKey), createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
+        const cleanItem = stripLocalScores({ ...item });
+        return { ...cleanItem, id, category: categoryKey, status: item.status || defaultStatus(categoryKey), createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
       });
       const identity = item => `${item.category}:${String(item.title || "").trim().toLocaleLowerCase()}`;
       const byIdentity = new Map(items.map(item => [identity(item), item]));
       const fresh = [], patches = [];
-      const fillFields = ["rating", "favorite", "progress", "goal", "metadataSource", "providerId", "sourceIds", "mixPrimary", "mixSources", "mixSourceKeys", "facts", "cachedDetails", "url", "description", "image", "backdrop", "year"];
+      const fillFields = ["favorite", "progress", "goal", "metadataSource", "providerId", "sourceIds", "mixPrimary", "mixSources", "mixSourceKeys", "facts", "cachedDetails", "url", "description", "image", "backdrop", "year"];
       const empty = value => value == null || value === "" || value === 0 || (Array.isArray(value) && !value.length) || (typeof value === "object" && !Array.isArray(value) && !Object.keys(value).length);
       for (const imported of normalized) {
         const existing = byIdentity.get(identity(imported));
@@ -2378,8 +2356,8 @@
     } catch (error) { toast(error.message || "Could not import this file."); }
   }
   function resetDashboard() {
-    Object.assign(prefs, { dashboardView: "list", dashboardDefaultCategory: "remember", dashboardStatusFilter: "all", dashboardSort: "alphabetical-asc", cardCorners: "rounded", dashboardDensity: "comfortable", dashboardGroupBy: "status", dashboardRowActions: "menu", showThumbnails: true, showRatings: true, showProgress: true, ratingFormat: "5-stars", oneHandedMode: "off", tabletTwoColumn: true });
-    dashboardStatusFilter = "all"; activeCategory = "all"; persist({ meta: true }); applyPreferences(); render(); toast("Dashboard preferences restored.");
+    Object.assign(prefs, { dashboardView: "list", dashboardDefaultCategory: "series", dashboardStatusFilter: "all", dashboardSort: "alphabetical-asc", cardCorners: "rounded", dashboardGroupBy: "status", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true });
+    dashboardStatusFilter = "all"; activeCategory = "series"; persist({ meta: true }); applyPreferences(); render(); toast("Dashboard preferences restored.");
   }
   function resetAnimations() {
     ["reduceMotion", "animationSpeed", "animationCustom", "animationEasing", "pageTransition", "cardEntrance", "animationStagger", "sheetAnimation", "pressEffect", "hoverLift", "navBounce", "progressAnimation", "skeletonShimmer"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
@@ -2391,8 +2369,7 @@
     toast("Replaying animations.");
   }
   function resetAppearance() {
-    ["theme", "textSize", "font", "dateFormat", "iconStyle", "mainColor", "showSidebar", "showScrollbars", "bottomBarStyle", "bottomBarCorners", "bottomBarLabels", "bottomBarBackground", "bottomBarTransparency", "bottomBarLayout"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
-    prefs.categoryColors = {};
+    ["theme", "textSize", "dateFormat", "iconStyle", "mainColor", "showSidebar", "showScrollbars", "bottomBarStyle", "bottomBarCorners", "bottomBarLabels", "bottomBarBackground", "bottomBarTransparency", "bottomBarLayout"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
     prefs.navIcons = { ...prefsDefaults.navIcons };
     prefs.navBar = { order: [...navKeys], visible: { ...prefsDefaults.navBar.visible } };
     persist({ meta: true }); applyPreferences(); render(); toast("Appearance settings restored.");
@@ -2429,7 +2406,7 @@
       return;
     }
     const quickStatus = event.target.closest("[data-quick-status]");
-    if (quickStatus) { setPreference("dashboardStatusFilter", quickStatus.dataset.quickStatus); return; }
+    if (quickStatus) { if (quickStatus.dataset.quickStatus === "all" && prefs.favoritesOnly) prefs.favoritesOnly = false; setPreference("dashboardStatusFilter", quickStatus.dataset.quickStatus); return; }
     const detailStatus = event.target.closest("[data-detail-status-btn]");
     if (detailStatus) {
       const item = items.find(row => row.id === detailItemId);
@@ -2486,16 +2463,10 @@
     if (event.target.closest("[data-custom-source-delete]")) { deleteCustomSource(); return; }
     const rangeButton = event.target.closest("[data-stats-range]");
     if (rangeButton) { statsRange = rangeButton.dataset.statsRange === "month" ? "month" : "week"; statsActivityDate = ""; render(); return; }
+    const watchtimePageButton = event.target.closest("[data-stats-watchtime-page]");
+    if (watchtimePageButton) { statsWatchtimePage = Math.max(0, Number(watchtimePageButton.dataset.statsWatchtimePage) || 0); render(); return; }
     const activityDay = event.target.closest("[data-stats-activity-date]");
     if (activityDay) { statsActivityDate = activityDay.dataset.statsActivityDate; render(); return; }
-    const statsMore = event.target.closest("[data-stats-more]");
-    if (statsMore) { const kind = statsMore.dataset.statsMore === "rated" ? "rated" : "quick"; statsLimits = { ...statsLimits, [kind]: statsLimits[kind] + (kind === "rated" ? 15 : 10) }; render(); return; }
-    const statsRating = event.target.closest("[data-stats-rating]");
-    if (statsRating) {
-      const item = itemById(String(statsRating.dataset.statsRating));
-      if (item) { item.rating = Number(statsRating.dataset.score) || 0; item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); toast(`Rated ${item.title} ${item.rating}/${prefs.ratingFormat === "10-point" ? 10 : 5}.`); }
-      return;
-    }
     const findHours = event.target.closest("[data-stats-find-hours]");
     if (findHours) { findMissingHours(findHours); return; }
     const fetchFacts = event.target.closest("[data-stats-fetch-facts]");
@@ -2515,32 +2486,6 @@
     if (stepper) {
       const input = $("#item-form")?.elements[stepper.dataset.stepInput];
       if (input) { input.value = Math.max(0, (Number(input.value) || 0) + Number(stepper.dataset.step)); input.dispatchEvent(new Event("input", { bubbles: true })); }
-      return;
-    }
-    const addStar = event.target.closest("[data-add-star]");
-    if (addStar) {
-      const select = $("#item-form")?.elements.rating;
-      if (select) {
-        const value = Number(select.value) === Number(addStar.dataset.addStar) ? "" : addStar.dataset.addStar;
-        select.value = value;
-        $$("[data-add-star]").forEach(star => star.classList.toggle("active", Number(star.dataset.addStar) <= Number(value || 0)));
-        const label = $("#add-rating-label"); if (label) label.textContent = value ? `${value} / ${select.options.length - 1}` : "No rating";
-      }
-      return;
-    }
-    const detailRating = event.target.closest("[data-detail-rating]");
-    if (detailRating) {
-      const item = items.find(row => row.id === detailItemId);
-      if (!item) return;
-      item.rating = Number(detailRating.dataset.detailRating) || 0;
-      item.updatedAt = Date.now();
-      persist({ ids: [item.id] });
-      $$("[data-detail-rating]").forEach(button => {
-        const active = Number(button.dataset.detailRating) <= item.rating;
-        button.setAttribute("aria-checked", String(Number(button.dataset.detailRating) === item.rating));
-        const star = button.querySelector("svg, i"); star?.classList.toggle("active", active);
-        if (button === detailRating) { star?.classList.remove("pop"); void star?.getBoundingClientRect(); star?.classList.add("pop"); }
-      });
       return;
     }
     const cancelAdd = event.target.closest("[data-cancel-add]");
@@ -2573,7 +2518,6 @@
     const resetOptions = event.target.closest("[data-source-reset-options]");
     if (resetOptions) { delete prefs.sourceOptions[resetOptions.dataset.sourceResetOptions]; persist({ meta: true }); render(); toast("Source options reset."); return; }
     const go = event.target.closest("[data-go]"); if (go) { goto(go.dataset.go); return; }
-    if (event.target.closest("[data-category-colors-picker]")) { openCategoryColorsPicker(); return; }
     const navMove = event.target.closest("[data-nav-move]");
     if (navMove) { prefs.navBar.order = moveInOrder([...prefs.navBar.order], navMove.dataset.navKey, navMove.dataset.navMove); persist({ meta: true }); applyPreferences(); render(); return; }
     const sourceMove = event.target.closest("[data-source-move]");
@@ -2613,8 +2557,11 @@
       closePopup($("#log-filter-dialog")); render(); return;
     }
     const logAction = event.target.closest("[data-log-action]");
-    if (logAction?.dataset.logAction === "clear") { localStorage.removeItem(`${storageKey}_log`); window.SplitAppBackend?.clearJournal?.("logcat"); logEntries = []; render(); toast("Logs cleared."); return; }
-    if (logAction?.dataset.logAction === "clear-history") { localStorage.removeItem(`${storageKey}_history`); window.SplitAppBackend?.clearJournal?.("history"); render(); toast("History cleared."); return; }
+    if (logAction?.dataset.logAction === "clear") { clearLogcat().then(() => { render(); toast("Logs cleared."); }).catch(error => { recordLog("error", `Log clear failed: ${error?.message || error}`); toast("Could not clear logs."); }); return; }
+    if (logAction?.dataset.logAction === "clear-history") {
+      clearLibraryHistory().then(() => { render(); toast("History cleared."); }).catch(error => { recordLog("error", `History clear failed: ${error?.message || error}`); toast("Could not clear history."); });
+      return;
+    }
     const syncAction = event.target.closest("[data-metadata-sync-action]");
     if (syncAction) { if (syncAction.dataset.metadataSyncAction === "start") syncMetadataNow(); else if (syncAction.dataset.metadataSyncAction === "retry") retryMetadataSync(syncAction.dataset.id || null); else if (syncAction.dataset.metadataSyncAction === "clear") clearMetadataSyncState(); return; }
     const matchReviewOk = event.target.closest("[data-match-review-ok]");
@@ -2644,6 +2591,8 @@
     if (detailRefButton) { const [type, ...rest] = detailRefButton.dataset.detailRef.split(":"); { let extra; try { extra = JSON.parse(detailRefButton.dataset.detailRefExtra || "null"); } catch (_) {} openDetailRef(type, rest.join(":"), detailRefButton.dataset.detailRefTitle, extra, detailRefButton.dataset.refReplace === "true"); } return; }
     if (event.target.closest("[data-detail-back]")) { detailBack(); return; }
     if (event.target.closest("[data-detail-ref-retry]")) { loadDetailRef(); return; }
+    const refPage = event.target.closest("[data-detail-ref-page]");
+    if (refPage) { detailRefOffset = Math.max(0, Number(refPage.dataset.detailRefPage) || 0); render(); scrollPageTop(); return; }
     const seasonButton = event.target.closest("[data-season-toggle]");
     if (seasonButton) {
       const ids = seasonButton.dataset.seasonToggle.split(","), undo = seasonButton.dataset.seasonDone === "true";
@@ -2677,13 +2626,13 @@
       root.querySelectorAll("[data-season-panel]").forEach(panel => { panel.hidden = panel.dataset.seasonPanel !== detailSeason; const lazy = !panel.hidden && panel.querySelector("template[data-lazy-season]"); if (lazy) lazy.replaceWith(lazy.content); });
       return;
     }
-    const rateEpisode = event.target.closest("[data-episode-rate]"), reactEpisode = event.target.closest("[data-episode-react]");
-    if (rateEpisode || reactEpisode) {
-      const button = rateEpisode || reactEpisode, item = items.find(entry => entry.id === button.dataset.itemId); if (!item) return;
-      item.episodeNotes = item.episodeNotes || {}; const note = { ...(item.episodeNotes[button.dataset.episodeId] || {}) };
-      if (rateEpisode) { const score = Number(rateEpisode.dataset.episodeRate); if (note.rating === score) delete note.rating; else note.rating = score; }
-      else { if (note.reaction === reactEpisode.dataset.episodeReact) delete note.reaction; else note.reaction = reactEpisode.dataset.episodeReact; }
-      if (Object.keys(note).length) item.episodeNotes[button.dataset.episodeId] = note; else delete item.episodeNotes[button.dataset.episodeId];
+    const reactEpisode = event.target.closest("[data-episode-react]");
+    if (reactEpisode) {
+      const item = items.find(entry => entry.id === reactEpisode.dataset.itemId); if (!item) return;
+      item.episodeNotes = item.episodeNotes || {}; const note = { ...(item.episodeNotes[reactEpisode.dataset.episodeId] || {}) };
+      if (note.reaction === reactEpisode.dataset.episodeReact) delete note.reaction; else note.reaction = reactEpisode.dataset.episodeReact;
+      if (Object.keys(note).length) item.episodeNotes[reactEpisode.dataset.episodeId] = note; else delete item.episodeNotes[reactEpisode.dataset.episodeId];
+      if (!Object.keys(item.episodeNotes).length) delete item.episodeNotes;
       item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); return;
     }
     const layoutToggle = event.target.closest("[data-ratings-layout]");
@@ -2722,11 +2671,6 @@
       persist({ ids: [item.id] });
       return;
     }
-    if (input.matches("[data-detail-rating-select]")) {
-      const item = items.find(row => row.id === detailItemId);
-      if (item) { item.rating = Number(input.value) || 0; item.updatedAt = Date.now(); persist({ ids: [item.id] }); }
-      return;
-    }
     if (input.matches("[data-custom-picker]")) {
       setPreference("mainColor", input.value); render();
       const list = $("[data-setting-picker-list]");
@@ -2738,7 +2682,6 @@
       if (input.type === "number" || input.type === "range") value = Number(value);
       setPreference(key, value); if (input.type === "range") input.nextElementSibling.value = `${value}%`;
     }
-    if (input.matches("[data-category-color]")) { prefs.categoryColors[input.dataset.categoryColor] = input.value; persist({ meta: true }); render(); }
     if (input.matches("[data-api-key]")) { prefs.apiKeys[input.dataset.apiKey] = input.value.trim(); persist({ meta: true }); }
     if (input.matches("[data-source]")) { window.SplitAppSources.setEnabled(prefs, input.dataset.source, input.checked); persist({ meta: true }); }
     if (input.matches("[data-nav-visible]")) {
@@ -2858,8 +2801,6 @@
     if (event.target.id === "custom-source-form") { saveCustomSource(event); return; }
     if (event.target.id !== "dashboard-filter-form") return;
     event.preventDefault();
-    dashboardStatusFilter = event.target.elements.status.value || "all";
-    prefs.dashboardStatusFilter = dashboardStatusFilter;
     prefs.dashboardView = event.target.elements.view?.value || prefs.dashboardView;
     persist({ meta: true });
     applyPreferences();
@@ -2926,7 +2867,11 @@
     document.addEventListener("mousemove", event => { if (mouseDown) move(event.clientY, event); });
     document.addEventListener("mouseup", () => { if (mouseDown) { mouseDown = false; finish(); } });
   })();
-  $("#header-type").addEventListener("click", event => { const button = event.target.closest("[data-category-filter]"); if (!button) return; activeCategory = button.dataset.categoryFilter || "all"; render(); });
+  $("#header-type").addEventListener("click", event => {
+    const discoverButton = event.target.closest("[data-discover-category]");
+    if (discoverButton && page === "discover") { discoverCategoryChoice = discoverButton.dataset.discoverCategory; discoverCache = null; suggestionsCache = null; discoverQuery = ""; render(); return; }
+    const button = event.target.closest("[data-category-filter]"); if (!button) return; activeCategory = button.dataset.categoryFilter || "series"; prefs.dashboardDefaultCategory = activeCategory; persist({ meta: true }); render();
+  });
   $("[data-close-setting-picker]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#setting-picker-dialog")); });
   $("#floating-add").addEventListener("click", () => openItem());
   function syncRouteFromHash() {
@@ -3001,6 +2946,8 @@
       const nativeItems = Array.isArray(restored.items) ? restored.items.filter(item => config.categories.some(category => category.key === item.category)) : items;
       const nativeHistory = Array.isArray(restored.history) ? restored.history : history;
       const nativePreferences = restored.preferences && typeof restored.preferences === "object" ? restored.preferences : {};
+      const nativeHasLegacyScores = nativeItems.some(item => Object.prototype.hasOwnProperty.call(item, "rating") || Object.values(item.episodeNotes || {}).some(note => Object.prototype.hasOwnProperty.call(note || {}, "rating")));
+      const nativeHasLegacyPreferences = ["showRatings", "ratingFormat", "dashboardDensity", "font", "categoryColors", "showThumbnails", "showProgress"].some(key => Object.prototype.hasOwnProperty.call(nativePreferences, key)) || ["rating", "rating-desc", "highest-rated"].includes(nativePreferences.dashboardSort) || Boolean(nativePreferences.theme && !["system", "light", "amoled"].includes(nativePreferences.theme));
       // Changes made while the folder was loading win over the loaded copy (they used to be overwritten).
       if (localMutationRevision === initialRevision) {
         items = nativeItems;
@@ -3023,12 +2970,16 @@
         }
         Object.assign(prefs, nativePreferences);
       }
+      items.forEach(stripLocalScores);
+      delete prefs.showRatings; delete prefs.ratingFormat; delete prefs.dashboardDensity; delete prefs.font; delete prefs.categoryColors; delete prefs.showThumbnails; delete prefs.showProgress;
+      if (!["system", "light", "amoled"].includes(prefs.theme)) prefs.theme = "system";
+      if (["rating", "rating-desc", "highest-rated"].includes(prefs.dashboardSort)) prefs.dashboardSort = "alphabetical-asc";
       delete prefs.defaultCategory;
       delete prefs.appLook;
       delete prefs.appDisplayName;
       refreshSourceRegistry();
       normalizeNavigationPrefs();
-      if (!restored.fast) await window.SplitAppBackend.save({ items, history, preferences: prefs });
+      if (!restored.fast || nativeHasLegacyScores || nativeHasLegacyPreferences) await window.SplitAppBackend.save({ items, history, preferences: prefs });
       return true;
     } catch (error) {
       recordLog("error", `App data restore failed: ${error.message || error}`);
@@ -3057,6 +3008,10 @@
   });
   applyPreferences();
   render();
+  const systemColorScheme = window.matchMedia("(prefers-color-scheme: dark)");
+  const syncSystemTheme = () => { if (prefs.theme === "system") { applyPreferences(); render(); } };
+  systemColorScheme.addEventListener?.("change", syncSystemTheme);
+  if (!systemColorScheme.addEventListener) systemColorScheme.addListener?.(syncSystemTheme);
   if (page === "details" && initialRoute[1] && !detailItemId) {
     const query = new URLSearchParams(initialHashQuery), source = decodeURIComponent(initialRoute[1]), providerId = decodeURIComponent(initialRoute[2] || "");
     const known = window.SplitAppMetadata?.providers?.find(row => row.key === source);

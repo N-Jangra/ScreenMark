@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enhanced Media Tracker UI</title>
+  <style>
+    /* ==========================================================
+       DESIGN SYSTEM & THEME VARIABLES
+       ========================================================== */
+    :root {
+      --bg-base: #0b0c10;
+      --bg-surface: #14161f;
+      --bg-surface-elevated: #1d212d;
+      --bg-glass: rgba(26, 29, 41, 0.7);
+      
+      --accent-purple: #7c3aed;
+      --accent-purple-glow: rgba(124, 58, 237, 0.35);
+      --accent-purple-light: #a78bfa;
+      
+      --accent-amber: #f59e0b;
+      --accent-green: #10b981;
+      
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-faint: #64748b;
+      
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(124, 58, 237, 0.5);
+      
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-full: 9999px;
+      
+      --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-stack);
+      display: flex;
+      justify-content: center;
+      padding: 20px 10px;
+    }
+
+    .mobile-frame {
+      width: 100%;
+      max-width: 412px;
+      background: var(--bg-base);
+      border-radius: 36px;
+      border: 1px solid var(--border-subtle);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      position: relative;
+    }
+
+    /* Screen Container */
+    .screen-content {
+      padding: 18px 18px 90px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ==========================================================
+       HEADER & NAVIGATION
+       ========================================================== */
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 6px;
+    }
+
+    .screen-title {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .icon-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      height: 38px;
+      padding: 0 14px;
+      border-radius: var(--radius-full);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .icon-btn:active {
+      transform: scale(0.96);
+      background: var(--bg-surface-elevated);
+    }
+
+    /* Category Chips Carousel */
+    .chip-group {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      margin: 0 -4px;
+      padding: 2px 4px;
+    }
+    .chip-group::-webkit-scrollbar { display: none; }
+
+    .chip {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: var(--radius-full);
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .chip.active {
+      background: var(--accent-purple);
+      color: #ffffff;
+      border-color: transparent;
+      box-shadow: 0 4px 14px var(--accent-purple-glow);
+    }
+
+    /* Search Bar */
+    .search-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .search-box input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-size: 14px;
+      width: 100%;
+    }
+    .search-box input::placeholder { color: var(--text-faint); }
+
+    /* ==========================================================
+       HERO "CONTINUE WATCHING" (LazyWatch Inspiration)
+       ========================================================== */
+    .hero-banner {
+      position: relative;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(20, 22, 31, 0.4) 0%, rgba(13, 14, 18, 0.95) 100%),
+                  url('https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=600&q=80') center/cover;
+      border: 1px solid var(--border-subtle);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      min-height: 200px;
+      gap: 12px;
+    }
+
+    .hero-badge {
+      align-self: flex-start;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      background: rgba(124, 58, 237, 0.2);
+      border: 1px solid rgba(124, 58, 237, 0.4);
+      color: var(--accent-purple-light);
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+      backdrop-filter: blur(8px);
+    }
+
+    .hero-meta h3 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .hero-meta p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* Progress bar */
+    .progress-track {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: var(--radius-full);
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-purple), #9333ea);
+      border-radius: var(--radius-full);
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .btn-primary {
+      flex: 1;
+      background: var(--accent-purple);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-md);
+      padding: 11px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px var(--accent-purple-glow);
+    }
+
+    .btn-quick-check {
+      width: 42px;
+      height: 42px;
+      border-radius: var(--radius-md);
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .btn-quick-check.checked {
+      background: var(--accent-green);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    /* ==========================================================
+       SECTION: IN-PROGRESS LIST (Enhanced Screen 11)
+       ========================================================== */
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-count {
+      font-size: 11px;
+      background: var(--bg-surface-elevated);
+      color: var(--text-muted);
+      padding: 2px 7px;
+      border-radius: var(--radius-full);
+      font-weight: 600;
+    }
+
+    .media-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 10px;
+      transition: border-color 0.2s;
+    }
+    .media-card:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .media-poster {
+      width: 50px;
+      height: 68px;
+      border-radius: var(--radius-sm);
+      object-fit: cover;
+      background: var(--bg-surface-elevated);
+      flex-shrink: 0;
+    }
+
+    .media-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .media-info-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .media-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .media-subtext {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .media-progress-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .media-progress-bar .progress-track {
+      flex: 1;
+      height: 4px;
+    }
+
+    .progress-percent {
+      font-size: 11px;
+      color: var(--text-faint);
+      font-weight: 600;
+    }
+
+    /* Circular check icon (TV Time style) */
+    .check-circle {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 2px solid var(--border-subtle);
+      background: transparent;
+      color: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+    .check-circle.completed {
+      background: var(--accent-purple);
+      border-color: var(--accent-purple);
+      color: #fff;
+    }
+
+    /* ==========================================================
+       SECTION: EPISODE BREAKDOWN (Enhanced Screen 16)
+       ========================================================== */
+    .filter-pills {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      margin: 8px 0;
+    }
+    .filter-pills::-webkit-scrollbar { display: none; }
+
+    .filter-pill {
+      font-size: 12px;
+      padding: 5px 12px;
+      border-radius: var(--radius-full);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .filter-pill.active {
+      background: var(--bg-surface-elevated);
+      color: var(--accent-purple-light);
+      border-color: var(--accent-purple);
+    }
+
+    .episode-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      display: flex;
+      gap: 12px;
+      margin-bottom: 8px;
+      align-items: center;
+    }
+
+    .episode-thumb-wrap {
+      position: relative;
+      width: 84px;
+      height: 52px;
+      flex-shrink: 0;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+    .episode-thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .episode-details {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .episode-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-main);
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .episode-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .rating-tag {
+      color: var(--accent-amber);
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    /* ==========================================================
+       BOTTOM NAVIGATION BAR
+       ========================================================== */
+    .bottom-nav {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 64px;
+      background: var(--bg-glass);
+      backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      padding: 0 10px;
+      z-index: 10;
+    }
+
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-faint);
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .nav-item.active {
+      color: var(--accent-purple-light);
+    }
+    .nav-item svg {
+      width: 20px;
+      height: 20px;
+      stroke-width: 2;
+    }
+
+    /* Floating Action Button (FAB) */
+    .fab {
+      position: absolute;
+      bottom: 78px;
+      right: 18px;
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-full);
+      background: var(--accent-purple);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      box-shadow: 0 8px 20px var(--accent-purple-glow);
+      cursor: pointer;
+      transition: transform 0.2s ease;
+      z-index: 9;
+    }
+    .fab:active { transform: scale(0.92); }
+  </style>
+</head>
+<body>
+
+  <div class="mobile-frame">
+    <div class="screen-content">
+
+      <!-- TOP BAR -->
+      <div class="top-bar">
+        <h1 class="screen-title">Collection</h1>
+        <button class="icon-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6"/></svg>
+          Filter
+        </button>
+      </div>
+
+      <!-- MEDIA CHIP SELECTORS -->
+      <div class="chip-group">
+        <div class="chip active">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>
+          TV Series
+        </div>
+        <div class="chip">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+          Movies
+        </div>
+        <div class="chip">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Anime
+        </div>
+        <div class="chip">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Novels
+        </div>
+      </div>
+
+      <!-- SEARCH BAR -->
+      <div class="search-box">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="Search title, genre, creator...">
+      </div>
+
+      <!-- HERO / CONTINUE WATCHING (LazyWatch-style single focus card) -->
+      <div class="hero-banner">
+        <div class="hero-badge">Up Next</div>
+        <div class="hero-meta">
+          <h3>Friends</h3>
+          <p>S09 · E20 "The One with the Mugging"</p>
+          <div class="progress-track" style="margin-top: 8px;">
+            <div class="progress-fill" style="width: 88%;"></div>
+          </div>
+        </div>
+        <div class="hero-actions">
+          <button class="btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Resume S9:E20
+          </button>
+          <button class="btn-quick-check" title="Mark episode finished">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- IN PROGRESS SECTION (TV Time granular list + fast check action) -->
+      <div>
+        <div class="section-header">
+          <div class="section-title">
+            In Progress
+            <span class="section-count">2 active</span>
+          </div>
+          <span style="font-size: 12px; color: var(--text-muted); cursor: pointer;">See all</span>
+        </div>
+
+        <!-- Item 1: Friends -->
+        <div class="media-card">
+          <img class="media-poster" src="https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&w=120&q=80" alt="Friends">
+          <div class="media-info">
+            <div class="media-info-top">
+              <span class="media-name">Friends</span>
+              <span class="rating-tag">★ 8.9</span>
+            </div>
+            <span class="media-subtext">S09E19 watched · 4 eps left</span>
+            <div class="media-progress-bar">
+              <div class="progress-track">
+                <div class="progress-fill" style="width: 90%;"></div>
+              </div>
+              <span class="progress-percent">90%</span>
+            </div>
+          </div>
+          <button class="check-circle completed" title="Marked as caught up">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+        </div>
+
+        <!-- Item 2: Sherlock -->
+        <div class="media-card">
+          <img class="media-poster" src="https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=120&q=80" alt="Sherlock">
+          <div class="media-info">
+            <div class="media-info-top">
+              <span class="media-name">Sherlock</span>
+              <span class="rating-tag">★ 9.1</span>
+            </div>
+            <span class="media-subtext">S01E02 · The Blind Banker</span>
+            <div class="media-progress-bar">
+              <div class="progress-track">
+                <div class="progress-fill" style="width: 17%;"></div>
+              </div>
+              <span class="progress-percent">17%</span>
+            </div>
+          </div>
+          <button class="check-circle" title="Mark watched">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- EPISODE LIST PREVIEW (From Show Details Screen) -->
+      <div>
+        <div class="section-header">
+          <div class="section-title">Season 9 Episodes</div>
+          <span style="font-size: 12px; color: var(--accent-purple-light); font-weight: 600; cursor: pointer;">Mark all watched</span>
+        </div>
+
+        <!-- Filter pills for quick state switching -->
+        <div class="filter-pills">
+          <span class="filter-pill active">All (24)</span>
+          <span class="filter-pill">Unwatched (4)</span>
+          <span class="filter-pill">Specials</span>
+        </div>
+
+        <!-- Episode 1 -->
+        <div class="episode-card">
+          <div class="episode-thumb-wrap">
+            <img class="episode-thumb" src="https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=150&q=80" alt="Episode">
+          </div>
+          <div class="episode-details">
+            <span class="episode-title">1. The One Where No One Proposes</span>
+            <div class="episode-sub">
+              <span>22m</span>
+              <span>•</span>
+              <span class="rating-tag">★ 8.9</span>
+              <span>•</span>
+              <span>26 Sep</span>
+            </div>
+          </div>
+          <button class="check-circle completed">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+        </div>
+
+        <!-- Episode 2 -->
+        <div class="episode-card">
+          <div class="episode-thumb-wrap">
+            <img class="episode-thumb" src="https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=150&q=80" alt="Episode">
+          </div>
+          <div class="episode-details">
+            <span class="episode-title">2. The One Where Emma Cries</span>
+            <div class="episode-sub">
+              <span>22m</span>
+              <span>•</span>
+              <span class="rating-tag">★ 8.8</span>
+              <span>•</span>
+              <span>03 Oct</span>
+            </div>
+          </div>
+          <button class="check-circle">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- FLOATING QUICK ADD BUTTON -->
+    <button class="fab" title="Add Title">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+
+    <!-- BOTTOM APP NAVIGATION -->
+    <nav class="bottom-nav">
+      <a class="nav-item active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span>Library</span>
+      </a>
+      <a class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span>Search</span>
+      </a>
+      <a class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
+        <span>Explore</span>
+      </a>
+      <a class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Settings</span>
+      </a>
+    </nav>
+  </div>
+
+</body>
+</html>

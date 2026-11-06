@@ -1,4 +1,4 @@
-// Builds a real (vector + text) PDF listing a group of titles: count, cover, name, tags, rating and viewing progress.
+// Builds a real (vector + text) PDF listing a group of titles: count, cover, name, tags and viewing progress.
 // Text uses the PDF's built-in Helvetica; names with characters Helvetica cannot show are placed as small images.
 (() => {
   const PW = 595.28, PH = 841.89, MX = 32, MT = 38, MB = 34, ROW = 46, TW = 28, TH = 38;
@@ -77,7 +77,7 @@
     return { bytes: await perf.jpegBytes(c, perf.quality(.85)), w: wPx, h: hPx, ptW: wPx / k, ptH: hPx / k };
   }
 
-  // entries: [{ title, tags, rating, progress }]; covers: array of Image/ImageBitmap/null; theme: { page, text, muted, line, accent, card2 }
+  // entries: [{ title, tags, progress }]; covers: array of Image/ImageBitmap/null; theme: { page, text, muted, line, accent, card2 }
   async function build({ title, entries, covers, theme, onProgress }) {
     const bg = rgb(theme.page, [1, 1, 1]), text = rgb(theme.text, [.1, .1, .15]), muted = rgb(theme.muted, [.45, .47, .55]);
     const line = rgb(theme.line, mix(bg, text, .12), bg), accent = rgb(theme.accent, [.39, .33, .96]), card2 = rgb(theme.card2, mix(bg, text, .06), bg);
@@ -139,16 +139,11 @@
         if (t2.ok) ops += fill(muted) + `BT /F1 8 Tf ${num(textCol)} ${num(top - 32)} Td ${lit(t2.text)} Tj ET\n`;
         else { const img = await textJpeg(tags, 8, false, muted, bg, colW); const id = addImage(img); ops += `q ${num(img.ptW)} 0 0 ${num(img.ptH)} ${num(textCol)} ${num(top - 32 - img.ptH * 0.3 - 1)} cm /Im${id} Do Q\n`; }
       }
-      // rating + viewing progress (right aligned)
+      // viewing progress (right aligned)
       const rx = PW - MX;
-      if (e.rating) {
-        const rt = winAnsi(e.rating).text, w = widthOf(rt, 9.5, true);
-        ops += fill([.96, .62, .04]) + star(rx - w - 8, top - 17, 4.4) + "f\n";
-        ops += fill(text) + `BT /F2 9.5 Tf ${num(rx - w)} ${num(top - 20)} Td ${lit(rt)} Tj ET\n`;
-      }
       if (e.progress) {
         const ht = winAnsi(e.progress).text, w = widthOf(ht, 9, false);
-        ops += fill(muted) + `BT /F1 9 Tf ${num(rx - w)} ${num(top - 34)} Td ${lit(ht)} Tj ET\n`;
+        ops += fill(muted) + `BT /F1 9 Tf ${num(rx - w)} ${num(top - 20)} Td ${lit(ht)} Tj ET\n`;
       }
       // separator
       ops += stroke(mix(bg, line, .4)) + `0.25 w ${num(textCol)} ${num(top - ROW)} m ${num(PW - MX)} ${num(top - ROW)} l S\n`;
