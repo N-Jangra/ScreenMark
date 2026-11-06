@@ -183,7 +183,7 @@ a.discover-sources-chip { text-decoration:none; }
 .stats-overview-tile > span { color: var(--muted); font-size: .72rem; font-weight: 650; }
 .stats-overview-tile > strong { overflow: hidden; max-width: 100%; font-size: 1.45rem; font-variant-numeric: tabular-nums; letter-spacing: -.04em; text-overflow: ellipsis; white-space: nowrap; }
 .stats-overview-tile > strong small { margin-left: 3px; color: var(--muted); font-size: .72rem; letter-spacing: 0; }
-.stats-overview-tile > small { display: -webkit-box; overflow: hidden; max-width: 100%; color: var(--muted); font-size: .66rem; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.stats-overview-tile > small { display: -webkit-box; overflow: hidden; max-width: 100%; color: var(--muted); font-size: .66rem; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .stats-explore-section { display: grid; gap: 12px; }
 .stats-explore-section .stats-section-heading { margin: 0; }
 .stats-destinations { display: grid; gap: 9px; }
@@ -416,6 +416,7 @@ body[data-icon-style="inline"] :is(.stats-destination-icon svg, .stats-activity-
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 .stats-game-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-width: 0; }
 .stats-game-category, .stats-game-logged { display: inline-flex; align-items: center; min-height: 21px; color: var(--muted); font-size: .68rem; line-height: 1.2; }

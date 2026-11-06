@@ -103,8 +103,6 @@ body[data-theme=light] .collection-toolbar h2 { color:#0f172a; }
 }
 
 .explore-page { display:grid; gap:14px; }
-body[data-bar-corners="round"] .bottom-bar { border-radius:20px 20px 0 0; }
-body[data-bar-corners="sharp"] .bottom-bar { border-radius:0; }
 .explore-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:5px 0 2px; }
 .explore-heading h1 { margin:0; font:800 1.55rem var(--font-heading,system-ui,sans-serif); letter-spacing:-.04em; }
 .explore-icon-btn { display:grid; place-items:center; width:38px; height:38px; border:0; border-radius:50%; background:var(--accent-soft); color:var(--accent-text,var(--accent)); }
@@ -351,8 +349,6 @@ body[data-theme=light] .settings-detail-page .settings-search { background:var(-
 .manage-nav-row-copy strong { font-size:.88rem; }
 .manage-nav-row-copy small { color:var(--muted); font-size:.72rem; }
 .nav-layout-actions,.source-row-actions { display:flex; align-items:center; justify-content:flex-end; gap:5px; }
-.nav-layout-actions>button,.source-row-actions>button { display:grid; place-items:center; width:32px; height:32px; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); color:var(--muted); cursor:pointer; }
-.nav-layout-actions>button:disabled,.source-row-actions>button:disabled { opacity:.35; cursor:default; }
 .nav-layout-actions .toggle,.source-row-actions .toggle { margin-left:4px; }
 .metadata-source-filters { display:flex; gap:8px; margin:12px 0 16px; overflow-x:auto; }
 .metadata-source-filter { min-height:34px; padding:6px 13px; border:1px solid var(--line); border-radius:99px; background:var(--surface); color:var(--muted); cursor:pointer; }
@@ -510,7 +506,6 @@ body { min-width:0; }
 @media(max-width:430px) {
   .sortable-item { grid-template-columns:18px minmax(0,1fr) auto; gap:7px; padding:9px; }
   .nav-layout-actions,.source-row-actions { gap:3px; }
-  .nav-layout-actions>button,.source-row-actions>button { width:28px; height:30px; }
   .source-api-key { margin-left:34px; }
 }
 .item-title-link{max-width:100%;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;cursor:pointer}.item-title-link:hover{color:var(--accent-text,var(--accent));text-decoration:underline;text-underline-offset:3px}

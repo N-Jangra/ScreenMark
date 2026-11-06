@@ -146,6 +146,8 @@
 .detail-loading { border: 1px solid var(--line); background: var(--surface); }
 .detail-error { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid rgba(239, 68, 68, .24); background: rgba(127, 29, 29, .25); color: #fca5a5; }
 .detail-error p { margin: 0; }
+.detail-error-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+@media (max-width: 560px) { .detail-error { align-items: flex-start; flex-direction: column; } .detail-error-actions { width: 100%; flex-wrap: wrap; } }
 
 body[data-theme="light"] .detail-hero-copy h2,
 body[data-theme="light"] .detail-progress-card strong,
@@ -213,7 +215,7 @@ body[data-theme="light"] .episode-toggle.is-watched { color: #15803d; }
 .episode-text { display: grid; gap: 3px; min-width: 0; }
 .episode-text strong { font-size: .82rem; line-height: 1.3; }
 .episode-text small { color: var(--muted); font-size: .7rem; }
-.episode-text em { font-style: normal; color: var(--legacy-secondary); font-size: .74rem; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.episode-text em { font-style: normal; color: var(--legacy-secondary); font-size: .74rem; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .episode-rating, .ep-rate { font-size: .7rem; font-weight: 700; border-radius: 8px; padding: 3px 7px; color: #0b1020; }
 .r5 { background: #4ade80; } .r4 { background: #a3e635; } .r3 { background: #facc15; } .r2 { background: #fb923c; } .r1 { background: #f87171; } .r0 { background: var(--surface); color: var(--muted); }
 .ep-ratings-note { margin: 0 0 8px; color: var(--muted); font-size: .76rem; }
