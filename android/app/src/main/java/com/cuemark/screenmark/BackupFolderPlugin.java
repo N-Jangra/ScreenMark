@@ -74,6 +74,89 @@ public class BackupFolderPlugin extends Plugin {
         call.resolve(result_);
     }
 
+    // ---- Chunked export: "Save as" picker or backup folder, then many small writes (no giant bridge message). ----
+    // Own thread so an export is never stuck behind a long folder sync.
+    private final ExecutorService exportExecutor = Executors.newSingleThreadExecutor(runnable -> { Thread t = new Thread(runnable, "SavePoint-Export"); t.setDaemon(true); return t; });
+    private OutputStream exportStream;
+
+    private synchronized void closeExportStream() {
+        if (exportStream != null) { try { exportStream.flush(); exportStream.close(); } catch (Exception ignored) {} exportStream = null; }
+    }
+
+    @PluginMethod
+    public void createDocument(PluginCall call) {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(call.getString("mimeType", "application/json"));
+        intent.putExtra(Intent.EXTRA_TITLE, call.getString("fileName", "savepoint-backup.json"));
+        startActivityForResult(call, intent, "createDocumentResult");
+    }
+
+    @ActivityCallback
+    private void createDocumentResult(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        if (result.getResultCode() != android.app.Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
+            call.reject("cancelled");
+            return;
+        }
+        Uri uri = result.getData().getData();
+        exportExecutor.execute(() -> {
+            try {
+                closeExportStream();
+                exportStream = getContext().getContentResolver().openOutputStream(uri, "wt");
+                if (exportStream == null) throw new Exception("Could not open the chosen file");
+                // Small text exports pass their content up front, so saving still completes if
+                // Android discards the WebView while the system picker is open.
+                String inline = call.getString("content");
+                if (inline != null) {
+                    exportStream.write(inline.getBytes(StandardCharsets.UTF_8));
+                    closeExportStream();
+                }
+                JSObject out = new JSObject();
+                out.put("uri", uri.toString());
+                call.resolve(out);
+            } catch (Exception e) { call.reject("Could not create the file: " + e.getMessage(), e); }
+        });
+    }
+
+    @PluginMethod
+    public void beginFolderExport(PluginCall call) {
+        exportExecutor.execute(() -> {
+            try {
+                String treeUriStr = call.getString("uri"), fileName = call.getString("fileName");
+                if (treeUriStr == null || fileName == null) { call.reject("Missing 'uri' or 'fileName'"); return; }
+                Uri treeUri = Uri.parse(treeUriStr);
+                Uri dirUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
+                Uri existing = findChildDocument(treeUri, dirUri, fileName);
+                Uri target = existing != null ? existing : DocumentsContract.createDocument(getContext().getContentResolver(), dirUri, "application/json", fileName);
+                if (target == null) throw new Exception("Failed to create the file in the backup folder");
+                closeExportStream();
+                exportStream = getContext().getContentResolver().openOutputStream(target, "wt");
+                if (exportStream == null) throw new Exception("Could not open the file for writing");
+                JSObject out = new JSObject();
+                out.put("uri", target.toString());
+                call.resolve(out);
+            } catch (Exception e) { call.reject("Could not start the export: " + e.getMessage(), e); }
+        });
+    }
+
+    @PluginMethod
+    public void writeDocumentChunk(PluginCall call) {
+        String content = call.getString("content");
+        exportExecutor.execute(() -> {
+            try {
+                if (exportStream == null) throw new Exception("No export file is open");
+                exportStream.write(content == null ? new byte[0] : content.getBytes(StandardCharsets.UTF_8));
+                call.resolve();
+            } catch (Exception e) { closeExportStream(); call.reject("Write failed: " + e.getMessage(), e); }
+        });
+    }
+
+    @PluginMethod
+    public void closeDocument(PluginCall call) {
+        exportExecutor.execute(() -> { closeExportStream(); call.resolve(); });
+    }
+
     @PluginMethod
     public void writeFile(PluginCall call) {
         storageExecutor.execute(() -> doWriteFile(call));
@@ -212,9 +295,18 @@ public class BackupFolderPlugin extends Plugin {
 
         try {
             Uri treeUri = Uri.parse(treeUriStr);
+            String documentId;
+            try {
+                documentId = DocumentsContract.getDocumentId(treeUri);
+            } catch (IllegalArgumentException treeRootUri) {
+                // A picked SAF tree URI has no /document/<id> segment; its tree ID is
+                // the directory to list. Nested URIs have both segments and use their
+                // document ID so listing screenmark-db does not list the selected root.
+                documentId = DocumentsContract.getTreeDocumentId(treeUri);
+            }
             Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
                 treeUri,
-                DocumentsContract.getTreeDocumentId(treeUri)
+                documentId
             );
 
             JSObject result = new JSObject();

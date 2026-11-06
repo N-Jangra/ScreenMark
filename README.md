@@ -8,10 +8,11 @@ ScreenMark is a local-first tracker for **movies and TV series**. It runs as a b
 - Home with type and status filters, a filter sheet and a quick-action sheet on every card.
 - Discover movies and series across TVmaze, AniList, TMDB, TheTVDB, IMDb, Rotten Tomatoes and OMDb, with suggestion rows (TV schedules, top movies, trending anime) when nothing is searched.
 - Source-backed Details pages: cast, episode guide (tap to mark watched), ratings, links, related titles; saved with the title for offline use.
-- Statistics (watch time, left to watch, status mix, activity by week or month) and a poster Timeline.
+- Statistics: an overview with Watch time, Library breakdown, Activity and Ratings sub-pages (including a Not rated yet list), and a Timeline grouped by day.
+- Favorites (♥) from Details or the ⋮ menu, with a Favorites filter on Home.
 - **Mix fetch (beta):** one list across all sources, details merged from every enabled source.
 - **Custom sources:** add any JSON search API on a guided page.
-- Export and import a JSON library backup; Android encrypted storage with optional folder database and daily backups.
+- Export (Android Save as screen, chunked) and import a JSON library backup; the library lives in IndexedDB with a device cover cache, plus Android encrypted storage, an optional folder database and daily backups.
 
 ## Metadata providers
 
@@ -45,5 +46,9 @@ Open the local URL printed by the server. For Android, run `npm run cap:sync` be
 ## App identity
 
 - Package: `screenmark`
-- Storage key: `splitapp_screenmark_v1`
+- Storage key: `splitapp_screenmark_v1` (IndexedDB database `screenmark_library`)
 - Android application ID: `com.cuemark.screenmark`
+
+## Release build
+
+`python3 compile_apk.py` builds a signed release APK into `dist/screenmark-<version>-release.apk` (signed when `android/keystore.properties` exists). Use `--version 0.1.0` to set the version or `--debug` for a debug APK next to the script. Without `--version` it keeps the version in `android/app/build.gradle`.

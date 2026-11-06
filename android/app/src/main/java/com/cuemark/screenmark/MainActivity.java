@@ -12,6 +12,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(EncryptedStorePlugin.class);
         registerPlugin(BackupSchedulerPlugin.class);
         registerPlugin(ShareIntentPlugin.class);
+        registerPlugin(ProviderSessionPlugin.class);
+        registerPlugin(ScrollbarControlPlugin.class);
         registerPlugin(WidgetPlugin.class);
         super.onCreate(savedInstanceState);
     }

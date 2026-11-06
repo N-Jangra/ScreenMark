@@ -204,17 +204,10 @@ def install_android_sdk(env):
     subprocess.run(cmd, check=True, env=env)
     log("SDK packages installed.")
 
-def build_app(env, version_name="1.0"):
-    log("Installing Capacitor and setting up wrapper...")
+APP_NAME = "ScreenMark"
 
-    # frontend/ is the only thing Capacitor packages into the app — CHANGELOG.md
-    # lives at repo root for GitHub/README visibility, so it must be mirrored
-    # in here on every build or the in-app Changelog page silently goes stale.
-    changelog_src = os.path.join(BASE_DIR, "CHANGELOG.md")
-    changelog_dest = os.path.join(BASE_DIR, "frontend", "CHANGELOG.md")
-    if os.path.exists(changelog_src):
-        log("Copying CHANGELOG.md into frontend/...")
-        shutil.copyfile(changelog_src, changelog_dest)
+def build_app(env, version_name="1.0", release=True):
+    log("Installing Capacitor and setting up wrapper...")
 
     # Run npm install
     log("Running npm install...")
@@ -245,30 +238,43 @@ def build_app(env, version_name="1.0"):
     # cache locked by a daemon. Stop old daemons and use a one-shot build so the
     # compiler never reuses that stale lock.
     subprocess.run(["./gradlew", "--stop"], check=False, env=env, cwd=android_dir)
-    subprocess.run(["./gradlew", "--no-daemon", "assembleDebug"], check=True, env=env, cwd=android_dir)
+    task = "assembleRelease" if release else "assembleDebug"
+    subprocess.run(["./gradlew", "--no-daemon", task], check=True, env=env, cwd=android_dir)
     log("Gradle compilation completed successfully.")
 
-    # Locate APK
-    apk_src = os.path.join(android_dir, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
-    safe_version = re.sub(r"[^0-9A-Za-z._-]+", "-", version_name).strip("-") or "1.0"
-    apk_dest = os.path.join(BASE_DIR, f"ScreenMark-{safe_version}.apk")
-    
-    if os.path.exists(apk_src):
-        shutil.copyfile(apk_src, apk_dest)
-        log(f"SUCCESS! The compiled APK has been copied to: {apk_dest}")
-    else:
+    # Locate the APK. Release builds are signed when android/keystore.properties exists.
+    outputs = os.path.join(android_dir, "app", "build", "outputs", "apk", "release" if release else "debug")
+    candidates = ["app-release.apk", "app-release-unsigned.apk"] if release else ["app-debug.apk"]
+    apk_src = next((os.path.join(outputs, c) for c in candidates if os.path.exists(os.path.join(outputs, c))), None)
+    if not apk_src:
         raise FileNotFoundError("Could not locate compiled APK output file.")
+    safe_version = re.sub(r"[^0-9A-Za-z._-]+", "-", version_name).strip("-") or "1.0"
+    dist_dir = os.path.join(BASE_DIR, "dist")
+    os.makedirs(dist_dir, exist_ok=True)
+    if release:
+        suffix = "release" if os.path.basename(apk_src) == "app-release.apk" else "release-unsigned"
+    else:
+        suffix = "debug"
+    apk_dest = os.path.join(dist_dir, f"screenmark-{safe_version}-{suffix}.apk")
+    shutil.copyfile(apk_src, apk_dest)
+    log(f"SUCCESS! The compiled APK has been copied to: {apk_dest}")
 
 def main():
     try:
-        parser = argparse.ArgumentParser(description="Build ScreenMark APK")
-        parser.add_argument("--version", default="1.0", help="APK version name, e.g. 1.2.3")
+        parser = argparse.ArgumentParser(description="Build ScreenMark APK (signed release into dist/ by default)")
+        parser.add_argument("--version", default=None, help="APK version name, e.g. 1.2.3 (default: keep the version in android/app/build.gradle)")
+        parser.add_argument("--debug", action="store_true", help="Build a debug APK (dist/<app>-<version>-debug.apk) instead of the signed release APK")
         args = parser.parse_args()
 
-        update_android_version(args.version)
+        if args.version:
+            update_android_version(args.version)
+        else:
+            with open(ANDROID_BUILD_GRADLE, encoding="utf-8") as fh:
+                match = re.search(r'versionName\s+"([^"]*)"', fh.read())
+            args.version = match.group(1) if match else "1.0"
         env = setup_environment()
         install_android_sdk(env)
-        build_app(env, args.version)
+        build_app(env, args.version, release=not args.debug)
         log("Android compilation task finished successfully!")
     except Exception as e:
         log(f"FATAL ERROR during compilation: {e}")

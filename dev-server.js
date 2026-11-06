@@ -25,7 +25,8 @@ function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Accept, Content-Type",
+    "Access-Control-Allow-Headers": "Accept, Content-Type, X-Source-Cookie, X-Source-User-Agent",
+    "Access-Control-Allow-Private-Network": "true",
     "Cache-Control": "no-store"
   };
 }
@@ -56,7 +57,7 @@ function safeJoin(base, target) {
   return resolved.startsWith(base) ? resolved : null;
 }
 
-const ALLOWED_SOURCE_HOSTS = new Set(['api.tvmaze.com', 'graphql.anilist.co', 'www.omdbapi.com', 'itunes.apple.com', 'api.themoviedb.org', 'image.tmdb.org', 'api4.thetvdb.com', 'v3.sg.media-imdb.com', 'www.imdb.com', 'www.rottentomatoes.com']);
+const ALLOWED_SOURCE_HOSTS = new Set(['api.tvmaze.com', 'static.tvmaze.com', 'graphql.anilist.co', 's4.anilist.co', 'www.omdbapi.com', 'm.media-amazon.com', 'itunes.apple.com', 'is1-ssl.mzstatic.com', 'api.themoviedb.org', 'image.tmdb.org', 'img.youtube.com', 'api4.thetvdb.com', 'v3.sg.media-imdb.com', 'www.imdb.com', 'www.rottentomatoes.com']);
 
 async function proxyRequest(targetUrl, req, res) {
   let target;

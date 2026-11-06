@@ -26,6 +26,7 @@ body[data-page=dashboard] .topbar h1{font-size:2rem;font-weight:800;background:v
 .card-actions button{border-radius:50%;background:var(--surface-2)}
 .floating-add-button{position:fixed;bottom:calc(84px + env(safe-area-inset-bottom));z-index:12;display:grid;place-items:center;width:56px;height:56px;border:1px solid #ffffff33;border-radius:18px;background:var(--ios-grad);color:#fff;box-shadow:0 10px 25px -5px rgba(124,58,237,.65);cursor:pointer;transition:transform .18s}
 .bottom-bar{background:color-mix(in srgb,var(--surface) 82%,transparent);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px)}
+.bottom-bar{border-radius:0!important}
 .nav-button.active .nav-icon{background:var(--accent-soft)}
 
 /* ---------- Bottom sheets: Filter + other choice dialogs ---------- */
@@ -193,7 +194,7 @@ body[data-theme=dark] .ios-status-badge{background:#064e3b!important;color:#6ee7
 .ios-card .add-entry-field{padding:0;border:0;background:none;box-shadow:none}
 .ios-number{display:flex;align-items:center;padding:4px;border-radius:12px;background:var(--surface-2)}
 .ios-number button{flex:none;width:28px;height:28px;border:0;border-radius:9px;background:var(--surface);color:inherit;font-weight:700;box-shadow:0 1px 2px #0002;cursor:pointer}
-.ios-number input{min-height:0!important;padding:0!important;background:transparent!important;text-align:center;font-weight:700!important;-moz-appearance:textfield}
+.ios-number input{min-height:0!important;padding:0!important;background:transparent!important;text-align:center;font-weight:700!important;appearance:textfield;-moz-appearance:textfield}
 .ios-number input::-webkit-inner-spin-button{display:none}
 .add-rating-row{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
 .add-rating-row .ios-label{margin:0}
@@ -260,7 +261,7 @@ dialog.ios-action-sheet::backdrop{background:#00000066;backdrop-filter:blur(2px)
 .add-metadata-search .button,body[data-theme=dark] .add-metadata-search .button{background:var(--accent);color:#fff;box-shadow:0 4px 12px -3px color-mix(in srgb,var(--accent) 55%,transparent)}
 
 /* =====================================================================
-   MULTI-SCREEN: phone (<768) · tablet (768–1079) · desktop (≥1080)
+   MULTI-SCREEN: phone (<768) · tablet (768-1079) · desktop (≥1080)
    Phone keeps bottom bar; wider screens get the sidebar, wider content,
    multi-column grids and centred modal sheets.
    ===================================================================== */
@@ -319,7 +320,6 @@ dialog.ios-action-sheet::backdrop{background:#00000066;backdrop-filter:blur(2px)
 
 /* Settings: Category colors row matches the other rows */
 button.setting-page-link{display:inline-flex;align-items:center;justify-content:flex-end;gap:8px;width:100%;min-height:42px;padding:4px 0 4px 8px;border:0;background:transparent;color:var(--muted);font-size:.86rem;text-align:right;cursor:pointer}
-.category-colors-setting{border-top:1px solid var(--line)}
 
 /* Settings > Bottom bar icons: card rows like Bottom Bar Layout */
 .nav-icon-list{display:grid;gap:9px}
@@ -381,7 +381,7 @@ body[data-theme=dark] .detail-age-badge{background:#422006;color:#fcd34d}
 .detail-carousel-card{display:grid;flex:0 0 128px;gap:4px;scroll-snap-align:start;color:inherit;text-decoration:none}
 .detail-carousel-art{display:block;aspect-ratio:3/4;overflow:hidden;border-radius:14px;background:var(--surface-2)}
 .detail-carousel-art img{width:100%;height:100%;object-fit:cover}
-.detail-carousel-card strong{font-size:.76rem;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.detail-carousel-card strong{font-size:.76rem;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical}
 .detail-carousel-card small{color:var(--muted);font-size:.68rem}
 .detail-collapsible summary{display:flex;align-items:center;justify-content:space-between;cursor:pointer;list-style:none}
 .detail-collapsible summary::-webkit-details-marker{display:none}
@@ -465,7 +465,7 @@ body[data-theme=dark] .detail-age-badge{background:#422006;color:#fcd34d}
 .discover-suggest-card{flex:0 0 172px;scroll-snap-align:start;border:1px solid var(--ios-card-border);border-radius:20px;background:var(--surface);overflow:hidden}
 .discover-suggest-card img{display:block;width:100%;height:92px;object-fit:cover;background:var(--surface-2)}
 .discover-suggest-card .discover-card-body{padding:10px}
-.discover-suggest-card h3{margin:0 0 3px;font-size:.8rem;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;min-height:2.5em}
+.discover-suggest-card h3{margin:0 0 3px;font-size:.8rem;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;min-height:2.5em}
 .discover-suggest-card p{margin:0 0 8px;color:var(--muted);font-size:.68rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .discover-suggest-card .toolbar{gap:6px;flex-wrap:nowrap}
 .discover-suggest-card .button{flex:1;min-height:30px;padding:5px 6px;font-size:.7rem;border-radius:10px}
@@ -785,6 +785,15 @@ body[data-theme=dark] .explore-source-state{background:#422006;color:#fcd34d}
 
 .metadata-source-row{border-radius:26px!important;padding:14px 16px!important}
 .metadata-source-row .sortable-label strong{font-size:1.02rem}
+.metadata-source-row .drag-handle{display:grid;place-items:center;min-width:24px;min-height:42px;border-radius:10px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.metadata-source-row .drag-handle:active,.metadata-source-row.dragging .drag-handle{cursor:grabbing;color:var(--accent-text,var(--accent))}
+.metadata-source-row.dragging{position:relative;z-index:2;opacity:.78;border-color:var(--accent);box-shadow:0 8px 24px #0003}
+.metadata-source-row .toggle input[role="switch"]{border-color:var(--ios-card-border,var(--line));background:var(--surface-2)}
+.metadata-source-row .toggle input[role="switch"]:checked{border-color:var(--accent);background:var(--accent)}
+body[data-theme="dark"] .metadata-source-row .toggle input[role="switch"]:not(:checked),
+body[data-theme="amoled"] .metadata-source-row .toggle input[role="switch"]:not(:checked){border-color:#52525b;background:#3f3f46}
+body[data-theme="dark"] .metadata-source-row .toggle input[role="switch"]::before,
+body[data-theme="amoled"] .metadata-source-row .toggle input[role="switch"]::before{background:#f4f4f5}
 .source-options-link{width:40px;height:40px;border-radius:14px;background:var(--surface-2);color:var(--muted)}
 .source-api-key a{color:var(--accent-text,var(--accent))!important;font-weight:800;text-decoration:none!important}
 .source-api-key span{font-weight:700}
@@ -825,7 +834,10 @@ body[data-theme=dark] .explore-source-state{background:#422006;color:#fcd34d}
 .timeline-page.settings-detail-page,.stats-page.settings-detail-page{padding-top:0!important}
 .timeline-page.settings-detail-page{gap:12px!important;min-height:0}
 .timeline-page.settings-detail-page .timeline-filters{position:static;margin:0;padding:0}
-.timeline-page.settings-detail-page .timeline-summary{min-height:0;padding:0 2px}
+.timeline-page.settings-detail-page .timeline-summary{width:calc(100% - 24px);min-width:0;min-height:0;margin:0 12px;padding:0;}
+.timeline-page.settings-detail-page .timeline-summary>div{min-width:0;flex:1;}
+.timeline-page.settings-detail-page .timeline-month-marker{margin-inline:12px;}
+.timeline-page.settings-detail-page .timeline-month-days{padding-right:12px;}
 .stats-page.settings-detail-page{gap:16px!important}
 
 /* ===== Home header refresh (matches the CueMark reference) ===== */
@@ -857,3 +869,13 @@ body[data-icon-style=inline] .settings-subpage-icon{justify-self:end}
 .discover-page.settings-detail-page{padding-top:0!important}
 .discover-page.settings-detail-page .discover-source-description{margin:4px 2px 12px;color:var(--muted);font-size:.85rem}
 .source-option small a{color:var(--accent-text,var(--accent));font-weight:800;text-decoration:none}
+/* Show scrollbars setting (Settings > Appearance) */
+html[data-show-scrollbars="false"] *{scrollbar-width:none!important}
+html[data-show-scrollbars="false"] *::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
+html[data-show-scrollbars="true"] *{scrollbar-width:thin!important}
+html[data-show-scrollbars="true"] *::-webkit-scrollbar{display:block!important;width:8px!important;height:8px!important}
+@media(min-width:768px){.setting-row[data-pref-setting="showSidebar"]{display:grid!important}}
+/* the viewport scrollbar belongs to <html>, which "*" does not match */
+html[data-show-scrollbars="false"]{scrollbar-width:none!important;scrollbar-gutter:auto!important}
+html[data-show-scrollbars="false"]::-webkit-scrollbar,html[data-show-scrollbars="false"] body::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
+html[data-show-scrollbars="true"]{scrollbar-width:thin!important}

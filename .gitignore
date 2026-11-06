@@ -21,6 +21,7 @@ android/app/src/main/assets/capacitor.plugins.json
 .env
 .env.*
 !.env.example
+local-secrets.js
 *.log
 .cache/
 .DS_Store
