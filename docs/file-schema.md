@@ -14,11 +14,12 @@ ScreenMark/
 ├── docs/                              # app-specific documentation
 ├── CHANGELOG.md                       # release notes
 ├── dev-server.js                      # local server and restricted source proxy
+├── local-secrets.js                   # optional local-only API keys (ignored by Git)
 ├── capacitor.config.json             # app ID and frontend webDir
 ├── package.json
 └── compile_apk.py
 ```
 
-There is one copy of each app module: `frontend/backend/` is both the maintained source and the directory Capacitor packages. No generation or copy step is needed.
+There is one maintained copy of each web module: `frontend/backend/` is packaged by Capacitor as-is. Native Android plugins under `android/app/src/main/java/` provide encrypted storage, backups, provider sessions and system scrollbar control.
 
 Generated files such as Android build output, local SDK downloads, dependencies, APKs, local properties, and local environment files are excluded by the app-root `.gitignore`.

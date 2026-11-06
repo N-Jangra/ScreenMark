@@ -1,6 +1,6 @@
 # ScreenMark metadata sources
 
-The registry in `frontend/backend/features/metadata.js` is the source of truth. Sources are enabled by default except OMDb (it needs a key); pasting a key into OMDb turns it on.
+The registry in `frontend/backend/features/metadata.js` is the source of truth. Source availability and API-key needs are shown in **Settings → Metadata Sources**.
 
 | Key | Source | Types | Key |
 |---|---|---|---|
@@ -19,6 +19,10 @@ Suggestions on Discover also use TVmaze schedules and the public iTunes top-movi
 - **TVmaze:** poster, summary, genres, status, network and country, schedule, runtime, language, season and episode counts, cast carousel, a full episode guide (tap to mark watched), links to the official site, TVmaze, IMDb and TheTVDB.
 - **AniList:** cover and banner, description, format, status, studio, episodes and duration, score, popularity, tags, characters, staff, relations and recommendations, trailer and external links.
 - **OMDb:** plot, poster, rated, runtime, genre, director, writer, cast, language, country, awards, Metascore, Rotten Tomatoes and IMDb ratings and votes, seasons, box office, production. An invalid key shows "OMDb rejected your API key".
+- **TMDB:** movie and series details, season and episode guides, cast and crew, episode stills, ratings and person credits. Add a TMDB API key in Metadata Sources.
+- **IMDb:** title and episode structured data, cast and crew, ratings and season information where the page exposes it. IMDb person links open the profile when an IMDb ID is available and otherwise open a name search.
+- **Rotten Tomatoes:** title and series, season and episode data, ratings, cast and crew where available. The public site may limit requests; Android source sessions let you complete a provider prompt yourself before retrying.
+- **TheTVDB:** provider-backed movie and series metadata using your API key.
 
 Every loader returns the same detail shape (`schemaVersion: 2`) with `watch` (`runtimeMinutes`, `episodeCount`, `seasonCount`) and a derived `facts` summary saved with the title: runtime, episode and season counts, total minutes, genres, release date, directors, writers, cast, networks, languages, countries, status, age rating, rating, awards, box office, tags and alternative names.
 
@@ -42,8 +46,8 @@ Paths use dots and `[index]`. Only `http(s)` URLs are used; nothing from a custo
 
 ## Search, "All" and caching
 
-Search runs enabled sources for the chosen type concurrently; **All** runs movies and series and merges. Sources that need a key and have none are skipped. Successful JSON GET responses are cached in Cache Storage (`splitapp_screenmark_metadata`) for six hours; the cache step can never stall a request. The local preview server (`dev-server.js`) proxies only the provider hosts: TVmaze, AniList (POST), OMDb and iTunes.
+Search runs enabled sources for the chosen type concurrently; **All** runs movies and series and merges. Sources that need a key and have none are skipped. Successful JSON GET responses are cached in Cache Storage (`splitapp_screenmark_metadata`) for six hours; the cache step can never stall a request. The local preview server (`dev-server.js`) proxies the allowlisted metadata APIs and image hosts.
 
 ## Per-source options
 
-Settings → Metadata Sources → a source's ⚙ page stores `preferences.sourceOptions[key] = { domain, userAgent, cookies }`. `SplitAppMetadata.resolve` swaps the host when `domain` is set and the request layer adds `User-Agent` / `Cookie` headers for every request to that source's default host. The Android app sends them natively; `dev-server.js` forwards `x-source-user-agent` / `x-source-cookie`; a plain browser drops them. IMDb and Rotten Tomatoes are read from public pages and may answer with a bot check.
+Settings → Metadata Sources → a source's ⚙ page stores `preferences.sourceOptions[key] = { domain, userAgent, cookies }`. The Android app can send source cookies and user-agent headers through its provider-session bridge; the local preview server forwards the corresponding headers. A plain browser may drop them. IMDb and Rotten Tomatoes are read from public pages and may answer with a bot check or require you to complete a prompt in the provider page before retrying.

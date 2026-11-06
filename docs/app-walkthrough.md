@@ -29,14 +29,14 @@ A launch screen (ScreenMark clapperboard icon, name, dots) shows until the first
 
 ## Main pages
 
-- **Home:** titles grouped by status (or type, release year, none). A **type** row (All / Movies / TV series) and **status chips with counts** sit under the search box. The filter sheet sets sort, status, layout, group-by, theme, density and display switches. Each card's three-dot button opens an action sheet (Mark as In Progress, Mark as Completed, View Full Details, Remove). The floating plus opens Add.
-- **Discover:** a type switch (**All**, Movies, TV series) and search across enabled sources. When nothing is searched it shows suggestion rows: TVmaze (streaming today, on TV today, streaming tomorrow), the iTunes top-movies chart, AniList (trending and popular anime and anime movies) and any custom source that has a suggestions URL. Opened from Explore, search is limited to one source and the types it supports.
+- **Home:** titles grouped by status (or type, release year, none). Movies and Series filters, status chips with counts and collection search sit above the library. Dashboard layouts include List, Compact list, Posters, Posters+, Compact grid and Large poster grid. The floating plus opens Add.
+- **Discover:** a Movies / Series switch and search across enabled sources. Results can be sorted and filtered by year and genre; saved results show that they are already in the library. With no query, suggestions include TV schedules, movie charts and anime picks where supported.
 - **Add:** choose Movie or TV series, search sources to auto-fill poster, description, year and runtime or episode count, then set status, progress and total with steppers (10 minutes for movies, 1 episode for series) and a star rating.
-- **Details:** hero with poster and backdrop, source and type, status and age-rating badges, **Watch progress** card (−/＋ buttons sized per type, % watched and time left), status pills and star rating, then provider data: trailers/images, overview, tags, ratings, details table, cast/characters/staff carousels, a collapsible **Episode guide** (tap to mark episodes watched; progress follows), links, related titles.
-- **Explore:** Timeline, Statistics, **all four metadata sources** (off or key-less ones show *Off* / *Setup* and link to settings) and a **Beta** group with **Mix fetch**.
-- **Timeline:** status changes grouped by month with posters; filter by week, month, month/year or title.
-- **Statistics:** completion rate, status cards (tap to open Home filtered), **Time to watch** (watched so far, length of titles with data, left to watch, episodes watched, longest titles; buttons *Fetch details* and *Find runtimes*), status breakdown, an Activity chart with Week / Month switch and counts on every bar, top ratings.
-- **Settings:** Appearance, Dashboard, Tracking, Backups & sync, Metadata, Metadata & Storage, a standalone **Storage** page, **App Info**, **Logcat**, Bottom Menu Icons, Bottom Bar Layout and custom sources.
+- **Details:** hero with poster and backdrop, status and source facts, progress controls, overview, cast and crew, ratings and provider details. Series episode lists expand by season; season and episode checks update progress. Long vertical rating grids add rows as needed.
+- **Explore:** Timeline, Statistics, metadata sources and Mix fetch.
+- **Timeline:** recent library and watched-episode activity grouped by day and month, with time-range filters.
+- **Statistics:** movie and series views with watch time, activity, library breakdown, ratings and top titles.
+- **Settings:** Appearance, Dashboard, Tracking, Backups, Metadata, Metadata & Storage, App Info, Logcat, bottom navigation customization and custom sources.
 
 ## Mix fetch (experimental)
 
@@ -48,4 +48,4 @@ A launch screen (ScreenMark clapperboard icon, name, dots) shows until the first
 
 ## Backups
 
-**Settings → Backups & sync → Export List** downloads JSON with items, history and preferences. Import adds titles and skips duplicates by type and title; it does not restore history or preferences.
+**Settings → Backups → Export List** saves the library and preferences to a backup file. Import can restore a ScreenMark backup or import title names from a text or CSV file. Android uses the system file picker and Save as flow.

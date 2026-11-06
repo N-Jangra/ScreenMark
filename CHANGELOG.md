@@ -2,6 +2,35 @@
 
 All notable changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] — 2026-11-07
+
+Follow-up release focused on provider detail pages, discovery, library tracking and settings.
+
+### Added
+
+- Expanded TMDB, OMDb, IMDb and Rotten Tomatoes title and episode details, including season and episode guides, per-episode ratings, cast and crew, and source screenshots where available.
+- IMDb cast and crew links now open the matching IMDb profile, with IMDb search as a fallback when a profile ID is missing.
+- Rotten Tomatoes and IMDb source sessions on Android, plus image proxy support for additional provider hosts in local preview.
+- Discover catalogue filters for sort order, year and genre, with add buttons that reflect titles already in the library.
+- Compact shared cast and crew rows with portraits, names and roles.
+
+### Changed
+
+- Updated detail pages with a merged season and episode list, easier season and episode tracking, and lazy-loaded long episode rating grids.
+- Refreshed dashboard, Discover, Timeline, Statistics and settings layouts; improved empty-state colors and saved-title indicators.
+- Reduced motion friction in the tracking episode rail and made metadata source ordering usable by drag and drop on Android.
+- Updated appearance, navigation, backup, metadata and dashboard settings to match current app behavior.
+
+### Fixed
+
+- IMDb cast and crew links with absolute URLs no longer get a duplicated IMDb domain.
+- Episode pages from IMDb, TMDB and Rotten Tomatoes now use provider episode details and the shared episode layout.
+- Timeline activity now includes watched-episode changes, and long vertical rating grids load additional rows as needed.
+- Discover add actions correctly identify titles already saved to the library.
+- Corrected several narrow-screen settings and import/export layout issues.
+
+See the [app walkthrough](docs/app-walkthrough.md), [metadata guide](docs/metadata.md) and [storage guide](docs/storage.md) for current behavior.
+
 ## [0.1.0] — 2026-10-29
 
 First tracked release: a local-first tracker for **movies and TV series** that runs in a browser and as an Android app (Capacitor), built on the interface and metadata work first made for SavePoint.
