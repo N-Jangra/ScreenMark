@@ -2,25 +2,6 @@
 
 All notable changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] — Next version
-
-### Changed
-
-- Streamlined Settings → Animations around the transitions used by the current pages: screen, sheet and dialog transitions, tap feedback, progress updates and optional loading motion.
-- Reduced default and low-end-device motion work: card entrance cascades, navigation bounce and shimmer are off by default; low-end Android skips decorative motion and blur, and page transitions start without a forced layout pass.
-- Added pull-to-refresh to Discover and both watchlists. The content follows the drag below the sticky search or watchlist tabs, then settles back with a short release animation.
-- Added a theme-aware Default accent choice that matches Discover and watchlists: gold on dark themes and indigo on light themes.
-- Refined shared Settings option sheets so long lists scroll within the sheet, keep the header visible, and follow the selected sheet motion with a matching close animation.
-- Smoothed watchlist episode updates with position-aware card movement when titles change status groups, without delaying the next episode card.
-- Reduced launch-screen delay and limited pull-to-refresh's non-passive touch handling to eligible top-of-page gestures, keeping ordinary scrolling native.
-
-### Fixed
-
-- Aligned Statistics overview and Activity headers with a shared topbar layout.
-- Replaced fallback circle icons on Metadata sync settings with refresh icons and clarified their descriptions.
-- Reduced compositing overhead on the episode tracking carousel by removing persistent per-card GPU layer hints.
-- Fixed Settings picker options extending below the visible sheet on smaller screens.
-
 ## [0.1.2] — 2026-11-07
 
 ### Added
@@ -28,6 +9,7 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 - Dedicated Shows and Movies library pages, favorites pages, and separate watchlist/upcoming pages for each media type.
 - Search results grouped by metadata source, with a source-specific View all page.
 - Profile shortcuts for settings, metadata sources, statistics, activity, timeline and app information.
+- Pull-to-refresh on Discover and both watchlists, with content that follows the drag beneath the sticky search or watchlist tabs.
 
 ### Changed
 
@@ -42,6 +24,14 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 - App Info and collection share sheets now use the current dark surfaces, accent color and compact mobile layout.
 - Folder-backed libraries now store title mirrors under `movies/<source>/<item-id>/` and `series/<source>/<item-id>/`. Sync, artwork indexing and archive fingerprints use layout version 3; older `shows/`, direct-category and `titles/` folders migrate after a successful write.
 - Library title identity keeps category, metadata source, normalized title and year distinct, allowing same-name entries from different sources.
+- Streamlined Settings → Animations around current page, sheet and dialog transitions, tap feedback, progress updates and optional loading motion.
+- Replaced the web, PWA and Android launcher branding and splash artwork with the selected Episode Stack icon; the startup overlay now plays its matching intro animation and falls back to the static mark for reduced motion.
+- Reduced default and low-end-device motion work: card entrance cascades, navigation bounce and shimmer are off by default; low-end Android skips decorative motion and blur, and page transitions avoid a forced layout pass.
+- Added a theme-aware Default accent choice that matches Discover and watchlists: gold on dark themes and indigo on light themes.
+- Refined Settings option sheets so long lists scroll within the sheet, keep the header visible, and use a matching close animation.
+- Smoothed watchlist episode updates with position-aware movement when titles change status groups.
+- Watchlist poster view shows watched/total episode counts and a progress strip for series.
+- Watchlist pages open on Watchlist by default; horizontal swipes in blank content space switch between Watchlist and Upcoming.
 
 ### Removed
 
@@ -51,6 +41,13 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 
 - Saved series details open on Episodes when an episode guide is available, instead of defaulting to Overview.
 - Statistics Activity returns to Profile from its back control.
+- Watchlist details links continue to work after an episode is marked watched and the card updates in place.
+- Pull-to-refresh feedback stays below the sticky tabs while the content moves with the pull, reports restore failures accurately, and returns the content to its resting position after refresh.
+- Discover search places the clear control before the Search button.
+- Aligned Statistics overview and Activity headers with a shared topbar layout.
+- Replaced fallback circle icons on Metadata sync settings with refresh icons and clarified their descriptions.
+- Reduced compositing overhead on the episode tracking carousel by removing persistent per-card GPU layer hints.
+- Fixed Settings picker options extending below the visible sheet on smaller screens.
 
 ## [0.1.1] — 2026-11-07
 
