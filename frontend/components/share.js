@@ -158,67 +158,23 @@
     document.getElementById("share-dialog")?.remove();
     coverJobs.clear();
     const dialog = document.createElement("dialog");
-    dialog.id = "share-dialog"; dialog.className = "choice-dialog share-dialog";
-    let kind = "images", mode = "pages", page = 0, images = [], cache = new Map(), token = 0, perPage = DEFAULT_PER_PAGE, shareCount = 0;
+    dialog.id = "share-dialog"; dialog.className = "choice-dialog share-dialog share-list-dialog";
     const count = entries.length;
+    const pdfPages = Math.max(1, Math.ceil((count + 3) / PDF_ROWS_PER_PAGE));
     dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">SHARE</p><h2>${esc(title)} · ${count}</h2></div><button class="choice-dialog-close" type="button" data-share-close aria-label="Close">×</button></header>
-      <div class="share-body"><div class="share-modes" data-share-kinds role="group"><button type="button" class="active" data-share-kind="images">Images</button><button type="button" data-share-kind="pdf">PDF</button></div>
-      <div class="share-pdf-info" data-share-pdf-info hidden></div>
-      <div class="share-options" data-share-options>
-        <div class="share-step"><span>titles per page</span><div><button type="button" data-step="per:-1" aria-label="Fewer titles per page">−</button><b data-share-per>${DEFAULT_PER_PAGE}</b><button type="button" data-step="per:1" aria-label="More titles per page">+</button></div></div>
-        <div class="share-step"><span>Pages to share</span><div><button type="button" data-step="cnt:-1" aria-label="Fewer pages">−</button><b data-share-cnt>1</b><button type="button" data-step="cnt:1" aria-label="More pages">+</button></div></div>
-      </div>
-      <div class="share-preview" data-share-preview><span class="share-loading">Preparing…</span></div>
-      <div class="share-pager" data-share-pager><button type="button" data-share-prev aria-label="Previous page">‹</button><span data-share-page></span><button type="button" data-share-next aria-label="Next page">›</button></div></div>
-      <footer class="share-footer"><p class="share-status" data-share-status role="status" aria-live="polite" hidden></p><div class="share-actions has-cap" data-share-pdf-row hidden><span class="share-cap" data-share-pdf-cap>PDF</span><button type="button" class="button secondary" data-share-pdf-save>Save</button><button type="button" class="button primary" data-share-pdf-share>Share</button></div><div class="share-actions has-cap"><span class="share-cap">This page</span><button type="button" class="button secondary" data-share-save>Save</button><button type="button" class="button primary" data-share-send>Share</button></div><div class="share-actions share-all-actions has-cap" data-share-all-row hidden><span class="share-cap" data-share-all-cap>All pages</span><button type="button" class="button secondary" data-share-save-all>Save</button><button type="button" class="button primary" data-share-send-all>Share</button></div></footer>`;
+      <div class="share-body"><section class="share-list-pdf-preview" aria-label="PDF preview"><span class="share-list-pdf-icon" aria-hidden="true"><i data-lucide="file-text"></i></span><div><strong>${count} ${count === 1 ? "title" : "titles"} in one PDF</strong><p>A clean list in your theme colours with covers, names, tags and viewing progress. About ${pdfPages} ${pdfPages === 1 ? "page" : "pages"}; text stays selectable.</p></div></section></div>
+      <footer class="share-footer"><p class="share-status" data-share-status role="status" aria-live="polite" hidden></p><div class="share-list-total-row"><strong>All ${count} ${count === 1 ? "title" : "titles"}</strong><button type="button" class="button secondary" data-share-pdf-save>Save</button></div><button type="button" class="button primary share-list-share" data-share-pdf-share>Share</button></footer>`;
     document.body.appendChild(dialog);
     const q = sel => dialog.querySelector(sel);
-    // Rendered pages live in IndexedDB (keyed by the page's content), so reopening a group is instant.
-    const hash = text => { let h = 5381; for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
-    const blobToDataUrl = blob => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(blob); });
-    const pageSig = d => "v5:" + hash(JSON.stringify([themeKey(), title, count, d.index, d.pages, d.group.map(e => [e.id, e.title, e.subtitle, e.status, e.progressText, e.percent])]));
-    const render = index => {
-      const key = `${mode}:${index}`;
-      if (!cache.has(key)) {
-        const d = images[index], idbKey = `share:${slug(title)}:${mode}:${perPage}:${index}`, sig = pageSig(d);
-        cache.set(key, (async () => {
-          try { const blob = cacheGet && await cacheGet(idbKey, sig); if (blob) return await blobToDataUrl(blob); } catch (_) {}
-          const { url, complete } = await drawSheet({ title, entries: d.group, start: d.start, total: count, page: index + 1, pages: d.pages, showHead: true, getImage });
-          // Only complete pages are stored; a page with missing covers is redrawn next time.
-          if (!complete) cache.delete(key); else { try { if (cachePut) cachePut(idbKey, sig, await (await fetch(url)).blob()); } catch (_) {} }
-          return url;
-        })());
-      }
-      return cache.get(key);
-    };
-    const prefetch = index => { if (index >= 0 && index < images.length) setTimeout(() => { if (dialog.isConnected) render(index); }, 400); };
-    const paint = async () => {
-      const mine = ++token;
-      page = Math.min(page, images.length - 1);
-      const preview = q("[data-share-preview]");
-      preview.innerHTML = `<span class="share-loading">Preparing…</span>`;
-      q("[data-share-page]").textContent = images.length > 1 ? `${page + 1} / ${images.length}` : "1 image";
-      q("[data-share-prev]").disabled = page === 0; q("[data-share-next]").disabled = page >= images.length - 1;
-      q("[data-share-pager]").hidden = kind === "pdf" || images.length < 2;
-      shareCount = Math.min(Math.max(1, shareCount || images.length), images.length); q("[data-share-per]").textContent = perPage; q("[data-share-cnt]").textContent = `${shareCount} / ${images.length}`;
-      q("[data-share-all-row]").hidden = kind === "pdf" || images.length < 2; q("[data-share-all-cap]").textContent = `All ${shareCount} ${shareCount === 1 ? "page" : "pages"}`;
-      const url = await render(page);
-      if (mine === token) { preview.innerHTML = `<img alt="Preview of ${esc(title)}" src="${url}">`; preview.scrollTop = 0; prefetch(page + 1); }
-    };
-    const pdfPages = Math.max(1, Math.ceil((count + 3) / PDF_ROWS_PER_PAGE));
-    const applyKind = () => {
-      const pdf = kind === "pdf";
-      dialog.querySelectorAll("[data-share-kind]").forEach(b => b.classList.toggle("active", b.dataset.shareKind === kind));
-      q("[data-share-options]").hidden = pdf; q("[data-share-pager]").hidden = pdf || images.length < 2;
-      q("[data-share-preview]").hidden = pdf;
-      q(".share-footer > .share-actions:not([data-share-pdf-row])").hidden = pdf; q("[data-share-pdf-row]").hidden = !pdf;
-      q("[data-share-all-row]").hidden = pdf || images.length < 2;
-      q("[data-share-pdf-cap]").textContent = `All ${count} ${count === 1 ? "title" : "titles"}`;
-      const info = q("[data-share-pdf-info]"); info.hidden = !pdf;
-      info.innerHTML = `<strong>${count} ${count === 1 ? "title" : "titles"} in one PDF</strong><small>A clean list in your theme colours: number, cover, name, tags and viewing progress for every title, about ${pdfPages} ${pdfPages === 1 ? "page" : "pages"}. The text stays selectable.</small>`;
-      if (!pdf) paint();
-    };
     let pdfCache = null;
+    const say = (text, tone = "") => { const el = q("[data-share-status]"); el.hidden = !text; el.textContent = text; el.dataset.tone = tone; };
+    const busy = on => dialog.querySelectorAll(".share-footer button").forEach(button => { button.disabled = on; });
+    const guard = async (fn, success, working) => {
+      say(working, "busy"); busy(true);
+      try { const result = await fn(); if (success) { const message = success(result); say(message, "ok"); toast(message); } else say("", ""); }
+      catch (error) { if (/cancel|abort/i.test(String(error?.message || error?.name || ""))) say(""); else say(error?.message || "Could not complete that.", "error"); }
+      finally { busy(false); }
+    };
     const makeListPdf = async () => {
       if (pdfCache) return pdfCache;
       const covers = [];
@@ -231,46 +187,16 @@
       const { bytes } = await window.SplitAppListPdf.build({ title, entries: entries.map(e => ({ title: e.title, tags: e.tagsText || e.subtitle, progress: e.progressText })), covers, theme: { page: C.page, text: C.text, muted: C.muted, line: C.line, accent: C.accent, card2: C.card2 }, onProgress: info => say(`Building PDF… ${info.pct}%${info.etaMs > 2500 ? ` · about ${Math.ceil(info.etaMs / 1000)} s left` : ""}${info.note ? ` · ${info.note}` : ""}`, "busy") });
       pdfCache = bytes; return bytes;
     };
-    const setMode = next => {
-      mode = next; page = 0; cache = new Map(); images = buildImages(entries, mode, perPage); shareCount = images.length;
-      q("[data-share-options]").hidden = mode !== "pages";
-      dialog.querySelectorAll("[data-share-mode]").forEach(b => b.classList.toggle("active", b.dataset.shareMode === mode));
-      paint();
-    };
-    const fileName = index => `${slug(title)}-${mode === "pages" ? "page" : "part"}-${index + 1}`;
-    const say = (text, tone = "") => { const el = q("[data-share-status]"); el.hidden = !text; el.textContent = text; el.dataset.tone = tone; };
-    const busy = on => dialog.querySelectorAll(".share-footer button").forEach(b => { b.disabled = on; });
-    const guard = async (fn, ok, working = "Working…") => {
-      say(working, "busy"); busy(true);
-      try { const r = await fn(); say(ok ? ok(r) : "", "ok"); if (ok) toast(ok(r)); }
-      catch (e) { if (/cancel|abort/i.test(String(e?.message || e?.name || ""))) say(""); else say(e?.message || "Could not complete that.", "error"); }
-      finally { busy(false); }
-    };
+    q("[data-share-pdf-save]").addEventListener("click", () => guard(async () => saveBytes(await makeListPdf(), "application/pdf", "pdf", slug(title)), result => `Saved to ${result}.`, "Preparing PDF…"));
+    q("[data-share-pdf-share]").addEventListener("click", () => guard(async () => { const bytes = await makeListPdf(); say("Opening share…", "busy"); await shareBytes(bytes, "application/pdf", "pdf", slug(title), title); }, null, "Preparing PDF…"));
     dialog.addEventListener("click", event => {
       const t = event.target?.closest ? event.target : event.target?.parentElement;
       if (!t?.closest) return;
       if (t === dialog || t.closest("[data-share-close]")) return closePopup(dialog);
-      const kb = t.closest("[data-share-kind]"); if (kb) { kind = kb.dataset.shareKind; return applyKind(); }
-      if (t.closest("[data-share-pdf-save]")) return guard(async () => saveBytes(await makeListPdf(), "application/pdf", "pdf", slug(title)), r => `Saved to ${r}.`, "Preparing…");
-      if (t.closest("[data-share-pdf-share]")) return guard(async () => { const bytes = await makeListPdf(); say("Opening share…", "busy"); await shareBytes(bytes, "application/pdf", "pdf", slug(title), title); }, null, "Preparing…");
-      const st = t.closest("[data-step]");
-      if (st) { const [k, d] = st.dataset.step.split(":"); const delta = Number(d);
-        if (k === "per") { perPage = Math.min(40, Math.max(3, perPage + delta * (perPage >= 15 ? 5 : 1))); shareCount = 0; setMode("pages"); }
-        else { shareCount = Math.min(images.length, Math.max(1, shareCount + delta)); paint(); }
-        return; }
-      const m = t.closest("[data-share-mode]"); if (m) return setMode(m.dataset.shareMode);
-      if (t.closest("[data-share-prev]")) { page = Math.max(0, page - 1); return paint(); }
-      if (t.closest("[data-share-next]")) { page = Math.min(images.length - 1, page + 1); return paint(); }
-      if (t.closest("[data-share-save]")) return guard(async () => saveImage(await render(page), fileName(page)), r => `Saved to ${r}.`, "Saving…");
-      if (t.closest("[data-share-send]")) return guard(async () => shareImage(await render(page), fileName(page)), null, "Opening share…");
-      if (t.closest("[data-share-send-all]")) return guard(async () => { const urls = []; let ahead = render(0); for (let i = 0; i < shareCount; i++) { urls.push(await ahead); ahead = i + 1 < shareCount ? render(i + 1) : null; say(`Preparing ${i + 1} of ${shareCount}…`, "busy"); } return shareAllImages(urls, slug(title)); }, null, "Preparing images…");
-      if (t.closest("[data-share-save-all]")) return guard(async () => { let ahead = render(0); for (let i = 0; i < shareCount; i++) { const url = await ahead; ahead = i + 1 < shareCount ? render(i + 1) : null; await saveImage(url, fileName(i)); } return shareCount; }, n => `Saved ${n} images to Downloads.`, "Saving all images…");
     });
     dialog.addEventListener("close", () => setTimeout(() => dialog.remove(), 300));
+    window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
     showPopup(dialog);
-    setTimeout(() => setMode("pages"), 30);
-    // Warm the remaining covers a few at a time so later pages are ready.
-    (async () => { const queue = entries.slice(perPage); const worker = async () => { while (queue.length && dialog.isConnected) { await coverOf(queue.shift(), getImage); } }; await new Promise(r => setTimeout(r, 1500)); await Promise.all([worker(), worker(), worker()]); })();
   }
   window.SplitAppShare = Object.freeze({ open, helpers: { themeColors, withAlpha, roundRect, fit, loadImage, saveBytes, shareBytes } });
 })();

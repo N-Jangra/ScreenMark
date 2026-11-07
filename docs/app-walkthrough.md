@@ -4,7 +4,9 @@ ScreenMark is a responsive, local-first tracker for **movies and TV series**. It
 
 ## Types and statuses
 
-Every title is a **Movie** (progress in minutes watched, total = runtime) or a **TV series** (progress in episodes watched, total = episode count). Statuses are Watchlist, In Progress, On Hold, Dropped and Completed. The shared interface refers to them through *status roles* (`statusRoles` in `app-config.js`): queued, active, hold, dropped, done.
+Every title is a **Movie** (progress in minutes watched, total = runtime) or a **TV series** (progress in episodes watched, total = episode count). In Details, movies offer Watchlist, Dropped and Completed. Series with no watched episodes offer Watchlist and Completed; after tracking starts they offer In Progress, On Hold, Dropped and Completed. The shared interface refers to these through *status roles* (`statusRoles` in `app-config.js`): queued, active, hold, dropped and done.
+
+Marking an episode watched moves its series to In Progress. Marking all known episodes watched completes it. An unfinished series with no episode progress for 7 days moves to On Hold, and after 30 days moves to Dropped. ScreenMark checks this on launch, when the app resumes, and hourly while it remains open.
 
 ## Screen sizes
 
@@ -16,31 +18,34 @@ Every title is a **Movie** (progress in minutes watched, total = runtime) or a *
 
 **Settings → Appearance** has *Show sidebar* and *Show scrollbars* (off by default).
 
-## Opening animation, motion and performance
+## Motion, scrolling and performance
 
-A launch screen (ScreenMark clapperboard icon, name, dots) shows until the first page is drawn, for at least 1.2 s scaled by **Animation speed**. Pages slide in forward/back, sheets rise from the bottom, buttons have a press effect; only position and opacity are animated. Reduce motion or Animation speed *Off* disables it. Devices reporting 2 GB of memory or less, 2 or fewer cores or data-saver mode switch to a low-memory mode (no blur or shadows, solid headers, shorter animations).
+The launch screen stays for at least 350 ms with the default Fast motion setting (500 ms at Normal), unless startup takes longer; Off or reduced motion removes the extra hold. **Settings → Animations** controls reduced motion, motion speed, screen transitions (slide, fade or none), sheet/dialog transitions, tap feedback, progress updates and optional loading placeholders. The default profile uses short transitions and leaves card entrance cascades, navigation bounce and loading shimmer off. The preview action replays the current screen transition.
+
+ScreenMark honors the system reduced-motion preference. Android and detected low-resource devices also use a lighter profile: no decorative card entrance or shimmer, no backdrop blur, fewer shadows and shorter transitions. The app keeps normal vertical scrolling native. At the top of Discover and either watchlist, pull-to-refresh moves the page content beneath its sticky search or tab bar; on Details it refreshes the open title. Horizontal rails use native touch scrolling, and route changes avoid a forced layout pass.
 
 ## Navigation and back behaviour
 
-- URLs: `#dashboard`, `#discover?source=<key>`, `#details?id=<item id>`, `#settings/<group>`, `#settings/custom-source?id=<id>`, `#mix`, `#statistics`, `#timeline`, `#add`.
-- Opening a sheet or dialog adds a history entry: browser back or Android back closes it first; tapping outside also closes it. Android back then steps back through pages and only exits from Home.
-- Back links on settings sub-pages return to where you came from (for example Explore → Metadata Sources → Back → Explore).
+- URLs: `#series`, `#movies`, `#series-watchlist`, `#movie-watchlist`, `#series-favorites`, `#movie-favorites`, `#discover?source=<key>`, `#details?id=<item id>`, `#settings/<group>`, `#settings/custom-source?id=<id>`, `#statistics`, `#timeline`, `#add`.
+- Opening a sheet or dialog adds a history entry: browser back or Android back closes it first; tapping outside also closes it. Android back then steps back through pages before exiting the app.
+- The Profile options menu links directly to Settings, Metadata Sources, Statistics, Activity, Timeline and App Info.
 - Refreshing `#details?id=…` reopens that title.
 
 ## Main pages
 
-- **Home:** titles grouped by status (or type, release year, none). Movies and Series filters, status chips with counts and collection search sit above the library. Dashboard layouts include List, Compact list, Posters, Posters+, Compact grid and Large poster grid. The floating plus opens Add.
-- **Discover:** a Movies / Series switch and search across enabled sources. Results can be sorted and filtered by year and genre; saved results show that they are already in the library. With no query, suggestions include TV schedules, movie charts and anime picks where supported.
+- **Shows and Movies:** separate library pages with poster grids, progress bars, sorting and filters. Favorites have their own pages. The bottom navigation links directly to Shows and Movies.
+- **Watchlists:** separate Shows and Movies pages have Watchlist and Upcoming tabs. Series tracking shows the next aired episode; checking it updates that title's next episode card and smoothly repositions nearby cards if its status changes. List, poster and card views are saved independently for Shows and Movies. Collection sharing exports every title in one PDF, with a contents preview and Save and Share actions.
+- **Discover:** a search field expands the Movies / Shows selector in the sticky topbar. Search results are grouped by metadata source; each source has a View all route. Without a query, suggestions include schedules, charts and anime picks where supported; each catalog entry appears on at most one shelf.
 - **Add:** choose Movie or TV series, search sources to auto-fill poster, description, year and runtime or episode count, then set status, progress and total with steppers (10 minutes for movies, 1 episode for series) and a star rating. Saving a metadata-backed series opens its library details on Episodes when an episode guide is available.
-- **Details:** hero with poster and backdrop, status and source facts, progress controls, overview, cast and crew, ratings and provider details. Series episode lists expand by season; season and episode checks update progress. Long vertical rating grids add rows as needed. Provider links use a shared Links heading and rounded pills on title, episode and cast/person pages.
-- **Explore:** Timeline, Statistics, metadata sources and Mix fetch.
+- **Details:** hero with poster and backdrop, status and source facts, progress controls, overview, cast and crew, ratings and provider details. Saved series with an episode guide open on Episodes. Series episode lists expand by season; season and episode checks update progress and status. Long vertical rating grids add rows as needed. Provider links use a shared Links heading and rounded pills on title, episode and cast/person pages.
+- **Profile:** landscape library artwork can be used as a cover. Its options menu links to Settings, Metadata Sources, Statistics, Activity, Timeline and App Info. Stats are split into series time, episodes watched, movie time and movies watched.
 - **Timeline:** recent library and watched-episode activity grouped by day and month, with time-range filters.
 - **Statistics:** movie and series views with watch time, activity, library breakdown, ratings and top titles.
-- **Settings:** Appearance, Dashboard, Tracking, Backups, Metadata, Metadata & Storage, App Info, Logcat, bottom navigation customization and custom sources.
+- **Settings:** Appearance, Animations, Backups, Metadata Sources, Metadata & Storage, App Info, Logcat and custom sources. Appearance offers a Default accent that matches Discover and watchlists for the active theme, alongside custom colors. Option sheets keep their headers visible while longer choices scroll inside the sheet. Animation controls match the screen and sheet transitions used across the app. Bottom navigation has a fixed order: Shows, Movies, Discover and Profile.
 
-## Mix fetch (experimental)
+## Source-specific title identity
 
-**Explore → Beta → Mix fetch** searches every enabled source as one plain list (a type switch All / Movies / TV series; the same title from several sources is one row with a chip per source). Opening a title or adding it fetches details from all enabled sources and merges them (`metadataSource: "mix"`). Available title ratings appear as provider-labeled badges. Matching episode guides are merged by season and episode number, retaining one row per episode and combining details across providers. Adding a title that already exists from a single source offers to convert it to a Mix entry. See [metadata](metadata.md).
+Discover keeps each provider's result separate. A saved title is identified by category, metadata source, normalized title and release year, so similarly named entries from different catalogs can coexist. Adding a result does not combine its metadata with another provider's entry. See [metadata](metadata.md) and [storage](storage.md).
 
 ## Custom sources
 

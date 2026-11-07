@@ -6,7 +6,7 @@
   const folderUriKey = `${storageKey}_folder_uri`;
   const databaseFileName = `${app.key}_database.json`;
   const folderTreeName = `${app.key}-db`;
-  const folderLayoutMarker = "media-folders-v2.json";
+  const folderLayoutMarker = "source-folders-v3.json";
   const folderItemHashKey = `${storageKey}_folder_item_hashes_v2`;
   const folderImageHashKey = `${storageKey}_folder_image_hashes_v2`;
   const folderArchiveHashKey = `${storageKey}_folder_archive_hashes_v2`;
@@ -43,10 +43,34 @@
     return id || `item_${String(item?.title || "untitled").toLowerCase().replace(/[^a-z0-9_-]+/g, "_").slice(0, 70)}`;
   }
 
-  function itemFolderPath(item) {
-    return [folderTreeName, item.category === "series" ? "shows" : "movies", itemDirectoryName(item)];
+  function categoryFolderName(item) { return item?.category === "series" ? "series" : "movies"; }
+  function itemSourceFolderName(item) {
+    const raw = String(item?.metadataSource || item?.source || "manual").trim().toLowerCase();
+    return raw.replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64) || "manual";
   }
-  function itemFolderIndexKey(item) { return `${item.category === "series" ? "shows" : "movies"}/${itemDirectoryName(item)}`; }
+  function itemFolderPath(item) {
+    return [folderTreeName, categoryFolderName(item), itemSourceFolderName(item), itemDirectoryName(item)];
+  }
+  function itemFolderIndexKey(item) { return `${categoryFolderName(item)}/${itemSourceFolderName(item)}/${itemDirectoryName(item)}`; }
+  function categoryFolderKind(name) { return name === "shows" || name === "series" ? "series" : name === "movies" ? "movie" : ""; }
+
+  // Accept both the old category/<title> tree and the new category/<source>/<title> tree.
+  async function listCategoryItemFolders(plugin, directory) {
+    const children = (await plugin.listFiles({ uri: directory.uri }))?.files || [];
+    const rows = [];
+    for (const child of children.filter(file => file.uri)) {
+      const childFiles = (await plugin.listFiles({ uri: child.uri }))?.files || [];
+      if (childFiles.some(file => file.name === "index.json" && file.uri)) {
+        rows.push({ folder: child, files: childFiles, categoryName: directory.name, sourceName: "", legacy: true });
+        continue;
+      }
+      for (const titleFolder of childFiles.filter(file => file.uri)) {
+        const files = (await plugin.listFiles({ uri: titleFolder.uri }))?.files || [];
+        rows.push({ folder: titleFolder, files, categoryName: directory.name, sourceName: child.name, sourceFolder: child, legacy: false });
+      }
+    }
+    return rows;
+  }
 
   function portableItem(item) {
     const copy = { ...item };
@@ -153,6 +177,7 @@
 
   function folderArchiveFingerprint(data) {
     const value = JSON.stringify({
+      layout: folderLayoutMarker,
       data: portableData(data),
       itemImages: (data.items || []).map(item => [String(item?.id || ""), itemFingerprint(item)])
     });
@@ -211,16 +236,16 @@
     const tree = rootFiles.find(file => file.name === folderTreeName && file.uri);
     if (!tree) return [];
     const treeFiles = (await plugin.listFiles({ uri: tree.uri }))?.files || [];
-    const categoryDirs = treeFiles.filter(file => ["movies", "shows", "titles"].includes(file.name) && file.uri);
+    const categoryDirs = treeFiles.filter(file => ["movies", "series", "shows", "titles"].includes(file.name) && file.uri);
     if (!categoryDirs.length) return [];
-    const gameFolders = (await Promise.all(categoryDirs.map(async directory => (await plugin.listFiles({ uri: directory.uri }))?.files || []))).flat();
-    const queue = gameFolders.filter(folder => folder.uri);
+    const gameFolders = (await Promise.all(categoryDirs.map(directory => listCategoryItemFolders(plugin, directory)))).flat();
+    const queue = gameFolders.filter(row => row.folder?.uri);
     const items = [];
     const worker = async () => {
       while (queue.length) {
-        const folder = queue.shift();
+        const row = queue.shift(), folder = row.folder;
         try {
-          const files = (await plugin.listFiles({ uri: folder.uri }))?.files || [];
+          const files = row.files || (await plugin.listFiles({ uri: folder.uri }))?.files || [];
           const index = files.find(file => file.name === "index.json" && file.uri);
           if (!index) continue;
           const parsed = JSON.parse((await plugin.readFile({ uri: index.uri })).content || "{}");
@@ -257,10 +282,20 @@
       const root = (await plugin.listFiles({ uri }))?.files || [];
       const tree = root.find(file => file.name === folderTreeName && file.uri);
       const treeFiles = tree ? (await plugin.listFiles({ uri: tree.uri }))?.files || [] : [];
-      const categoryDirs = treeFiles.filter(file => ["movies", "shows", "titles"].includes(file.name) && file.uri);
-      const entries = await Promise.all(categoryDirs.map(async directory => [directory.name, (await plugin.listFiles({ uri: directory.uri }))?.files || []]));
+      const categoryDirs = treeFiles.filter(file => ["movies", "series", "shows", "titles"].includes(file.name) && file.uri);
+      const entries = (await Promise.all(categoryDirs.map(directory => listCategoryItemFolders(plugin, directory)))).flat();
       const index = new Map();
-      entries.forEach(([categoryName, folders]) => folders.filter(folder => folder.uri).forEach(folder => { index.set(`${categoryName}/${folder.name}`, folder); if (categoryName === "titles") index.set(folder.name, folder); }));
+      entries.forEach(row => {
+        const { folder, categoryName, sourceName, legacy } = row;
+        if (!folder?.uri) return;
+        const kind = categoryFolderKind(categoryName), category = kind === "series" ? "series" : kind === "movie" ? "movies" : "titles";
+        if (sourceName && !legacy) index.set(`${category}/${sourceName}/${folder.name}`, folder);
+        else {
+          index.set(`${categoryName}/${folder.name}`, folder);
+          if (kind) index.set(`${category}/${folder.name}`, folder);
+          if (categoryName === "titles") { index.set(`titles/${folder.name}`, folder); index.set(folder.name, folder); }
+        }
+      });
       return index;
     })();
     gamesIndexCache = { uri, at: Date.now(), promise };
@@ -280,7 +315,8 @@
     let done = 0;
     const worker = async () => {
       while (queue.length) {
-        const item = queue.shift(), folder = folders.get(itemFolderIndexKey(item)) || folders.get(`titles/${itemDirectoryName(item)}`) || folders.get(itemDirectoryName(item));
+        const item = queue.shift(), id = itemDirectoryName(item), category = categoryFolderName(item);
+        const folder = folders.get(itemFolderIndexKey(item)) || folders.get(`${category}/${id}`) || folders.get(`${category === "series" ? "shows" : "movies"}/${id}`) || folders.get(`titles/${id}`) || folders.get(id);
         if (!folder) continue;
         try {
           const files = (await plugin.listFiles({ uri: folder.uri }))?.files || [];
@@ -307,7 +343,8 @@
     const uri = await getFolderUri({ prompt: false });
     if (!uri || !plugin?.listFiles || !plugin?.readBinaryFile || !Array.isArray(item?.localImageFiles)) return {};
     const folders = await getGamesIndex(plugin, uri);
-    const folder = folders.get(itemFolderIndexKey(item)) || folders.get(`titles/${itemDirectoryName(item)}`) || folders.get(itemDirectoryName(item));
+    const id = itemDirectoryName(item), category = categoryFolderName(item);
+    const folder = folders.get(itemFolderIndexKey(item)) || folders.get(`${category}/${id}`) || folders.get(`${category === "series" ? "shows" : "movies"}/${id}`) || folders.get(`titles/${id}`) || folders.get(id);
     const files = folder ? (await plugin.listFiles({ uri: folder.uri }))?.files || [] : [];
     const result = {};
     for (const image of item.localImageFiles) {
@@ -406,9 +443,17 @@
     const oldTreeFiles = tree ? (await plugin.listFiles({ uri: tree.uri }))?.files || [] : [];
     const migrationPass = !oldTreeFiles.some(file => file.name === folderLayoutMarker && file.uri);
     const existingGameFolders = new Map();
-    const categoryListings = await Promise.all(oldTreeFiles.filter(file => ["movies", "shows", "titles"].includes(file.name) && file.uri).map(async directory => [directory.name, (await plugin.listFiles({ uri: directory.uri }))?.files || []]));
-    for (const [categoryName, children] of categoryListings) {
-      children.filter(file => file.uri).forEach(file => { existingGameFolders.set(`${categoryName}/${file.name}`, file); if (categoryName === "titles") existingGameFolders.set(file.name, file); });
+    const categoryListings = (await Promise.all(oldTreeFiles.filter(file => ["movies", "series", "shows", "titles"].includes(file.name) && file.uri).map(directory => listCategoryItemFolders(plugin, directory)))).flat();
+    for (const row of categoryListings) {
+      const { categoryName, sourceName, folder } = row;
+      if (!folder?.uri) continue;
+      const kind = categoryFolderKind(categoryName), category = kind === "series" ? "series" : kind === "movie" ? "movies" : "titles";
+      if (sourceName && !row.legacy) existingGameFolders.set(`${category}/${sourceName}/${folder.name}`, row);
+      else {
+        existingGameFolders.set(`${categoryName}/${folder.name}`, row);
+        if (kind) existingGameFolders.set(`${category}/${folder.name}`, row);
+        if (categoryName === "titles") { existingGameFolders.set(`titles/${folder.name}`, row); existingGameFolders.set(folder.name, row); }
+      }
     }
     const syncedIds = new Set();
     const syncItem = async item => {
@@ -420,17 +465,21 @@
         const id = String(item.id), candidates = collectImageCandidates(item), imageHash = imageFingerprint(candidates);
         const targetKey = itemFolderIndexKey(item);
         const destinationItem = existingGameFolders.get(targetKey);
-        const legacyItem = existingGameFolders.get(`titles/${itemDirectoryName(item)}`) || existingGameFolders.get(itemDirectoryName(item));
+        const itemId = itemDirectoryName(item), category = categoryFolderName(item);
+        const legacyItem = existingGameFolders.get(`${category}/${itemId}`)
+          || existingGameFolders.get(`${category === "series" ? "shows" : "movies"}/${itemId}`)
+          || existingGameFolders.get(`titles/${itemId}`)
+          || existingGameFolders.get(itemId);
         let existingFiles = [];
         let existingFilesLoaded = false;
         const loadExistingFiles = async () => {
           if (!existingFilesLoaded) {
-            existingFiles = destinationItem ? (await plugin.listFiles({ uri: destinationItem.uri }))?.files || [] : [];
+            existingFiles = destinationItem ? destinationItem.files || (await plugin.listFiles({ uri: destinationItem.folder.uri }))?.files || [] : [];
             existingFilesLoaded = true;
           }
           return existingFiles;
         };
-        const legacyFiles = !destinationItem && legacyItem ? (await plugin.listFiles({ uri: legacyItem.uri }))?.files || [] : [];
+        const legacyFiles = !destinationItem && legacyItem ? legacyItem.files || (await plugin.listFiles({ uri: legacyItem.folder.uri }))?.files || [] : [];
         const existingNames = new Set();
         const cacheFilesExist = async files => {
           if (!Array.isArray(files)) return false;
@@ -561,19 +610,40 @@
         const rootFiles = (await plugin.listFiles({ uri }))?.files || [];
         const tree = rootFiles.find(file => file.name === folderTreeName && file.uri);
         const treeFiles = tree ? (await plugin.listFiles({ uri: tree.uri }))?.files || [] : [];
-        const directories = treeFiles.filter(file => ["movies", "shows", "titles"].includes(file.name) && file.uri);
-        const liveByCategory = { movies: new Set(), shows: new Set() }, liveByDirectory = new Map();
-        payload.items.filter(item => item?.id).forEach(item => { const name = itemDirectoryName(item), categoryName = item.category === "series" ? "shows" : "movies"; liveByCategory[categoryName].add(name); liveByDirectory.set(name, item); });
+        const directories = treeFiles.filter(file => ["movies", "series", "shows", "titles"].includes(file.name) && file.uri);
+        const liveById = new Map(payload.items.filter(item => item?.id).map(item => [itemDirectoryName(item), item]));
         for (const directory of directories) {
-          for (const folder of (await plugin.listFiles({ uri: directory.uri }))?.files || []) {
-            if (!folder.uri) continue;
-            const legacyItem = directory.name === "titles" ? liveByDirectory.get(folder.name) : null;
-            const keep = directory.name === "titles" ? Boolean(legacyItem && !syncedIds.has(String(legacyItem.id))) : liveByCategory[directory.name].has(folder.name);
-            if (keep) continue;
+          const rows = await listCategoryItemFolders(plugin, directory);
+          for (const row of rows) {
+            const { folder, categoryName, sourceName, sourceFolder, legacy } = row;
+            let item = liveById.get(folder.name);
+            const deletedTitle = !item;
+            // Only touch folders carrying a valid ScreenMark item index. This lets
+            // synchronization remove orphaned titles without disturbing user files.
+            if (!item) {
+              const indexFile = (row.files || []).find(file => file.name === "index.json" && file.uri);
+              if (!indexFile || !plugin.readFile) continue;
+              try { item = JSON.parse((await plugin.readFile({ uri: indexFile.uri }))?.content || "null"); }
+              catch (_) { continue; }
+              if (!item?.id || itemDirectoryName(item) !== folder.name) continue;
+            }
+            const itemId = String(item.id);
+            const desiredSource = itemSourceFolderName(item);
+            const folderKind = categoryFolderKind(categoryName);
+            const isDesired = !deletedTitle && !legacy && folderKind === item.category && sourceName === desiredSource;
+            if (isDesired) continue;
+            const isLegacyLocation = legacy && (categoryName === "titles" || folderKind === item.category);
+            const isStaleSource = !legacy && folderKind === item.category && sourceName !== desiredSource;
+            if (!deletedTitle && !(isLegacyLocation || isStaleSource)) continue;
+            if (!deletedTitle && !syncedIds.has(itemId)) continue;
             try {
-              const files = (await plugin.listFiles({ uri: folder.uri }))?.files || [];
-              for (const file of files) if (file.uri) await plugin.deleteFile({ uri: file.uri });
-              await plugin.deleteFile({ uri: folder.uri }); invalidateGamesIndex();
+              for (const file of row.files || []) if (file.uri) await plugin.deleteFile({ uri: file.uri });
+              await plugin.deleteFile({ uri: folder.uri });
+              if (sourceFolder?.uri) {
+                const remaining = (await plugin.listFiles({ uri: sourceFolder.uri }))?.files || [];
+                if (!remaining.some(file => file.uri)) await plugin.deleteFile({ uri: sourceFolder.uri });
+              }
+              invalidateGamesIndex();
             } catch (error) { console.warn(`Could not remove old ScreenMark item folder ${folder.name}`, error); }
           }
         }
@@ -594,7 +664,12 @@
     localStorage.setItem(folderImageHashKey, JSON.stringify(allImageHashes));
     if (syncedIds.size === pendingItems.length) {
       try {
-        await plugin.writeNestedFile({ uri, dirPath: treePath, fileName: folderLayoutMarker, content: JSON.stringify({ version: 2, movies: payload.items.filter(item => item?.id && item.category !== "series").length, shows: payload.items.filter(item => item?.id && item.category === "series").length }) });
+        const sourceCounts = {};
+        payload.items.filter(item => item?.id).forEach(item => {
+          const category = categoryFolderName(item), source = itemSourceFolderName(item);
+          sourceCounts[`${category}/${source}`] = (sourceCounts[`${category}/${source}`] || 0) + 1;
+        });
+        await plugin.writeNestedFile({ uri, dirPath: treePath, fileName: folderLayoutMarker, content: JSON.stringify({ version: 3, movies: payload.items.filter(item => item?.id && item.category !== "series").length, series: payload.items.filter(item => item?.id && item.category === "series").length, sources: sourceCounts }) });
       } catch (error) { console.warn("Could not mark ScreenMark movie and show folders as migrated", error); }
     } else {
       const missingIds = pendingItems.map(item => String(item.id)).filter(id => !syncedIds.has(id));
@@ -1068,7 +1143,7 @@
       || new RegExp(`^${app.key}_backup_\\d{4}-\\d{2}-\\d{2}\\.tar$`, "i").test(file.name)
       || new RegExp(`^${app.key}-backup-\\d{4}-\\d{2}-\\d{2}\\.json$`, "i").test(file.name));
     let itemTreeHasData = false;
-    const categoryDirs = treeFiles.filter(file => ["movies", "shows", "titles"].includes(file.name) && file.uri);
+    const categoryDirs = treeFiles.filter(file => ["movies", "series", "shows", "titles"].includes(file.name) && file.uri);
     // Listing every title folder is slow; skip it when a database file already proves the folder is in use.
     if (categoryDirs.length && !rootHasDatabase && !treeFiles.some(file => file.name === "database.json")) {
       const categoryContents = await Promise.all(categoryDirs.map(directory => plugin.listFiles({ uri: directory.uri })));

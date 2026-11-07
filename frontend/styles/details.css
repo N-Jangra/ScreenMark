@@ -328,19 +328,28 @@ body[data-theme=dark] .ep-pills span.is-rating { background: #422006; color: #fc
 .detail-back span { font-size: 1.15rem; line-height: 1; }
 
 /* Pull to refresh */
-.ptr { position: fixed; left: 50%; top: calc(10px + env(safe-area-inset-top)); z-index: 60; display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--legacy-text, inherit); box-shadow: 0 10px 28px -10px #0006; font-size: .78rem; font-weight: 700; opacity: 0; pointer-events: none; transform: translate(-50%, calc(var(--pull, 0px) - 70px)); transition: opacity .18s ease, transform .22s var(--ease-out, ease); }
+.ptr { --ptr-accent: var(--accent); --ptr-accent-contrast: #fff; --ptr-progress: 0; position: fixed; left: 50%; top: var(--ptr-anchor, calc(10px + env(safe-area-inset-top))); z-index: 60; display: flex; align-items: center; gap: 10px; padding: 6px 14px 8px 6px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--legacy-text, inherit); box-shadow: 0 10px 28px -10px #0006; font-size: .78rem; font-weight: 700; opacity: 0; pointer-events: none; transform: translate(-50%, calc(var(--pull, 0px) - var(--ptr-lift, 70px))); transition: opacity .18s ease, transform .22s var(--ease-out, ease); }
+.ptr::before,.ptr::after { position: absolute; right: 14px; bottom: 4px; left: 52px; height: 2px; border-radius: 9px; content: ""; }
+.ptr::before { background: color-mix(in srgb, var(--ptr-accent) 22%, transparent); }
+.ptr::after { background: var(--ptr-accent); transform: scaleX(var(--ptr-progress)); transform-origin: left; transition: transform .12s linear; }
 .ptr.show { opacity: 1; }
 .ptr[data-state=pull], .ptr[data-state=ready] { transition: opacity .12s ease; }
-.ptr-bubble { position: relative; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent-text, var(--accent)); }
+.ptr-bubble { position: relative; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: color-mix(in srgb, var(--ptr-accent) 14%, var(--surface)); color: var(--ptr-accent); }
 .ptr-arrow { transform: rotate(var(--turn, 0deg)); transition: transform .12s linear; }
-.ptr[data-state=ready] .ptr-bubble { background: var(--accent); color: #fff; }
-.ptr-spinner, .ptr-check { position: absolute; display: none; }
-.ptr-spinner { width: 18px; height: 18px; border: 2.5px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: ptr-spin .7s linear infinite; }
+.ptr[data-state=ready] .ptr-bubble { background: var(--ptr-accent); color: var(--ptr-accent-contrast); transform: scale(1.06); }
+.ptr-spinner, .ptr-check, .ptr-error { position: absolute; display: none; }
+.ptr-spinner { width: 18px; height: 18px; border: 2.5px solid color-mix(in srgb, var(--ptr-accent) 25%, transparent); border-top-color: var(--ptr-accent); border-radius: 50%; animation: ptr-spin .7s linear infinite; }
 @keyframes ptr-spin { to { transform: rotate(360deg); } }
-.ptr[data-state=loading] .ptr-arrow, .ptr[data-state=done] .ptr-arrow { display: none; }
+.ptr[data-state=loading] .ptr-arrow, .ptr[data-state=done] .ptr-arrow, .ptr[data-state=error] .ptr-arrow { display: none; }
 .ptr[data-state=loading] .ptr-spinner { display: block; }
+.ptr[data-state=error] .ptr-error { display: block; color: #f87171; }
 .ptr[data-state=done] .ptr-check { display: block; color: #16a34a; animation: sp-pop .25s var(--ease-out, ease) both; }
 .ptr[data-state=done] .ptr-bubble { background: color-mix(in srgb, #16a34a 14%, var(--surface)); }
+.ptr-content { transform: translate3d(0,var(--ptr-push,0px),0); transition: transform .24s cubic-bezier(.2,.75,.25,1); }
+.ptr-content.ptr-dragging { transition: none; }
+body:is([data-page="series-watchlist"],[data-page="movie-watchlist"]) .ptr { --ptr-lift: 54px; --ptr-accent: var(--d-gold); --ptr-accent-contrast: var(--d-gold-fg); border-color: color-mix(in srgb, var(--d-gold) 28%, var(--d-line2)); background: linear-gradient(145deg, #171717, #101010); color: var(--d-t1); box-shadow: 0 12px 34px rgba(0,0,0,.56), inset 0 1px rgba(255,255,255,.06); }
+@media (prefers-reduced-motion: reduce) { .ptr-content { transition: none; } }
+html[data-lowend="true"] .ptr-content { transition-duration: .16s; }
 
 /* ===== Details hero: clear backdrop, source badge, coloured chips (CueMark reference) ===== */
 .detail-hero.ios-hero .ios-hero-bg { position: relative; height: 132px; background-position: center 30%; }

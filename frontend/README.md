@@ -4,26 +4,26 @@
 
 ## Files
 
-- `app.js` — app state, routing, interactions, persistence, and page context.
+- `app.js` — app state, routing, interactions, persistence, page context, and episode-driven status automation.
 - `app-config.js` — app name, categories, labels, and app-specific defaults.
 - `components/library.js` — shared library cards and category controls.
-- `pages/dashboard.js` — Dashboard markup.
+- `components/share.js` — collection PDF generation, preview, saving and sharing; `components/share-title.js` handles an individual title's share sheet.
+- `pages/dashboard.js` — legacy dashboard renderer retained for compatibility.
 - `pages/search.js` — library Search markup.
 - `pages/discover.js` — online Discover markup (type switch, suggestions).
 - `pages/add.js` — Add / Edit page (Movie or TV series).
-- `pages/explore.js` — Explore hub (activity, sources, Beta).
-- `pages/mix.js` — experimental Mix fetch page.
+- `pages/profile.js` — profile, favorites collections and show/movie watchlists.
 - `pages/details.js` — source-backed Details markup.
 - `pages/timeline.js` — activity Timeline markup.
 - `pages/statistics.js` — Statistics markup.
 - `pages/settings.js` — Settings controls and sections.
 - `styles.css` — shared responsive design and page styles.
+- `styles/ui-polish.css` — Settings picker sheets, App Info and shared interface refinements.
 - `styles/cuemark-legacy.css` — CueMark legacy dark palette, glass surfaces, typography, and navigation styling.
 - `styles/ios-ui.css` — iOS-style look, multi-screen layout and component styles.
-- `styles/motion.css` — animations, press feedback and the low-memory mode.
+- `styles/motion.css` — page and sheet transitions, press feedback and the low-memory mode. Watchlist status changes use small position-only animations to keep scrolling responsive.
 - `styles/details.css` — media details, progress, episode guide, gallery, and source links.
 - `lucide.min.js` — bundled icon set.
-- `backend/features/mix.js` — experimental Mix fetch (search, merge, runtime lookup).
 - `backend/` — maintained app-specific storage, metadata, and detail modules; this is the only copy and is packaged directly by Capacitor.
 
 Edit the relevant page template in `pages/`; use `app.js` for behavior and `components/library.js` for elements reused across screens. Keep every new frontend script referenced in `index.html` before `app.js` so the page renderers are available when routing starts.

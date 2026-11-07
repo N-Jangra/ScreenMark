@@ -58,6 +58,19 @@
 .dashboard-filter-dialog .choice-dialog-actions { padding:12px 18px max(14px,env(safe-area-inset-bottom)); background:var(--surface); border-top:1px solid var(--line); }
 .dashboard-filter-dialog #dashboard-filter-form { padding-top:0; } .dashboard-filter-dialog .choice-dialog-header { padding-top:0; }
 
+/* Shared picker used by every Settings subpage. Keep its heading fixed while
+   longer option lists scroll inside the sheet instead of past its bottom. */
+#setting-picker-dialog[open] { display:flex; flex-direction:column; min-height:0; max-height:min(88dvh,760px); padding:0; overflow:hidden; }
+#setting-picker-dialog .choice-dialog-grabber { flex:none; margin:8px auto 5px; }
+#setting-picker-dialog > .choice-dialog-header { position:relative; top:auto; flex:none; min-height:56px; margin:0; padding:8px 18px 12px; }
+#setting-picker-dialog > .choice-dialog-header h2 { margin:0; }
+#setting-picker-dialog .setting-picker-list { flex:0 1 auto; min-height:0; max-height:min(calc(88dvh - 104px),660px); padding:2px 18px calc(16px + env(safe-area-inset-bottom)); overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+#setting-picker-dialog::backdrop { background:rgba(0,0,0,.68); backdrop-filter:blur(1px); }
+@media(min-width:768px) {
+  #setting-picker-dialog[open] { max-height:86dvh; }
+  #setting-picker-dialog .setting-picker-list { max-height:calc(86dvh - 104px); }
+}
+
 /* App Info follows Settings → Appearance → Icon style: inline icons drop their rounded boxes. */
 body[data-icon-style=inline] .ai-tile-icon, body[data-icon-style=inline] .ai-row-icon, body[data-icon-style=inline] .ai-feature-icon { background:transparent; width:auto; height:auto; border-radius:0; }
 body[data-icon-style=inline] .ai-tile-icon svg { width:24px; height:24px; }
@@ -677,6 +690,20 @@ body[data-page="statistics"] .stats-subpage-ratings .stats-quick-rate-panel { al
 .share-dialog .share-body{flex:1 1 auto;min-height:0;max-height:none}
 .share-dialog .share-preview{max-height:none;min-height:220px}
 .share-dialog .share-footer .button{min-height:42px}
+.share-list-dialog{width:min(calc(100% - 24px),520px);padding:0;overflow:hidden;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--text,var(--legacy-text));box-shadow:0 22px 70px #0009}
+.share-list-dialog .choice-dialog-header{padding:18px 18px 14px}
+.share-list-dialog .share-body{padding:14px 18px 16px;overflow:visible}
+.share-list-pdf-preview{display:grid;grid-template-columns:36px minmax(0,1fr);align-items:start;gap:12px;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--surface-2)}
+.share-list-pdf-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:11px;background:color-mix(in srgb,var(--accent) 15%,var(--surface));color:var(--accent-text,var(--accent))}
+.share-list-pdf-icon svg{width:19px;height:19px}
+.share-list-pdf-preview strong{display:block;margin:1px 0 4px;font-size:.92rem;font-weight:750}
+.share-list-pdf-preview p{margin:0;color:var(--muted);font-size:.79rem;line-height:1.45}
+.share-list-dialog .share-footer{grid-template-columns:minmax(0,1fr);gap:10px;padding:12px 18px calc(16px + env(safe-area-inset-bottom))}
+.share-list-total-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;color:var(--text,var(--legacy-text))}
+.share-list-total-row strong{font-size:.95rem;font-weight:650}
+.share-list-total-row .button{width:min(50%,220px);min-height:46px}
+.share-list-dialog .share-list-share{width:min(52%,260px);min-height:48px;font-weight:750}
+@media(max-width:380px){.share-list-dialog .choice-dialog-header{padding-inline:15px}.share-list-dialog .share-body{padding-inline:15px}.share-list-dialog .share-footer{padding-inline:15px}.share-list-total-row .button{width:48%}}
 .share-title-dialog .share-body{gap:8px;padding-top:2px}
 .share-title-dialog .share-label{margin:6px 2px 0}
 .share-hint{margin:0 2px;color:var(--muted);font-size:.74rem;line-height:1.35;min-height:1em}
