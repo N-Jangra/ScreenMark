@@ -22,7 +22,7 @@ Marking an episode watched moves its series to In Progress. Marking all known ep
 
 The launch screen stays for at least 350 ms with the default Fast motion setting (500 ms at Normal), unless startup takes longer; Off or reduced motion removes the extra hold. **Settings → Animations** controls reduced motion, motion speed, screen transitions (slide, fade or none), sheet/dialog transitions, tap feedback, progress updates and optional loading placeholders. The default profile uses short transitions and leaves card entrance cascades, navigation bounce and loading shimmer off. The preview action replays the current screen transition.
 
-ScreenMark honors the system reduced-motion preference. Android and detected low-resource devices also use a lighter profile: no decorative card entrance or shimmer, no backdrop blur, fewer shadows and transitions capped at about 120 ms. The app keeps normal vertical scrolling native; pull-to-refresh only installs a blocking touch listener for eligible gestures at the top of a Details page. Horizontal rails use native touch scrolling, and route changes avoid a forced layout pass.
+ScreenMark honors the system reduced-motion preference. Android and detected low-resource devices also use a lighter profile: no decorative card entrance or shimmer, no backdrop blur, fewer shadows and shorter transitions. The app keeps normal vertical scrolling native. At the top of Discover and either watchlist, pull-to-refresh moves the page content beneath its sticky search or tab bar; on Details it refreshes the open title. Horizontal rails use native touch scrolling, and route changes avoid a forced layout pass.
 
 ## Navigation and back behaviour
 
@@ -34,14 +34,14 @@ ScreenMark honors the system reduced-motion preference. Android and detected low
 ## Main pages
 
 - **Shows and Movies:** separate library pages with poster grids, progress bars, sorting and filters. Favorites have their own pages. The bottom navigation links directly to Shows and Movies.
-- **Watchlists:** separate Shows and Movies pages have Watchlist and Upcoming tabs. Series tracking shows the next aired episode; checking it updates that title's next episode card. List, poster and card views are saved independently for Shows and Movies. Collection sharing exports every title in one PDF, with a contents preview and Save and Share actions.
+- **Watchlists:** separate Shows and Movies pages have Watchlist and Upcoming tabs. Series tracking shows the next aired episode; checking it updates that title's next episode card and smoothly repositions nearby cards if its status changes. List, poster and card views are saved independently for Shows and Movies. Collection sharing exports every title in one PDF, with a contents preview and Save and Share actions.
 - **Discover:** a search field expands the Movies / Shows selector in the sticky topbar. Search results are grouped by metadata source; each source has a View all route. Without a query, suggestions include schedules, charts and anime picks where supported; each catalog entry appears on at most one shelf.
 - **Add:** choose Movie or TV series, search sources to auto-fill poster, description, year and runtime or episode count, then set status, progress and total with steppers (10 minutes for movies, 1 episode for series) and a star rating. Saving a metadata-backed series opens its library details on Episodes when an episode guide is available.
 - **Details:** hero with poster and backdrop, status and source facts, progress controls, overview, cast and crew, ratings and provider details. Saved series with an episode guide open on Episodes. Series episode lists expand by season; season and episode checks update progress and status. Long vertical rating grids add rows as needed. Provider links use a shared Links heading and rounded pills on title, episode and cast/person pages.
 - **Profile:** landscape library artwork can be used as a cover. Its options menu links to Settings, Metadata Sources, Statistics, Activity, Timeline and App Info. Stats are split into series time, episodes watched, movie time and movies watched.
 - **Timeline:** recent library and watched-episode activity grouped by day and month, with time-range filters.
 - **Statistics:** movie and series views with watch time, activity, library breakdown, ratings and top titles.
-- **Settings:** Appearance, Animations, Backups, Metadata Sources, Metadata & Storage, App Info, Logcat and custom sources. Animation controls match the screen and sheet transitions used across the app. Bottom navigation has a fixed order: Shows, Movies, Discover and Profile.
+- **Settings:** Appearance, Animations, Backups, Metadata Sources, Metadata & Storage, App Info, Logcat and custom sources. Appearance offers a Default accent that matches Discover and watchlists for the active theme, alongside custom colors. Option sheets keep their headers visible while longer choices scroll inside the sheet. Animation controls match the screen and sheet transitions used across the app. Bottom navigation has a fixed order: Shows, Movies, Discover and Profile.
 
 ## Source-specific title identity
 

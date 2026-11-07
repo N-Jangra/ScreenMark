@@ -18,9 +18,10 @@
 - `pages/statistics.js` — Statistics markup.
 - `pages/settings.js` — Settings controls and sections.
 - `styles.css` — shared responsive design and page styles.
+- `styles/ui-polish.css` — Settings picker sheets, App Info and shared interface refinements.
 - `styles/cuemark-legacy.css` — CueMark legacy dark palette, glass surfaces, typography, and navigation styling.
 - `styles/ios-ui.css` — iOS-style look, multi-screen layout and component styles.
-- `styles/motion.css` — animations, press feedback and the low-memory mode.
+- `styles/motion.css` — page and sheet transitions, press feedback and the low-memory mode. Watchlist status changes use small position-only animations to keep scrolling responsive.
 - `styles/details.css` — media details, progress, episode guide, gallery, and source links.
 - `lucide.min.js` — bundled icon set.
 - `backend/` — maintained app-specific storage, metadata, and detail modules; this is the only copy and is packaged directly by Capacitor.
