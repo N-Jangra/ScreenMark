@@ -883,7 +883,7 @@ body:is([data-page="series-watchlist"],[data-page="movie-watchlist"]):has(.watch
 .watchlist-tabs button.active::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; background: var(--d-gold); content: ""; }
 .watchlist-view-toggle { grid-column: 3; grid-row: 1; justify-self: end; display: grid; place-items: center; width: 44px; height: 44px; padding: 10px; border: 1px solid var(--d-line2); border-radius: 12px; background: var(--d-surface); color: var(--d-t1); }
 .watchlist-view-toggle svg { width: 19px; height: 19px; }
-.watchlist-content { display: grid; align-content: start; gap: 17px; min-height: 0 !important; padding: 6px 9px 12px; }
+.watchlist-content { display: grid; align-content: start; gap: 17px; min-height: 0 !important; padding: 6px 9px 12px; touch-action: pan-y pinch-zoom; }
 .watchlist-content.is-empty { flex: 1; align-content: center; min-height: 0; padding: 0 9px; }
 .watchlist-section { display: grid; gap: 8px; }
 .watchlist-section-heading { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); grid-template-rows: 44px; align-items: center; }
@@ -921,6 +921,9 @@ body:is([data-page="series-watchlist"],[data-page="movie-watchlist"]):has(.watch
 .watchlist-content.is-posters .watchlist-card { position: relative; display: block; min-width: 0; min-height: 0; padding: 0; overflow: hidden; border: 0; border-radius: 7px; background: transparent; box-shadow: none; }
 .watchlist-content.is-posters .watchlist-thumb { width: 100%; height: auto; aspect-ratio: 2 / 3; border-radius: 7px; }
 .watchlist-content.is-posters .watchlist-copy { display: none; }
+.watchlist-content.is-posters .watchlist-poster-count { position: absolute; z-index: 1; right: 6px; bottom: 9px; left: 6px; overflow: hidden; padding: 5px 6px; border-radius: 6px; background: rgba(8,10,13,.82); color: #fff; font: 700 9px/1.15 var(--d-font); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.watchlist-content.is-posters .watchlist-poster-progress { position: absolute; z-index: 2; right: 0; bottom: 0; left: 0; height: 3px; overflow: hidden; background: rgba(255,255,255,.25); }
+.watchlist-content.is-posters .watchlist-poster-progress > i { display: block; height: 100%; background: var(--d-gold); }
 .watchlist-content.is-posters .watchlist-check,.watchlist-content.is-posters .watchlist-airdate { position: absolute; top: 7px; right: 7px; width: 30px; height: 30px; background-color: #101114cc; color: white; }
 .watchlist-content.is-posters .watchlist-check.is-watched { background: var(--d-gold); color: var(--d-gold-fg); }
 .watchlist-content.is-cards .watchlist-section { gap: 12px; }

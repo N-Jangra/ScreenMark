@@ -11,7 +11,7 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "amoled", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", favoritesOnly: false, reduceMotion: false, animationSpeed: "fast", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "none", animationStagger: false, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: false, progressAnimation: true, skeletonShimmer: false, mainColor: "#6366f1",
+    theme: "amoled", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", favoritesOnly: false, reduceMotion: false, animationSpeed: "fast", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "none", animationStagger: false, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: false, progressAnimation: true, skeletonShimmer: false, mainColor: "default", accentColorDefaultVersion: 2,
     showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { discover: "bookmark", "series-watchlist": "tv", "movie-watchlist": "clapperboard", profile: "user-round" },
     navBar: { order: navKeys, visible: { "series-watchlist": true, "movie-watchlist": true, discover: true, profile: true } },
     metadataSourceOrder: ["tvmaze", "anilist", "omdb"], customSources: [],
@@ -39,6 +39,8 @@
   let stored = {};
   try { stored = JSON.parse(localStorage.getItem(storageKey) || "{}"); } catch (_) { stored = {}; }
   const prefs = { ...prefsDefaults, ...(stored.preferences || {}) };
+  const migrateAccentColorDefault = Number(stored.preferences?.accentColorDefaultVersion) < 2;
+  if (migrateAccentColorDefault && (!stored.preferences?.mainColor || stored.preferences.mainColor === "#6366f1")) prefs.mainColor = "default";
   const motionIsReduced = () => Boolean(prefs.reduceMotion) || prefs.animationSpeed === "off" || Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
   if (Number(stored.preferences?.motionProfileVersion) < 1) {
     if (prefs.pageTransition === "slide") prefs.pageTransition = "rise";
@@ -130,7 +132,7 @@
   const initialRoute = initialHashPath.split("/");
   let discoverSource = new URLSearchParams(initialHashQuery).get("source") || "";
   const legacyExploreRoute = initialRoute[0] === "explore";
-  let page = legacyExploreRoute ? "settings" : initialRoute[0] === "search" ? "dashboard" : initialRoute[0] in titles ? initialRoute[0] : "discover";
+  let page = legacyExploreRoute ? "settings" : initialRoute[0] === "search" ? "dashboard" : initialRoute[0] in titles ? initialRoute[0] : "series-watchlist";
   if (page === "dashboard") page = "discover";
   const legacyDashboardSettingsRoute = initialRoute[0] === "settings" && initialRoute[1] === "dashboard";
   let settingsGroup = page === "settings" ? (legacyExploreRoute ? "metadata-sources" : (legacyDashboardSettingsRoute || initialRoute[1] === "nav-layout") ? null : initialRoute[1] === "manage-backups" ? "backups" : initialRoute[1] || null) : null;
@@ -150,6 +152,7 @@
   let discoverSearchFocused = false;
   let watchlistTab = "watchlist";
   let watchlistViews = { series: "list", movie: "list" };
+  let watchlistSwipe = null;
   try {
     const savedViews = JSON.parse(localStorage.getItem(`${storageKey}_watchlist_views`) || "{}");
     for (const kind of ["series", "movie"]) if (["list", "posters", "cards"].includes(savedViews[kind])) watchlistViews[kind] = savedViews[kind];
@@ -308,7 +311,7 @@
     return promise;
   }
   const migratedStoredMixItems = migrateLegacyMixItems();
-  if (migratedStoredMixItems || seedLocalApiKeys || migrateManualMetadataSources) persist();
+  if (migratedStoredMixItems || seedLocalApiKeys || migrateManualMetadataSources || migrateAccentColorDefault) persist();
   const migrateLocalRatings = items.some(item => Object.prototype.hasOwnProperty.call(item, "rating") || Object.values(item.episodeNotes || {}).some(note => Object.prototype.hasOwnProperty.call(note || {}, "rating")));
   const legacyPreferences = stored.preferences || {};
   const migrateRemovedPreferences = ["showRatings", "ratingFormat", "dashboardDensity", "font", "categoryColors", "showThumbnails", "showProgress"].some(key => Object.prototype.hasOwnProperty.call(legacyPreferences, key)) || ["rating", "rating-desc", "highest-rated"].includes(legacyPreferences.dashboardSort) || Boolean(legacyPreferences.theme && !["system", "light", "amoled"].includes(legacyPreferences.theme));
@@ -524,6 +527,7 @@
     if (next === "search") next = "dashboard";
     const [nextPage, nextSection] = String(next).split("/");
     page = nextPage in titles ? nextPage : "discover";
+    if (page === "series-watchlist" || page === "movie-watchlist") watchlistTab = "watchlist";
     statsSubpage = page === "statistics" && statsSections.includes(nextSection) ? normalizeStatsSection(nextSection) : "";
     if (page !== "discover" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; discoverRequestId++; discoverCache = null; }
     if (page !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
@@ -1023,13 +1027,6 @@
     });
     if (page === "settings" && settingsGroup === "backups") refreshBackupFolderStatus();
     if (page === "settings" && settingsGroup === "storage") refreshStorageDetails();
-    content.querySelectorAll("[data-open-details]").forEach(button => {
-      button.addEventListener("click", event => {
-        event.preventDefault();
-        event.stopPropagation();
-        openDetails(button.dataset.id);
-      });
-    });
     content.querySelectorAll("[data-go]").forEach(button => button.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); goto(button.dataset.go); }));
     content.querySelectorAll("[data-entry-status]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
@@ -2068,6 +2065,13 @@
     } else render();
     toast(watched.has(id) ? (earlier ? `Episode and ${earlier} earlier ${earlier === 1 ? "episode" : "episodes"} marked watched.` : "Episode marked watched.") : "Episode marked unwatched.");
   }
+  function changeWatchlistTab(tab) {
+    const next = tab === "upcoming" ? "upcoming" : "watchlist";
+    if (next === watchlistTab) return;
+    watchlistTab = next;
+    render();
+    syncPageNavigation();
+  }
   function deleteFromDetails(id) {
     const item = items.find(entry => entry.id === id); if (!item) return;
     recordLibraryChange("removed", `Deleted ${item.title}.`, [id]);
@@ -2533,6 +2537,13 @@
   }
 
   $("#page-content").addEventListener("click", event => {
+    const openDetailButton = eventClosest(event, "[data-open-details]");
+    if (openDetailButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      openDetails(openDetailButton.dataset.id);
+      return;
+    }
     const watchlistOpen = eventClosest(event, "[data-watchlist-open]");
     if (watchlistOpen && !eventClosest(event, "button, a, input, select, textarea")) { openDetails(watchlistOpen.dataset.watchlistOpen); return; }
     const pill = eventClosest(event, "[data-pill-name]");
@@ -2753,7 +2764,7 @@
     const timelineFilterButton = eventClosest(event, "[data-timeline-filter]");
     if (timelineFilterButton) { timelineFilter = timelineFilterButton.dataset.timelineFilter; render(); return; }
     const watchlistTabButton = eventClosest(event, "[data-watchlist-tab]");
-    if (watchlistTabButton) { watchlistTab = watchlistTabButton.dataset.watchlistTab === "upcoming" ? "upcoming" : "watchlist"; render(); syncPageNavigation(); return; }
+    if (watchlistTabButton) { changeWatchlistTab(watchlistTabButton.dataset.watchlistTab); return; }
     if (eventClosest(event, "[data-watchlist-view]")) {
       const kind = page === "movie-watchlist" ? "movie" : "series";
       const current = watchlistViews[kind];
@@ -2876,6 +2887,38 @@
       refreshDiscoverSavedActions(); return;
     }
   });
+  const watchlistSwipeIgnoredTarget = target => target?.closest?.("button, a, input, select, textarea, dialog, .watchlist-view-toggle");
+  const watchlistSwipeStart = (x, y, target, id) => {
+    if ((page !== "series-watchlist" && page !== "movie-watchlist") || watchlistSwipeIgnoredTarget(target)) { watchlistSwipe = null; return; }
+    if (!target?.closest?.(".watchlist-page")) { watchlistSwipe = null; return; }
+    watchlistSwipe = { id, x, y, tab: watchlistTab };
+  };
+  const watchlistSwipeEnd = (x, y, id) => {
+    const swipe = watchlistSwipe;
+    if (!swipe || (id != null && swipe.id != null && swipe.id !== id)) return;
+    watchlistSwipe = null;
+    const dx = x - swipe.x, dy = y - swipe.y;
+    if (Math.abs(dx) < 44 || Math.abs(dx) < Math.abs(dy) * 1.15) return;
+    if (dx < 0 && swipe.tab === "watchlist") changeWatchlistTab("upcoming");
+    else if (dx > 0 && swipe.tab === "upcoming") changeWatchlistTab("watchlist");
+  };
+  $("#page-content").addEventListener("touchstart", event => {
+    if (event.touches.length !== 1) { watchlistSwipe = null; return; }
+    const touch = event.touches[0]; watchlistSwipeStart(touch.clientX, touch.clientY, event.target, touch.identifier);
+  }, { passive: true });
+  $("#page-content").addEventListener("touchend", event => {
+    const touch = event.changedTouches[0]; if (touch) watchlistSwipeEnd(touch.clientX, touch.clientY, touch.identifier);
+  }, { passive: true });
+  $("#page-content").addEventListener("touchcancel", () => { watchlistSwipe = null; }, { passive: true });
+  $("#page-content").addEventListener("pointerdown", event => {
+    if (event.pointerType !== "mouse" || !event.isPrimary || event.button !== 0) return;
+    watchlistSwipeStart(event.clientX, event.clientY, event.target, event.pointerId);
+  }, { passive: true });
+  $("#page-content").addEventListener("pointerup", event => {
+    if (event.pointerType !== "mouse") return;
+    watchlistSwipeEnd(event.clientX, event.clientY, event.pointerId);
+  }, { passive: true });
+  $("#page-content").addEventListener("pointercancel", () => { watchlistSwipe = null; }, { passive: true });
   $("#page-content").addEventListener("keydown", event => {
     if (event.key !== "Enter" && event.key !== " ") return;
     const watchlistCard = eventClosest(event, "[data-watchlist-open]");
@@ -3094,10 +3137,10 @@
     const element = () => {
       if (ptr) return ptr;
       ptr = document.createElement("div"); ptr.className = "ptr"; ptr.setAttribute("role", "status"); ptr.setAttribute("aria-live", "polite");
-      ptr.innerHTML = '<span class="ptr-bubble"><svg class="ptr-arrow" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg><span class="ptr-spinner"></span><svg class="ptr-check" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span><span class="ptr-text"></span>';
+      ptr.innerHTML = '<span class="ptr-bubble"><svg class="ptr-arrow" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg><span class="ptr-spinner"></span><svg class="ptr-check" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg><svg class="ptr-error" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="m7 7 10 10M17 7 7 17"/></svg></span><span class="ptr-text"></span>';
       document.body.appendChild(ptr); return ptr;
     };
-    const show = (state, text, offset) => { const el = element(); el.dataset.state = state; el.querySelector(".ptr-text").textContent = text; el.style.setProperty("--pull", `${offset}px`); el.style.setProperty("--ptr-anchor", `${anchorTop()}px`); el.style.setProperty("--turn", `${Math.min(1, offset / THRESHOLD) * 180}deg`); el.classList.add("show"); };
+    const show = (state, text, offset) => { const el = element(); el.dataset.state = state; el.querySelector(".ptr-text").textContent = text; el.style.setProperty("--pull", `${offset}px`); el.style.setProperty("--ptr-anchor", `${anchorTop()}px`); el.style.setProperty("--turn", `${Math.min(1, offset / THRESHOLD) * 180}deg`); el.style.setProperty("--ptr-progress", `${["ready", "loading", "done", "error"].includes(state) ? 1 : Math.min(1, offset / THRESHOLD)}`); el.classList.add("show"); };
     const hide = () => { if (ptr) { ptr.classList.remove("show"); ptr.dataset.state = ""; ptr.style.setProperty("--pull", "0px"); } clearContentPull(); };
     const allowed = target => {
       if (!["details", "discover", "series-watchlist", "movie-watchlist"].includes(page) || busy || window.scrollY > 0) return false;
@@ -3120,6 +3163,7 @@
       const shouldRefresh = pulling && distance >= THRESHOLD; candidate = false; pulling = false;
       if (!shouldRefresh) { hide(); return; }
       busy = true; setContentPull(62); show("loading", "Refreshing…", 62);
+      let completedText = "Updated";
       try {
         if (page === "details") await (detailRef ? loadDetailRef() : loadDetails());
         else if (page === "discover") {
@@ -3127,11 +3171,13 @@
           if (discoverQuery.trim()) await discover();
           else { suggestionsCache = null; await loadDiscoverSuggestions(); }
         } else {
-          await restoreNativeData({ fast: false });
-          if (page === "series-watchlist" || page === "movie-watchlist") render();
+          const restored = await restoreNativeData({ fast: false });
+          if (restored === false) throw new Error("The saved library could not be refreshed.");
+          if (restored) render();
+          else completedText = "Already up to date";
         }
-        setContentPull(62); show("done", "Updated", 62);
-      } catch (_) { show("done", "Could not refresh", 62); }
+        setContentPull(62); show("done", completedText, 62);
+      } catch (_) { show("error", "Could not refresh", 62); }
       await new Promise(resolve => setTimeout(resolve, 520)); hide(); busy = false;
     };
     let mouseDown = false;
@@ -3279,6 +3325,7 @@
       const nativeItems = Array.isArray(restored.items) ? restored.items.filter(item => config.categories.some(category => category.key === item.category)) : items;
       const nativeHistory = Array.isArray(restored.history) ? restored.history : history;
       const nativePreferences = restored.preferences && typeof restored.preferences === "object" ? restored.preferences : {};
+      const migrateNativeAccentDefault = Number(nativePreferences.accentColorDefaultVersion) < 2;
       const nativeHasLegacyScores = nativeItems.some(item => Object.prototype.hasOwnProperty.call(item, "rating") || Object.values(item.episodeNotes || {}).some(note => Object.prototype.hasOwnProperty.call(note || {}, "rating")));
       const nativeHasLegacyPreferences = ["showRatings", "ratingFormat", "dashboardDensity", "font", "categoryColors", "showThumbnails", "showProgress"].some(key => Object.prototype.hasOwnProperty.call(nativePreferences, key)) || ["rating", "rating-desc", "highest-rated"].includes(nativePreferences.dashboardSort) || Boolean(nativePreferences.theme && !["system", "light", "amoled"].includes(nativePreferences.theme));
       // Changes made while the folder was loading win over the loaded copy (they used to be overwritten).
@@ -3303,6 +3350,10 @@
         }
         Object.assign(prefs, nativePreferences);
       }
+      if (migrateNativeAccentDefault) {
+        if (!nativePreferences.mainColor || nativePreferences.mainColor === "#6366f1") prefs.mainColor = "default";
+        prefs.accentColorDefaultVersion = 2;
+      }
       items.forEach(stripLocalScores);
       const migratedMixItems = migratedStoredMixItems || migrateLegacyMixItems();
       delete prefs.showRatings; delete prefs.ratingFormat; delete prefs.dashboardDensity; delete prefs.font; delete prefs.categoryColors; delete prefs.showThumbnails; delete prefs.showProgress;
@@ -3313,7 +3364,7 @@
       delete prefs.appDisplayName;
       refreshSourceRegistry();
       normalizeNavigationPrefs();
-      if (!restored.fast || nativeHasLegacyScores || nativeHasLegacyPreferences || migratedMixItems) await window.SplitAppBackend.save({ items, history, preferences: prefs });
+      if (!restored.fast || nativeHasLegacyScores || nativeHasLegacyPreferences || migratedMixItems || migrateNativeAccentDefault) await window.SplitAppBackend.save({ items, history, preferences: prefs });
       return true;
     } catch (error) {
       recordLog("error", `App data restore failed: ${error.message || error}`);
@@ -3342,6 +3393,7 @@
   });
   applyPreferences();
   render();
+  if (!initialHashPath) historyPush(true);
   if (initialRoute[0] === "dashboard" || initialRoute[0] === "search") historyPush(true);
   if (legacyDashboardSettingsRoute) historyPush(true);
   if (legacyExploreRoute) historyPush(true);

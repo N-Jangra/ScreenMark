@@ -119,6 +119,15 @@
     const check = upcoming ? `<span class="watchlist-airdate">${esc(daysUntil(airdate))}</span>` : isMovie ? `<button type="button" class="watchlist-check" data-watchlist-movie="${esc(item.id)}" aria-label="Mark ${esc(item.title)} watched">✓</button>` : `<button type="button" class="watchlist-check${isWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(item.id)}" data-episode-id="${esc(markId)}" data-episode-title="${esc(`${code} ${title}`)}" data-watchlist-card="${esc(item.id)}" aria-label="${isWatched ? "Watched" : "Mark watched"}" aria-pressed="${isWatched}">✓</button>`;
     const remaining = isMovie ? "" : ` +${Math.max(0, (window.SplitAppLibrary.episodeInfo(item)?.total || 0) - (window.SplitAppLibrary.episodeInfo(item)?.done || 0))}`;
     const art = thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : `<span class="watchlist-art-fallback"><i data-lucide="${isMovie ? "clapperboard" : "tv"}" aria-hidden="true"></i></span>`;
+    if (view === "posters") {
+      const progressInfo = !isMovie ? window.SplitAppLibrary.episodeInfo(item) : null;
+      const total = Number(progressInfo?.total) || Number(item.goal) || 0;
+      const trackedDone = Math.max(Number(progressInfo?.done) || 0, Number(item.progress) || 0, watchedIds.size);
+      const done = total ? Math.min(total, trackedDone) : trackedDone;
+      const percent = total ? Math.min(100, Math.round(done / total * 100)) : 0;
+      const progress = !isMovie && !upcoming ? `<span class="watchlist-poster-count">${total ? `${done} / ${total} episodes` : `${done} episodes watched`}</span><span class="watchlist-poster-progress"><i style="width:${percent}%"></i></span>` : "";
+      return `<article class="watchlist-card is-poster-view${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${cardOpen}><div class="watchlist-thumb">${art}</div>${progress}${check}</article>`;
+    }
     if (view === "cards") {
       const progressInfo = !isMovie ? window.SplitAppLibrary.episodeInfo(item) : null;
       const total = Number(progressInfo?.total) || Number(item.goal) || 0;
