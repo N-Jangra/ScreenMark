@@ -58,6 +58,19 @@
 .dashboard-filter-dialog .choice-dialog-actions { padding:12px 18px max(14px,env(safe-area-inset-bottom)); background:var(--surface); border-top:1px solid var(--line); }
 .dashboard-filter-dialog #dashboard-filter-form { padding-top:0; } .dashboard-filter-dialog .choice-dialog-header { padding-top:0; }
 
+/* Shared picker used by every Settings subpage. Keep its heading fixed while
+   longer option lists scroll inside the sheet instead of past its bottom. */
+#setting-picker-dialog[open] { display:flex; flex-direction:column; min-height:0; max-height:min(88dvh,760px); padding:0; overflow:hidden; }
+#setting-picker-dialog .choice-dialog-grabber { flex:none; margin:8px auto 5px; }
+#setting-picker-dialog > .choice-dialog-header { position:relative; top:auto; flex:none; min-height:56px; margin:0; padding:8px 18px 12px; }
+#setting-picker-dialog > .choice-dialog-header h2 { margin:0; }
+#setting-picker-dialog .setting-picker-list { flex:0 1 auto; min-height:0; max-height:min(calc(88dvh - 104px),660px); padding:2px 18px calc(16px + env(safe-area-inset-bottom)); overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+#setting-picker-dialog::backdrop { background:rgba(0,0,0,.68); backdrop-filter:blur(1px); }
+@media(min-width:768px) {
+  #setting-picker-dialog[open] { max-height:86dvh; }
+  #setting-picker-dialog .setting-picker-list { max-height:calc(86dvh - 104px); }
+}
+
 /* App Info follows Settings → Appearance → Icon style: inline icons drop their rounded boxes. */
 body[data-icon-style=inline] .ai-tile-icon, body[data-icon-style=inline] .ai-row-icon, body[data-icon-style=inline] .ai-feature-icon { background:transparent; width:auto; height:auto; border-radius:0; }
 body[data-icon-style=inline] .ai-tile-icon svg { width:24px; height:24px; }

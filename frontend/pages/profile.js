@@ -113,6 +113,7 @@
     const watchedIds = new Set((item.watchedEpisodeIds || []).map(String));
     const markId = episode?.id || "";
     const isWatched = watched || watchedIds.has(String(markId));
+    const cardOpen = isMovie ? "" : `data-watchlist-open="${esc(item.id)}" role="link" tabindex="0" aria-label="Open details for ${esc(item.title)}${item.year ? ` (${esc(String(item.year).slice(0, 4))})` : ""}"`;
     const tag = `<button type="button" class="watchlist-series-tag" data-open-details data-id="${esc(item.id)}">${esc(item.title)}${item.year ? ` (${esc(String(item.year).slice(0, 4))})` : ""} ›</button>`;
     const airdate = episode?.airdate || item.releaseDate || "";
     const check = upcoming ? `<span class="watchlist-airdate">${esc(daysUntil(airdate))}</span>` : isMovie ? `<button type="button" class="watchlist-check" data-watchlist-movie="${esc(item.id)}" aria-label="Mark ${esc(item.title)} watched">✓</button>` : `<button type="button" class="watchlist-check${isWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(item.id)}" data-episode-id="${esc(markId)}" data-episode-title="${esc(`${code} ${title}`)}" data-watchlist-card="${esc(item.id)}" aria-label="${isWatched ? "Watched" : "Mark watched"}" aria-pressed="${isWatched}">✓</button>`;
@@ -127,9 +128,9 @@
       const topLabel = upcoming ? daysUntil(airdate).toUpperCase() : `NEXT · ${code.replace(" | ", " · ")}`;
       const subtitle = upcoming ? (isMovie ? "Movie release" : title) : (isMovie ? "Ready to watch" : `${title} · ${done}/${total || "?"} watched`);
       const cardArt = landscape ? `<img src="${esc(landscape)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : art;
-      return `<article class="watchlist-card is-card-view${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}"><div class="watchlist-card-art">${cardArt}</div><div class="watchlist-card-shade"></div><div class="watchlist-card-top"><span>${esc(topLabel)}</span>${!isMovie && !upcoming ? `<small>${remainingEpisodes} eps left</small>` : ""}</div><div class="watchlist-card-copy"><strong>${esc(item.title)}</strong><span>${esc(subtitle)}</span></div>${check}<span class="watchlist-card-progress"><i style="width:${percent}%"></i></span></article>`;
+      return `<article class="watchlist-card is-card-view${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${cardOpen}><div class="watchlist-card-art">${cardArt}</div><div class="watchlist-card-shade"></div><div class="watchlist-card-top"><span>${esc(topLabel)}</span>${!isMovie && !upcoming ? `<small>${remainingEpisodes} eps left</small>` : ""}</div><div class="watchlist-card-copy"><strong>${esc(item.title)}</strong><span>${esc(subtitle)}</span></div>${check}<span class="watchlist-card-progress"><i style="width:${percent}%"></i></span></article>`;
     }
-    return `<article class="watchlist-card${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}"><div class="watchlist-thumb">${art}</div><div class="watchlist-copy">${tag}<strong>${esc(code)}${upcoming ? "" : remaining}</strong><span>${esc(isMovie && upcoming ? "Movie release" : title)}</span></div>${check}</article>`;
+    return `<article class="watchlist-card${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${cardOpen}><div class="watchlist-thumb">${art}</div><div class="watchlist-copy">${tag}<strong>${esc(code)}${upcoming ? "" : remaining}</strong><span>${esc(isMovie && upcoming ? "Movie release" : title)}</span></div>${check}</article>`;
   }
 
   function watchlistPage(context, kind) {
@@ -138,7 +139,18 @@
     const tab = watchlistTab === "upcoming" ? "upcoming" : "watchlist";
     const allRelevant = items.filter(item => item.category === category && (tab === "upcoming" || !isDone(item, roles)));
     const identityOf = item => `${String(item.title || "").normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase()}|${String(item.year || item.releaseDate || "").match(/(?:19|20)\d{2}/)?.[0] || ""}`;
-    const relevant = category === "series" ? [...allRelevant.reduce((groups, item) => { const key = identityOf(item), rows = groups.get(key) || []; rows.push(item); groups.set(key, rows); return groups; }, new Map()).values()].map(rows => rows.sort((a, b) => { const ai = window.SplitAppLibrary.episodeInfo(a), bi = window.SplitAppLibrary.episodeInfo(b); return (Number(bi?.done) - Number(ai?.done)) || (Number(bi?.total) - Number(ai?.total)) || stampOf(b) - stampOf(a); })[0]) : allRelevant;
+    const progressOf = item => {
+      const info = item.category === "series" ? window.SplitAppLibrary.episodeInfo(item) : null;
+      const watched = Math.max(0, Number(info?.done) || 0, Number(item.progress) || 0, (item.watchedEpisodeIds || []).length);
+      const total = Math.max(0, Number(info?.total) || Number(item.goal) || Number(item.facts?.runtimeMinutes) || 0);
+      return { watched, remaining: total ? Math.max(0, total - watched) : Infinity, ratio: total ? Math.min(1, watched / total) : 0, touched: Number(item.lastProgressAt) || stampOf(item) };
+    };
+    const progressOrder = (left, right) => {
+      const a = progressOf(left), b = progressOf(right);
+      if (!a.watched && !b.watched) return b.touched - a.touched;
+      return (b.ratio - a.ratio) || (a.remaining - b.remaining) || (b.watched - a.watched) || (b.touched - a.touched);
+    };
+    const relevant = category === "series" ? [...allRelevant.reduce((groups, item) => { const key = identityOf(item), rows = groups.get(key) || []; rows.push(item); groups.set(key, rows); return groups; }, new Map()).values()].map(rows => rows.sort(progressOrder)[0]) : allRelevant;
     const sections = [];
     const movieCards = (rows, upcoming = false) => rows.map(item => {
       const episode = { id: `movie:${item.id}`, season: 0, number: 0, title: upcoming ? item.releaseDate || item.year || "Upcoming" : "Ready to watch", image: item.localThumbnailData || item.customCover || item.image || "", airdate: item.releaseDate || item.year || "" };
@@ -158,8 +170,8 @@
     } else {
       const rows = category === "series" ? relevant.map(item => ({ item, info: window.SplitAppLibrary.episodeInfo(item) })).filter(row => row.info?.next && episodeAirTime(row.info.next) <= Date.now() && !isDone(row.item, roles)) : relevant.filter(item => !isDone(item, roles) && (watchlistStatus(item, roles) || activeStatus(item, roles) || holdStatus(item, roles)));
       const started = category === "series"
-        ? rows.filter(row => Number(row.info.done) > 0 || Number(row.item.progress) > 0 || activeStatus(row.item, roles)).sort((a, b) => stampOf(b.item) - stampOf(a.item))
-        : rows.filter(item => Number(item.progress) > 0 || activeStatus(item, roles)).sort((a, b) => stampOf(b) - stampOf(a));
+        ? rows.filter(row => Number(row.info.done) > 0 || Number(row.item.progress) > 0 || activeStatus(row.item, roles)).sort((a, b) => progressOrder(a.item, b.item))
+        : rows.filter(item => Number(item.progress) > 0 || activeStatus(item, roles)).sort(progressOrder);
       const queued = category === "series"
         ? rows.filter(row => (Number(row.info.done) || 0) <= 0 && (Number(row.item.progress) || 0) <= 0 && (watchlistStatus(row.item, roles) || holdStatus(row.item, roles))).sort((a, b) => stampOf(b.item) - stampOf(a.item))
         : rows.filter(item => (Number(item.progress) || 0) <= 0 && (watchlistStatus(item, roles) || holdStatus(item, roles))).sort((a, b) => stampOf(b) - stampOf(a));

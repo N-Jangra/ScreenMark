@@ -252,6 +252,8 @@
   }
   function showPopup(dialog, { silent = false } = {}) {
     if (!dialog) return;
+    if (dialog._closeTimer) { clearTimeout(dialog._closeTimer); dialog._closeTimer = 0; dialog.classList.remove("is-closing"); delete dialog.dataset.closeAnimating; }
+    if (dialog.open) return;
     if (typeof dialog.showModal === "function") {
       try { dialog.showModal(); if (!silent) pushDialogEntry(); return; } catch (_) {}
     }
@@ -260,12 +262,23 @@
     dialog.dataset.popupFallback = "true";
     document.body.dataset.popupFallback = "true";
   }
-  function closePopup(dialog, { preserveHistory = false } = {}) {
+  function closePopup(dialog, { preserveHistory = false, immediate = false, fromPop = false } = {}) {
     if (!dialog) return;
+    if (!immediate && dialog.id === "setting-picker-dialog" && dialog.open && !dialog.dataset.closeAnimating) {
+      const reduced = motionIsReduced();
+      const speed = prefs.animationSpeed === "fast" ? 120 : 180;
+      const duration = reduced ? 0 : Math.min(160, Math.max(0, speed * .8));
+      if (duration) {
+        const popped = fromPop || closingFromPop;
+        dialog.dataset.closeAnimating = "true"; dialog.classList.add("is-closing");
+        dialog._closeTimer = window.setTimeout(() => { dialog._closeTimer = 0; dialog.classList.remove("is-closing"); delete dialog.dataset.closeAnimating; closePopup(dialog, { preserveHistory, immediate: true, fromPop: popped }); }, duration);
+        return;
+      }
+    }
     if (typeof dialog.close === "function") {
       try {
         const wasOpen = dialog.open; dialog.close();
-        if (wasOpen && !closingFromPop) { if (preserveHistory) dialogEntries = Math.max(0, dialogEntries - 1); else popDialogEntry(); }
+        if (wasOpen && !closingFromPop && !fromPop) { if (preserveHistory) dialogEntries = Math.max(0, dialogEntries - 1); else popDialogEntry(); }
         return;
       } catch (_) {}
     }
@@ -381,6 +394,7 @@
     document.body.dataset.page = page;
     const selectedTheme = prefs.theme === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "amoled" : "light") : prefs.theme;
     const palette = themePalettes[selectedTheme] || themePalettes.amoled;
+    const accentColor = prefs.mainColor === "default" ? (palette.mode === "light" ? "#6366f1" : "#f5c518") : prefs.mainColor || "#6657d9";
     document.body.dataset.theme = palette.mode;
     document.body.dataset.palette = themePalettes[selectedTheme] ? selectedTheme : "amoled";
     document.body.style.background = palette.background;
@@ -395,7 +409,7 @@
       for (let step = 0; step <= 20 && Math.min(...surfaces.map(surface => contrast(color, surface))) < 4.5; step++) color = color.map((v, i) => Math.round(v + (target[i] - v) * .12));
       return `rgb(${color.join(",")})`;
     };
-    document.body.style.setProperty("--accent-text", readable(prefs.mainColor || "#6657d9"));
+    document.body.style.setProperty("--accent-text", readable(accentColor));
     document.body.style.setProperty("--warn-text", readable("#d97706"));
     document.body.style.setProperty("--danger-text", readable("#dc3545"));
     document.body.style.setProperty("--ok-text", readable("#16a34a"));
@@ -408,7 +422,7 @@
     document.body.style.setProperty("--surface-2", palette.surface2);
     document.body.style.setProperty("--line", palette.line);
     document.body.style.setProperty("--muted", palette.muted);
-    document.body.style.setProperty("--accent-soft", `color-mix(in srgb, ${prefs.mainColor || "#6366f1"} ${palette.mode === "light" ? "12%" : "20%"}, ${palette.surface})`);
+    document.body.style.setProperty("--accent-soft", `color-mix(in srgb, ${accentColor} ${palette.mode === "light" ? "12%" : "20%"}, ${palette.surface})`);
     document.body.dataset.reducedMotion = String(motionIsReduced());
     const nativeAndroid = Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor?.getPlatform?.() === "android");
     const cores = Number(navigator.hardwareConcurrency) || 4, memory = Number(navigator.deviceMemory) || 4;
@@ -433,7 +447,7 @@
     window.SplitAppDates?.setFormat(prefs.dateFormat); window.SplitAppBackend?.setImageStorage?.(prefs.imageStorage);
     $("#bottom-bar").dataset.bg = prefs.bottomBarBackground;
     document.body.dataset.barBackground = prefs.bottomBarBackground;
-    document.documentElement.style.setProperty("--accent", prefs.mainColor || "#6657d9");
+    document.documentElement.style.setProperty("--accent", accentColor);
     document.documentElement.style.setProperty("--bar-alpha", String(Math.max(0, Math.min(100, Number(prefs.bottomBarTransparency))) / 100));
     document.documentElement.style.setProperty("--text-size", prefs.textSize === "large" ? "18px" : prefs.textSize === "small" ? "14px" : "16px");
     document.documentElement.style.setProperty("--item-art-width", prefs.thumbnailSize === "small" ? "48px" : prefs.thumbnailSize === "large" ? "72px" : "58px");
@@ -822,7 +836,7 @@
     }
     if (page === "dashboard" || page === "details") { let touched = false; items.forEach(entry => { if (entry.cachedDetails && reconcileEpisodes(entry)) touched = true; }); if (touched) persist(); }
     const content = $("#page-content");
-    setPullToRefreshEnabled(page === "details");
+    setPullToRefreshEnabled(["details", "discover", "series-watchlist", "movie-watchlist"].includes(page));
     $("#floating-add").hidden = page !== "dashboard";
     if (page === "settings") { if (settingsGroup !== renderedSettingsGroup) { settingsFrom = renderedSettingsGroup || ""; renderedSettingsGroup = settingsGroup; } } else renderedSettingsGroup = undefined;
     const route = page === "settings" ? `settings/${settingsGroup || "index"}` : page === "statistics" && statsSubpage ? `statistics/${statsSubpage}` : page;
@@ -1540,7 +1554,8 @@
       const matches = all.filter(row => (Array.isArray(row.genres) ? row.genres : []).some(genre => pattern.test(String(genre))));
       addShelf(label, matches);
     });
-    box.innerHTML = shelves.length ? `<div class="discover-catalog-sections">${shelves.map(shelf => `<section class="discover-catalog-section"><h2>${esc(shelf.title)}</h2><div class="discover-catalog-grid">${shelf.items.map(row => discoverCatalogCard(row, all.indexOf(row))).join("")}</div></section>`).join("")}</div>` : `<p class="discover-catalog-empty">No titles match these filters.</p>`;
+    const genreShelves = new Set(["Comedy", "Action", "Horror", "Romance", "Slice of Life", "Sci-Fi", "Fantasy", "Adventure"]);
+    box.innerHTML = shelves.length ? `<div class="discover-catalog-sections">${shelves.map(shelf => `<section class="discover-catalog-section${genreShelves.has(shelf.title) ? " discover-genre-shelf" : ""}"><h2>${esc(shelf.title)}</h2><div class="discover-catalog-grid">${shelf.items.map(row => discoverCatalogCard(row, all.indexOf(row))).join("")}</div></section>`).join("")}</div>` : `<p class="discover-catalog-empty">No titles match these filters.</p>`;
     routeRemoteImages(box);
     box._results = all;
     return all.length;
@@ -1976,6 +1991,40 @@
     }
     persist({ ids: [item.id] }); render();
   }
+  function animateWatchlistCard(itemId) {
+    requestAnimationFrame(() => {
+      const card = [...document.querySelectorAll("[data-watchlist-root]")].find(row => row.dataset.watchlistRoot === String(itemId));
+      if (!card) return;
+      card.classList.remove("is-entering");
+      requestAnimationFrame(() => card.classList.add("is-entering"));
+      window.setTimeout(() => card.classList.remove("is-entering"), 260);
+    });
+  }
+  function captureWatchlistLayout() {
+    if (page !== "series-watchlist" && page !== "movie-watchlist") return null;
+    const viewport = window.innerHeight || document.documentElement.clientHeight;
+    return new Map($$(".watchlist-content [data-watchlist-root]").flatMap(card => {
+      const rect = card.getBoundingClientRect();
+      const section = card.closest(".watchlist-section")?.querySelector(".watchlist-section-heading h3, h3")?.textContent || "";
+      return rect.bottom >= -120 && rect.top <= viewport + 120 ? [[String(card.dataset.watchlistRoot), { left: rect.left, top: rect.top, section }]] : [];
+    }));
+  }
+  function animateWatchlistLayout(before) {
+    if (!before?.size || motionIsReduced()) return;
+    const viewport = window.innerHeight || document.documentElement.clientHeight;
+    const duration = document.documentElement.dataset.lowend === "true" ? 150 : prefs.animationSpeed === "fast" ? 185 : 240;
+    requestAnimationFrame(() => $$(".watchlist-content [data-watchlist-root]").forEach(card => {
+      const from = before.get(String(card.dataset.watchlistRoot));
+      if (!from || !card.animate) return;
+      const rect = card.getBoundingClientRect();
+      if (rect.bottom < -120 || rect.top > viewport + 120) return;
+      const section = card.closest(".watchlist-section")?.querySelector(".watchlist-section-heading h3, h3")?.textContent || "";
+      if (from.section !== section) { animateWatchlistCard(card.dataset.watchlistRoot); return; }
+      const x = from.left - rect.left, y = from.top - rect.top;
+      if (Math.abs(x) < 2 && Math.abs(y) < 2) return;
+      card.animate([{ transform: `translate3d(${x}px,${y}px,0)` }, { transform: "translate3d(0,0,0)" }], { duration, easing: "cubic-bezier(.2,.75,.25,1)" });
+    }));
+  }
   function toggleEpisodeWatched(itemId, episodeId, episodeTitle, watchlistCard = "") {
     const item = items.find(entry => entry.id === itemId); if (!item) return;
     const previousStatus = item.status;
@@ -2002,14 +2051,20 @@
     item.updatedAt = Date.now();
     history.unshift({ itemId: item.id, title: item.title, action: `${episodeTitle || "Episode"} marked ${markingWatched ? "watched" : "unwatched"}`, status: item.status, type: "episode", at: Date.now() });
     persist({ ids: [item.id] });
-    if (previousStatus !== item.status) render();
+    if (previousStatus !== item.status) { const before = captureWatchlistLayout(); render(); animateWatchlistLayout(before); }
     else if (watchlistCard && page === (item.category === "movie" ? "movie-watchlist" : "series-watchlist")) {
-      const root = document.querySelector(`[data-watchlist-root="${watchlistCard}"]`);
-      const infoNext = window.SplitAppLibrary.episodeInfo(item)?.next;
-      const fresh = infoNext ? window.SplitAppPages.watchlistCard({ item, episode: infoNext, esc, roles, view: currentWatchlistView() }) : null;
-      if (root && fresh) root.outerHTML = fresh;
-      else if (root) root.remove();
-      window.lucide?.createIcons({ root: document.querySelector("#page-content"), attrs: { "aria-hidden": "true" } });
+      const before = captureWatchlistLayout();
+      const replaceCard = () => {
+        const root = [...document.querySelectorAll("[data-watchlist-root]")].find(row => row.dataset.watchlistRoot === String(watchlistCard));
+        const infoNext = window.SplitAppLibrary.episodeInfo(item)?.next;
+        const fresh = infoNext ? window.SplitAppPages.watchlistCard({ item, episode: infoNext, esc, roles, view: currentWatchlistView() }) : null;
+        if (root && fresh) { root.outerHTML = fresh; if (markingWatched) animateWatchlistCard(item.id); }
+        else if (root) root.remove();
+        animateWatchlistLayout(before);
+        window.lucide?.createIcons({ root: document.querySelector("#page-content"), attrs: { "aria-hidden": "true" } });
+      };
+      const root = [...document.querySelectorAll("[data-watchlist-root]")].find(row => row.dataset.watchlistRoot === String(watchlistCard));
+      replaceCard();
     } else render();
     toast(watched.has(id) ? (earlier ? `Episode and ${earlier} earlier ${earlier === 1 ? "episode" : "episodes"} marked watched.` : "Episode marked watched.") : "Episode marked unwatched.");
   }
@@ -2273,8 +2328,9 @@
         preview.innerHTML = '<i></i><span><b></b><b></b></span>';
         description = palette[0];
       } else if (kind === "palette") {
-        preview = document.createElement("span"); preview.className = "setting-color-preview"; preview.style.setProperty("--choice-color", option.value);
-        description = `Use ${option.label.toLowerCase()} for buttons and highlights.`;
+        preview = document.createElement("span"); preview.className = "setting-color-preview";
+        preview.style.setProperty("--choice-color", option.value === "default" ? "var(--d-gold)" : option.value);
+        description = option.value === "default" ? "Use ScreenMark’s Discover and watchlist accent." : `Use ${option.label.toLowerCase()} for buttons and highlights.`;
       } else if (key === "bottomBarStyle") {
         preview = document.createElement("span"); preview.className = `setting-nav-style-preview setting-nav-style-${option.value}`;
         preview.innerHTML = `<i data-lucide="${settingPreviewIcons.bottomBarStyle[option.value]}"></i>`;
@@ -2295,7 +2351,9 @@
       list.appendChild(button);
     });
     if (kind === "palette") {
-      const custom = document.createElement("label"); custom.className = "setting-custom-color"; custom.innerHTML = `<span><strong>Custom color</strong><small>Choose any accent color.</small></span><input type="color" data-custom-picker value="${esc(prefs[key] || "#6366f1")}" aria-label="Choose a custom accent color">`;
+      const defaultColor = document.body.dataset.theme === "light" ? "#6366f1" : "#f5c518";
+      const customColor = prefs[key] === "default" ? defaultColor : prefs[key] || "#6366f1";
+      const custom = document.createElement("label"); custom.className = "setting-custom-color"; custom.innerHTML = `<span><strong>Custom color</strong><small>Choose any accent color.</small></span><input type="color" data-custom-picker value="${esc(customColor)}" aria-label="Choose a custom accent color">`;
       list.appendChild(custom);
     }
     window.lucide?.createIcons({ root: list, attrs: { "aria-hidden": "true" } });
@@ -2475,6 +2533,8 @@
   }
 
   $("#page-content").addEventListener("click", event => {
+    const watchlistOpen = eventClosest(event, "[data-watchlist-open]");
+    if (watchlistOpen && !eventClosest(event, "button, a, input, select, textarea")) { openDetails(watchlistOpen.dataset.watchlistOpen); return; }
     const pill = eventClosest(event, "[data-pill-name]");
     if (pill) {
       const group = pill.closest(".ios-pills");
@@ -2723,7 +2783,17 @@
       return;
     }
     const episode = eventClosest(event, "[data-episode-toggle]");
-    if (episode) { toggleEpisodeWatched(episode.dataset.itemId || detailItemId, episode.dataset.episodeId, episode.dataset.episodeTitle || "Episode", episode.dataset.watchlistCard || ""); return; }
+    if (episode) {
+      const watchlistCard = episode.dataset.watchlistCard || "";
+      if (watchlistCard) {
+        if (episode.disabled) return;
+        episode.disabled = true;
+        episode.classList.add("is-checking");
+        const itemId = episode.dataset.itemId || detailItemId, episodeId = episode.dataset.episodeId, title = episode.dataset.episodeTitle || "Episode";
+        window.setTimeout(() => toggleEpisodeWatched(itemId, episodeId, title, watchlistCard), 120);
+      } else toggleEpisodeWatched(episode.dataset.itemId || detailItemId, episode.dataset.episodeId, episode.dataset.episodeTitle || "Episode", "");
+      return;
+    }
     const movieWatched = eventClosest(event, "[data-watchlist-movie]");
     if (movieWatched) {
       const item = items.find(entry => entry.id === movieWatched.dataset.watchlistMovie);
@@ -2808,6 +2878,8 @@
   });
   $("#page-content").addEventListener("keydown", event => {
     if (event.key !== "Enter" && event.key !== " ") return;
+    const watchlistCard = eventClosest(event, "[data-watchlist-open]");
+    if (watchlistCard && event.target === watchlistCard) { event.preventDefault(); openDetails(watchlistCard.dataset.watchlistOpen); return; }
     const row = eventClosest(event, '.season-accordion-row[role="button"][data-season-pill]');
     if (!row || event.target !== row) return;
     event.preventDefault(); row.click();
@@ -2994,18 +3066,45 @@
     goto(button.dataset.sidebarPage);
   });
   $("#header-filter").addEventListener("click", () => showPopup($("#dashboard-filter-dialog")));
-  // ---- Pull to refresh on Details and drill-down pages (touch or mouse drag from the very top) ----
+  // ---- Pull to refresh on details, watchlists, and Discover ----
   setPullToRefreshEnabled = (() => {
     const THRESHOLD = 72, MAX = 130; let ptr = null, startY = 0, candidate = false, pulling = false, distance = 0, busy = false;
+    const contentTargets = () => page === "discover"
+      ? [$("#page-content")].filter(Boolean)
+      : page === "series-watchlist" || page === "movie-watchlist"
+        ? [$(".watchlist-content"), $(".watchlist-browse")].filter(Boolean)
+        : [];
+    const setContentPull = (offset, dragging = false) => contentTargets().forEach(target => {
+      target.classList.add("ptr-content");
+      target.classList.toggle("ptr-dragging", dragging);
+      target.style.setProperty("--ptr-push", `${offset}px`);
+    });
+    const clearContentPull = () => contentTargets().forEach(target => {
+      target.classList.remove("ptr-dragging");
+      target.style.setProperty("--ptr-push", "0px");
+      const targetRef = target;
+      window.setTimeout(() => { if (targetRef.isConnected && targetRef.style.getPropertyValue("--ptr-push") === "0px") targetRef.classList.remove("ptr-content"); }, 260);
+    });
+    const anchorTop = () => {
+      const sticky = page === "discover" ? $(".topbar") : $(".watchlist-tabs");
+      if (!sticky) return 10 + (window.visualViewport?.offsetTop || 0);
+      const rect = sticky.getBoundingClientRect();
+      return Math.max(8, rect.bottom + 5);
+    };
     const element = () => {
       if (ptr) return ptr;
       ptr = document.createElement("div"); ptr.className = "ptr"; ptr.setAttribute("role", "status"); ptr.setAttribute("aria-live", "polite");
       ptr.innerHTML = '<span class="ptr-bubble"><svg class="ptr-arrow" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg><span class="ptr-spinner"></span><svg class="ptr-check" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span><span class="ptr-text"></span>';
       document.body.appendChild(ptr); return ptr;
     };
-    const show = (state, text, offset) => { const el = element(); el.dataset.state = state; el.querySelector(".ptr-text").textContent = text; el.style.setProperty("--pull", `${offset}px`); el.style.setProperty("--turn", `${Math.min(1, offset / THRESHOLD) * 180}deg`); el.classList.add("show"); };
-    const hide = () => { if (ptr) { ptr.classList.remove("show"); ptr.dataset.state = ""; ptr.style.setProperty("--pull", "0px"); } };
-    const allowed = target => page === "details" && !busy && window.scrollY <= 0 && !target.closest?.("input, textarea, select, dialog, [data-detail-image-src], .detail-carousel, .detail-gallery, .ep-ratings-scroll, .season-pills, .detail-tabs");
+    const show = (state, text, offset) => { const el = element(); el.dataset.state = state; el.querySelector(".ptr-text").textContent = text; el.style.setProperty("--pull", `${offset}px`); el.style.setProperty("--ptr-anchor", `${anchorTop()}px`); el.style.setProperty("--turn", `${Math.min(1, offset / THRESHOLD) * 180}deg`); el.classList.add("show"); };
+    const hide = () => { if (ptr) { ptr.classList.remove("show"); ptr.dataset.state = ""; ptr.style.setProperty("--pull", "0px"); } clearContentPull(); };
+    const allowed = target => {
+      if (!["details", "discover", "series-watchlist", "movie-watchlist"].includes(page) || busy || window.scrollY > 0) return false;
+      if (page === "details") return !target.closest?.("input, textarea, select, dialog, [data-detail-image-src], .detail-carousel, .detail-gallery, .ep-ratings-scroll, .season-pills, .detail-tabs");
+      if (page === "discover") return !target.closest?.("input, textarea, select, dialog, .topbar");
+      return !target.closest?.("input, textarea, select, dialog, .watchlist-tabs");
+    };
     const begin = (y, target) => { candidate = allowed(target); startY = y; pulling = false; distance = 0; };
     const move = (y, event) => {
       if (!candidate) return;
@@ -3013,16 +3112,27 @@
       if (dy <= 6 || window.scrollY > 0) { if (pulling) { pulling = false; hide(); } return; }
       pulling = true; distance = Math.min(MAX, dy * .55);
       if (event.cancelable) event.preventDefault();
+      setContentPull(distance, true);
       show(distance >= THRESHOLD ? "ready" : "pull", distance >= THRESHOLD ? "Release to refresh" : "Pull to refresh", distance);
     };
     const finish = async () => {
       document.removeEventListener("touchmove", onTouchMove);
       const shouldRefresh = pulling && distance >= THRESHOLD; candidate = false; pulling = false;
       if (!shouldRefresh) { hide(); return; }
-      busy = true; show("loading", "Refreshing…", 62);
-      try { await (detailRef ? loadDetailRef() : loadDetails()); show("done", "Updated", 62); }
-      catch (_) { show("done", "Could not refresh", 62); }
-      await new Promise(resolve => setTimeout(resolve, 650)); hide(); busy = false;
+      busy = true; setContentPull(62); show("loading", "Refreshing…", 62);
+      try {
+        if (page === "details") await (detailRef ? loadDetailRef() : loadDetails());
+        else if (page === "discover") {
+          discoverQuery = $("#discover-query")?.value || discoverQuery;
+          if (discoverQuery.trim()) await discover();
+          else { suggestionsCache = null; await loadDiscoverSuggestions(); }
+        } else {
+          await restoreNativeData({ fast: false });
+          if (page === "series-watchlist" || page === "movie-watchlist") render();
+        }
+        setContentPull(62); show("done", "Updated", 62);
+      } catch (_) { show("done", "Could not refresh", 62); }
+      await new Promise(resolve => setTimeout(resolve, 520)); hide(); busy = false;
     };
     let mouseDown = false;
     const onTouchStart = event => {
@@ -3088,6 +3198,7 @@
     syncDiscoverTypeTabs();
   });
   $("[data-close-setting-picker]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#setting-picker-dialog")); });
+  $("#setting-picker-dialog")?.addEventListener("cancel", event => { event.preventDefault(); closePopup(event.currentTarget); });
   $("#floating-add").addEventListener("click", () => openItem());
   function syncRouteFromHash() {
     rememberScroll();

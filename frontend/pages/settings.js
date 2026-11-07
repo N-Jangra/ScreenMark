@@ -4,7 +4,7 @@
   window.SplitAppPages.settings = context => {
     const { config, prefs, items, history, changeLog = [], logEntries = [], metadataSyncState = null, logQuery = "", logFrom = "", logTo = "", historyQuery = "", historyFrom = "", historyTo = "", settingsParam = "", settingsFrom = "", esc, safeLucideName = value => value, settingsGroup, navItems, metadataSourceFilter = "all", libraryBytes = 0 } = context;
     const themeOptions = [["system", "System"], ["light", "Light"], ["amoled", "AMOLED"]].map(([value, label]) => `${value}|${label}`);
-    const mainColors = [["#6366f1", "Indigo"], ["#f472b6", "Carnation Pink"], ["#16a34a", "Dark Green"], ["#b91c1c", "Maroon"], ["#2563eb", "Navy Blue"], ["#64748b", "Grey"], ["#e2e8f0", "White"], ["#a16207", "Brown"], ["#06b6d4", "Cool Cyan"], ["#f97316", "Fire"], ["#7c3aed", "Burple"], ["#22c55e", "Green"], ["#65a30d", "Apple"], ["#eab308", "Banan"], ["#f43f5e", "Party"], ["#fb7185", "Pink"], ["#8b5cf6", "Material You"]].map(([value, label]) => `${value}|${label}`);
+    const mainColors = [["default", "Default"], ["#6366f1", "Indigo"], ["#f472b6", "Carnation Pink"], ["#16a34a", "Dark Green"], ["#b91c1c", "Maroon"], ["#2563eb", "Navy Blue"], ["#64748b", "Grey"], ["#e2e8f0", "White"], ["#a16207", "Brown"], ["#06b6d4", "Cool Cyan"], ["#f97316", "Fire"], ["#7c3aed", "Burple"], ["#22c55e", "Green"], ["#65a30d", "Apple"], ["#eab308", "Banan"], ["#f43f5e", "Party"], ["#fb7185", "Pink"], ["#8b5cf6", "Material You"]].map(([value, label]) => `${value}|${label}`);
     const settingGroups = [
       { id: "appearance", title: "Appearance", description: "Text, color and navigation.", icon: "palette", settings: [
         ["Text size", "textSize", "select", ["small|Small", "normal|Default", "large|Large"]],
@@ -55,7 +55,8 @@
       if (type === "select" || type === "palette") {
         const current = options.find(entry => entry.split("|")[0] === String(prefs[key]));
         const value = current ? current.split("|").slice(1).join("|") : (prefs[key] || options[0]?.split("|").slice(1).join("|") || "Choose");
-        const swatch = type === "palette" ? `<span class="setting-picker-swatch" style="--choice-color:${esc(prefs[key] || "#6366f1")}"></span>` : "";
+        const swatchColor = prefs[key] === "default" ? "var(--d-gold)" : esc(prefs[key] || "#6366f1");
+        const swatch = type === "palette" ? `<span class="setting-picker-swatch" style="--choice-color:${swatchColor}"></span>` : "";
         return `<button type="button" class="setting-picker-trigger" data-setting-picker="${key}" data-picker-kind="${type === "palette" ? "palette" : key}" data-picker-options="${esc(JSON.stringify(options))}" aria-label="${esc(label)}: ${esc(value)}">${swatch}<span class="setting-picker-label">${esc(value)}</span><span class="setting-picker-chevron" aria-hidden="true">›</span></button>`;
       }
       if (type === "color") return `<input class="setting-control" type="color" data-pref="${key}" value="${esc(prefs[key])}">`;

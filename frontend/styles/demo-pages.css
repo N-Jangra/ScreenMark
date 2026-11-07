@@ -326,8 +326,8 @@ body .demo-title-page .continue-tracking { width: 100%; min-width: 0; }
 body .demo-title-page .continue-tracking > h2 { margin: 0 0 9px; color: var(--d-t1); font: 800 15px var(--d-font); }
 body .demo-title-page .tracking-episode-rail { position: relative; display: flex; gap: 10px; width: calc(100% + 28px); margin: 0 -14px; padding: 0 7% 6px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; touch-action: pan-x pan-y; scroll-snap-type: x mandatory; scroll-padding-inline: 7%; -webkit-overflow-scrolling: touch; scrollbar-width: none; box-sizing: border-box; }
 body .demo-title-page .tracking-episode-rail::-webkit-scrollbar { display: none; }
-body .demo-title-page .tracking-episode-card { display: grid; flex: 0 0 86%; grid-template-columns: minmax(0,1fr) 38px; align-items: center; gap: 8px; min-width: 0; min-height: 132px; padding: 8px; overflow: hidden; border: 1px solid var(--d-line2); border-radius: 12px; background: #090A0F; scroll-snap-align: center; box-sizing: border-box; transform: scale(.93); transition: transform .16s cubic-bezier(.2,.8,.2,1); }
-body .demo-title-page .tracking-episode-card.is-active { transform: scale(1); }
+body .demo-title-page .tracking-episode-card { display: grid; flex: 0 0 86%; grid-template-columns: minmax(0,1fr) 38px; align-items: center; gap: 8px; min-width: 0; min-height: 132px; padding: 8px; overflow: hidden; border: 1px solid var(--d-line2); border-radius: 12px; background: #090A0F; scroll-snap-align: center; scroll-snap-stop: always; box-sizing: border-box; transition: border-color .16s ease,background-color .16s ease; }
+body .demo-title-page .tracking-episode-card.is-active { border-color: color-mix(in srgb,var(--d-gold) 42%,var(--d-line2)); }
 @media (prefers-reduced-motion: reduce) { body .demo-title-page .tracking-episode-card { transition: none; } }
 body .demo-title-page .tracking-episode-open { display: grid; grid-template-columns: minmax(70px,38%) minmax(0,1fr); align-items: center; gap: 10px; width: 100%; min-width: 0; height: 116px; margin: 0; padding: 0; border: 0; border-radius: 8px; background: none; box-shadow: none; color: var(--d-t1); text-align: left; }
 body .demo-title-page .tracking-episode-art { display: grid; place-items: center; width: 100%; height: 116px; overflow: hidden; border-radius: 8px; background: var(--d-elev); }
@@ -713,6 +713,7 @@ body[data-page="discover"] .discover-all-results > header { display: flex; align
 body[data-page="discover"] .discover-all-results > header h2 { margin: 0; color: var(--d-t1); font: 800 20px/1.2 var(--d-font); }
 body[data-page="discover"] .discover-all-results > header > span { color: var(--d-t2); font: 600 11px var(--d-font); }
 body[data-page="discover"] .discover-all-results-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); align-items: start; gap: 14px 10px; padding: 0 var(--gutter); }
+body[data-page="discover"] .discover-all-results-grid { width: calc(100% - var(--gutter, 16px) - var(--gutter, 16px) - 14px); margin-left: calc(var(--gutter, 16px) + var(--gutter, 16px) + 14px); }
 body[data-page="discover"] .discover-all-results-grid .discover-catalog-card { min-width: 0; width: auto; }
 body[data-page="discover"] .discover-catalog-section > h2::after { width: 4px; height: 16px; order: -1; border-radius: 4px; background: var(--d-gold); content: ""; }
 body[data-page="discover"] .discover-catalog-section .discover-catalog-grid { display: flex; gap: 12px; width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; padding: 0 var(--gutter) 7px; scrollbar-width: none; scroll-snap-type: x mandatory; }
@@ -730,7 +731,9 @@ body[data-page="discover"] .discover-empty[hidden] { display: none; }
 body[data-page="discover"] .discover-catalog-section > h2,
 body[data-page="discover"] .discover-catalog-section.discover-source-section > header { padding-inline: 20px; }
 body[data-page="discover"] .discover-catalog-section.discover-source-section > header h2 { padding-inline: 0; }
-body[data-page="discover"] .discover-catalog-section .discover-catalog-grid { padding-inline: 20px; }
+body[data-page="discover"] .discover-catalog-sections:not(.discover-search-sections) > .discover-catalog-section:nth-child(-n+2) .discover-catalog-grid,
+body[data-page="discover"] .discover-search-sections .discover-source-section .discover-catalog-grid { width: calc(100% - var(--gutter, 16px) - var(--gutter, 16px) - 14px); margin-left: calc(var(--gutter, 16px) + var(--gutter, 16px) + 14px); padding-inline: calc(20px + var(--gutter, 16px)); }
+body[data-page="discover"] .discover-genre-shelf .discover-catalog-grid { width: calc(100% - 20px); margin-left: 20px; padding-left: 16px; }
 body[data-page="discover"]:has(.topbar #header-type:not([hidden])) #page-content { padding-top: 0; }
 @media (min-width: 720px) {
   body[data-page="discover"] .discover-page { padding-top: 22px; gap: 15px; }
@@ -888,14 +891,20 @@ body:is([data-page="series-watchlist"],[data-page="movie-watchlist"]):has(.watch
 .watchlist-section-heading > h3 { grid-column: 2; grid-row: 1; justify-self: center; margin: 0; padding: 4px 10px; border-radius: 99px; background: #777985; color: #fff; font: 800 10px/1 var(--d-font); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
 .watchlist-section > h3 { justify-self: center; margin: 0 0 2px; padding: 4px 10px; border-radius: 99px; background: #777985; color: #fff; font: 800 10px/1 var(--d-font); letter-spacing: .04em; text-transform: uppercase; }
 .watchlist-card { display: grid; grid-template-columns: 88px minmax(0,1fr) 40px; gap: 12px; align-items: center; min-height: 104px; padding: 9px; border: 1px solid var(--d-line2); border-radius: 13px; background: linear-gradient(145deg,var(--d-elev),var(--d-surface) 52%); color: var(--d-t1); box-shadow: 0 6px 18px rgba(0,0,0,.24),inset 0 1px rgba(255,255,255,.035); }
+.watchlist-card[data-watchlist-open] { cursor: pointer; }
+.watchlist-card[data-watchlist-open]:focus-visible { outline: 2px solid var(--d-gold); outline-offset: 2px; }
 .watchlist-thumb { display: grid; place-items: center; width: 88px; height: 88px; overflow: hidden; border-radius: 9px; background: var(--d-elev); color: var(--d-t2); }
 .watchlist-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .watchlist-thumb svg { width: 24px; height: 24px; }
 .watchlist-copy { display: grid; justify-items: start; gap: 4px; min-width: 0; }
-.watchlist-series-tag { max-width: 100%; overflow: hidden; padding: 3px 9px; border: 1px solid var(--d-line2); border-radius: 99px; background: transparent; color: var(--d-t2); font: 700 9px/1.1 var(--d-font); text-overflow: ellipsis; white-space: nowrap; }
+.watchlist-series-tag { max-width: 100%; min-height: 24px; overflow: hidden; padding: 3px 10px; border: 1px solid var(--d-line2); border-radius: 99px; background: var(--d-elev); color: var(--d-t1); font: 750 10.5px/1.15 var(--d-font); text-overflow: ellipsis; white-space: nowrap; }
 .watchlist-copy strong { color: var(--d-t1); font-size: 15px; line-height: 1.25; }
 .watchlist-copy > span { max-width: 100%; overflow: hidden; color: var(--d-t2); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .watchlist-check { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--d-line2); border-radius: 50%; background: rgba(0,0,0,.24); color: var(--d-t2); font-size: 18px; }
+.watchlist-check.is-checking { border-color: var(--d-gold); background: var(--d-gold); color: var(--d-gold-fg); animation: watchlist-check-pop 180ms cubic-bezier(.2,.8,.2,1) both; }
+.watchlist-card.is-entering { animation: watchlist-card-arrive 200ms cubic-bezier(.2,.8,.2,1) both; }
+@keyframes watchlist-check-pop { 50% { transform: scale(.84); } 100% { transform: scale(1); } }
+@keyframes watchlist-card-arrive { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
 .watchlist-check.is-watched { border-color: var(--d-emerald); background: var(--d-emerald-soft); color: var(--d-emerald); }
 .watchlist-airdate { color: var(--d-gold); font-size: 11px; font-weight: 700; }
 .watchlist-browse { display: block; min-height: 40px; margin: 14px auto 0; padding: 0 20px; border: 1px solid var(--d-t2); border-radius: 99px; background: var(--d-surface); color: var(--d-t1); font-size: 12px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
@@ -907,6 +916,7 @@ body:is([data-page="series-watchlist"],[data-page="movie-watchlist"]):has(.watch
 .watchlist-empty-illustration svg { width: 58px; height: 58px; stroke-width: 1.5; }
 .watchlist-empty > button { min-height: 38px; padding: 0 20px; border: 0; border-radius: 99px; background: var(--d-gold); color: var(--d-gold-fg); font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .watchlist-content.is-posters .watchlist-section { grid-template-columns: repeat(3,minmax(0,1fr)); align-items: start; gap: 8px; }
+.watchlist-content.is-posters .watchlist-section-heading { grid-column: 1 / -1; }
 .watchlist-content.is-posters .watchlist-section > h3 { grid-column: 1 / -1; }
 .watchlist-content.is-posters .watchlist-card { position: relative; display: block; min-width: 0; min-height: 0; padding: 0; overflow: hidden; border: 0; border-radius: 7px; background: transparent; box-shadow: none; }
 .watchlist-content.is-posters .watchlist-thumb { width: 100%; height: auto; aspect-ratio: 2 / 3; border-radius: 7px; }
@@ -930,6 +940,8 @@ body:is([data-page="series-watchlist"],[data-page="movie-watchlist"]):has(.watch
 .watchlist-card-progress { position: absolute; z-index: 2; right: 8px; bottom: 4px; left: 8px; height: 4px; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.25); }
 .watchlist-card-progress > i { display: block; height: 100%; border-radius: inherit; background: #f7ca23; }
 .watchlist-card.is-card-view.is-upcoming .watchlist-airdate { position: absolute; z-index: 2; right: 13px; bottom: 15px; display: grid; place-items: center; min-width: 48px; min-height: 42px; padding: 0 10px; border-radius: 12px; background: #f7ca23; color: #151515; font-weight: 850; }
+@media (prefers-reduced-motion: reduce) { .watchlist-check.is-checking,.watchlist-card.is-entering { animation: none; } }
+html[data-lowend="true"] .watchlist-check.is-checking,html[data-lowend="true"] .watchlist-card.is-entering { animation-duration: 120ms; }
 @media (min-width: 620px) { .watchlist-content.is-posters .watchlist-section { grid-template-columns: repeat(4,minmax(0,1fr)); } }
 
 /* Statistics overview follows the reference's category tabs and stacked black cards. */

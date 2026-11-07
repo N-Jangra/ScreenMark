@@ -22,6 +22,14 @@ body[data-nav-dir=back] #page-content.page-route-enter{animation:sp-in-back calc
 
 /* ---- Sheets, dialogs, backdrops ---- */
 .choice-dialog[open]{animation:sp-sheet-up calc(var(--speed,180ms) * 1.9) var(--ease-spring) both}
+#setting-picker-dialog[open]{animation-duration:calc(var(--speed,180ms) * 1.35);animation-timing-function:var(--ease-out)}
+#setting-picker-dialog.is-closing{animation:sp-sheet-down calc(var(--speed,180ms) * .8) cubic-bezier(.4,0,.8,.4) both}
+body[data-sheet-anim=slide] #setting-picker-dialog[open]{animation-name:sp-sheet-up}
+body[data-sheet-anim=fade] #setting-picker-dialog[open]{animation-name:sp-fade}
+body[data-sheet-anim=pop] #setting-picker-dialog[open]{animation-name:sp-pop}
+body[data-sheet-anim=fade] #setting-picker-dialog.is-closing{animation-name:sp-fade;animation-direction:reverse}
+body[data-sheet-anim=pop] #setting-picker-dialog.is-closing{animation-name:sp-pop;animation-direction:reverse}
+@keyframes sp-sheet-down{from{opacity:1;transform:translate3d(0,0,0)}to{opacity:0;transform:translate3d(0,28px,0)}}
 dialog.ios-action-sheet[open]{animation:sp-sheet-up calc(var(--speed,180ms) * 1.6) var(--ease-spring) both}
 dialog::backdrop{animation:sp-fade calc(var(--speed,180ms) * 1.4) ease both}
 .detail-image-modal[open]{animation:sp-pop calc(var(--speed,180ms) * 1.2) var(--ease-out) both}
@@ -92,6 +100,7 @@ dialog,.setting-picker-list,.import-preview-list ul{overscroll-behavior:contain}
   :is(.chip-row,.timeline-filters,.detail-toolbar,.detail-carousel,.season-poster-deck,.tracking-episode-rail,.discover-rail,.discover-source-strip,.discover-genre-row,.detail-gallery,.icon-picker-carousel,.timeline-month-days,.detail-status-pills){
     -webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;scroll-behavior:smooth;touch-action:pan-x pan-y
   }
+  body .demo-title-page .tracking-episode-rail{scroll-behavior:auto;scroll-snap-type:x mandatory}
   .topbar,.bottom-bar,.detail-page-heading,.settings-subpage-heading,.timeline-filters{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
 }
 @media(max-width:767px){html{scrollbar-gutter:auto}}
