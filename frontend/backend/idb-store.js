@@ -148,14 +148,14 @@
         // Worker could not start (e.g. file:// preview): retry every pending call in-thread.
         usable = false; worker = null;
         const jobs = [...pending.values()]; pending.clear();
-        jobs.forEach(job => (job.op === "merge" ? Promise.resolve().then(() => root.SplitAppMixMerge.merge(...job.args)) : core[job.op](...job.args)).then(job.resolve, job.reject));
+        jobs.forEach(job => core[job.op](...job.args).then(job.resolve, job.reject));
       };
     } catch (_) { usable = false; worker = null; }
     return worker;
   }
   function call(op, ...args) {
     const target = ensureWorker();
-    if (!target) return op === "merge" ? Promise.resolve().then(() => root.SplitAppMixMerge.merge(...args)) : core[op](...args);
+    if (!target) return core[op](...args);
     return new Promise((resolve, reject) => {
       const id = nextId++;
       pending.set(id, { resolve, reject, op, args });
@@ -173,8 +173,6 @@
     clearThumbs: () => call("clearThumbs"),
     getShareCache: (key, sig) => call("getShareCache", key, sig),
     putShareCache: (key, sig, blob) => call("putShareCache", key, sig, blob),
-    clearShareCache: () => call("clearShareCache"),
-    // Merge providers' detail records in a worker so large episode and cast lists do not block scrolling.
-    merge: (entries, title, item) => call("merge", entries, title, item)
+    clearShareCache: () => call("clearShareCache")
   });
 })(self);

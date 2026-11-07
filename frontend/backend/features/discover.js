@@ -292,7 +292,7 @@
     const day = offset => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
     const jobs = [];
     if (want("tvmaze") && category === "series") {
-      const showsFrom = (rows, limit = 14) => { const seen = new Map(); (Array.isArray(rows) ? rows : []).forEach(row => { const show = row.show || row._embedded?.show; if (show?.id && !seen.has(show.id) && tvmazeMatches(show, category) && (show.image?.medium || show.image?.original)) seen.set(show.id, show); }); return [...seen.values()].slice(0, limit).map(show => tvmazeResult(show, category)); };
+      const showsFrom = (rows, limit = 24) => { const seen = new Map(); (Array.isArray(rows) ? rows : []).forEach(row => { const show = row.show || row._embedded?.show; if (show?.id && !seen.has(show.id) && tvmazeMatches(show, category) && (show.image?.medium || show.image?.original)) seen.set(show.id, show); }); return [...seen.values()].slice(0, limit).map(show => tvmazeResult(show, category)); };
       jobs.push(async () => {
         const [stream, tv, soon] = await Promise.all([
           requestJson(`https://api.tvmaze.com/schedule/web?date=${day(0)}`, settings).catch(() => []),
@@ -312,7 +312,7 @@
         tmdbGet(`/genre/${kind}/list`, settings).catch(() => ({ genres: [] }))
       ]);
       const genreNames = new Map((genreData.genres || []).map(row => [row.id, row.name]));
-      const tmdbRows = (rows, title) => ({ source: "tmdb", title, items: (rows || []).slice(0, 14).map(row => {
+      const tmdbRows = (rows, title) => ({ source: "tmdb", title, items: (rows || []).slice(0, 24).map(row => {
         const release = row.release_date || row.first_air_date || "";
         return result("tmdb", category, row.id, row.title || row.name, {
           year: release.slice(0, 4), image: row.poster_path ? `https://image.tmdb.org/t/p/w342${row.poster_path}` : "",
@@ -322,16 +322,8 @@
         }); }).filter(row => row.title && row.image) });
       return [tmdbRows(trending.results, "Trending"), tmdbRows(latest.results, "Latest")];
     });
-    // Public iTunes top-movies chart (no key). Titles are resolved through Mix fetch, so details come from your enabled sources.
-    if (category === "movie" && !sourceKey) jobs.push(async () => {
-      const data = await requestJson("https://itunes.apple.com/us/rss/topmovies/limit=24/json", settings);
-      const entries = Array.isArray(data?.feed?.entry) ? data.feed.entry : [];
-      const poster = list => String((list || []).slice(-1)[0]?.label || "").replace(/\/\d+x\d+bb\.(png|jpg)$/, "/300x450bb.$1");
-      const items = entries.map(row => { const title = row["im:name"]?.label, genre = row.category?.attributes?.label || ""; return result("mix", category, window.SplitAppMix?.norm ? window.SplitAppMix.norm(title) : String(title).toLowerCase(), title, { year: String(row["im:releaseDate"]?.label || "").slice(0, 4), image: poster(row["im:image"]), description: row.summary?.label || "", genres: genre ? [genre] : [], subtitle: [String(row["im:releaseDate"]?.label || "").slice(0, 4), genre].filter(Boolean).join(" · "), mixLookup: true }); }).filter(row => row.title);
-      return [{ source: "mix", title: "Top movies right now", items: items.slice(0, 14) }, { source: "mix", title: "More popular movies", items: items.slice(14) }];
-    });
     if (want("anilist")) jobs.push(async () => {
-      const list = async sort => { const gql = `query{Page(perPage:14){media(type:ANIME,format_in:${anilistFormats(category)},sort:${sort},isAdult:false){${ANILIST_FIELDS}}}}`; const data = await requestJson("https://graphql.anilist.co", { ...settings, method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ query: gql }) }); return anilistRows(data.data?.Page?.media, category); };
+      const list = async sort => { const gql = `query{Page(perPage:24){media(type:ANIME,format_in:${anilistFormats(category)},sort:${sort},isAdult:false){${ANILIST_FIELDS}}}}`; const data = await requestJson("https://graphql.anilist.co", { ...settings, method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ query: gql }) }); return anilistRows(data.data?.Page?.media, category); };
       const [trendingNow, popular] = await Promise.all([list("TRENDING_DESC"), list("POPULARITY_DESC")]);
       const noun = category === "movie" ? "anime movies" : "anime";
       return [{ source: "anilist", title: `Trending ${noun}`, items: trendingNow }, { source: "anilist", title: `Popular ${noun}`, items: popular }];
