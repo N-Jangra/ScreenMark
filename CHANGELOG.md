@@ -8,13 +8,18 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 
 - Streamlined Settings → Animations around the transitions used by the current pages: screen, sheet and dialog transitions, tap feedback, progress updates and optional loading motion.
 - Reduced default and low-end-device motion work: card entrance cascades, navigation bounce and shimmer are off by default; low-end Android skips decorative motion and blur, and page transitions start without a forced layout pass.
-- Reduced launch-screen delay and limited pull-to-refresh's non-passive touch handling to eligible gestures at the top of Details, keeping other pages on native scrolling.
+- Added pull-to-refresh to Discover and both watchlists. The content follows the drag below the sticky search or watchlist tabs, then settles back with a short release animation.
+- Added a theme-aware Default accent choice that matches Discover and watchlists: gold on dark themes and indigo on light themes.
+- Refined shared Settings option sheets so long lists scroll within the sheet, keep the header visible, and follow the selected sheet motion with a matching close animation.
+- Smoothed watchlist episode updates with position-aware card movement when titles change status groups, without delaying the next episode card.
+- Reduced launch-screen delay and limited pull-to-refresh's non-passive touch handling to eligible top-of-page gestures, keeping ordinary scrolling native.
 
 ### Fixed
 
 - Aligned Statistics overview and Activity headers with a shared topbar layout.
 - Replaced fallback circle icons on Metadata sync settings with refresh icons and clarified their descriptions.
 - Reduced compositing overhead on the episode tracking carousel by removing persistent per-card GPU layer hints.
+- Fixed Settings picker options extending below the visible sheet on smaller screens.
 
 ## [0.1.2] — 2026-11-07
 
