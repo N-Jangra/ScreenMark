@@ -3,26 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#02080d">
-  <link rel="icon" href="icons/screenmark.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#08090c">
+  <link rel="icon" href="favicon.ico?v=0.1.2" sizes="any">
+  <link rel="icon" href="favicon-48.png?v=0.1.2" type="image/png" sizes="48x48">
+  <link rel="icon" href="icons/screenmark.svg?v=0.1.2" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/app-icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
   <title>ScreenMark</title>
   <style id="boot-splash-css">
-    #boot-splash{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:#030712;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;text-align:center;transition:opacity calc(.28s * var(--boot-speed,1)) ease}
+    #boot-splash{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:#08090c;color:#f5f7fa;font-family:system-ui,-apple-system,sans-serif;transition:opacity calc(.16s * var(--boot-speed,1)) ease calc(.08s * var(--boot-speed,1))}
     html:has(#boot-splash){overflow:hidden}
     #boot-splash.is-leaving{opacity:0;pointer-events:none}
-    #boot-splash .boot-inner{animation:bootIn calc(.42s * var(--boot-speed,1)) ease-out both}
-    #boot-splash img{width:72px;height:72px;object-fit:contain;animation:bootPulse calc(1.8s * var(--boot-speed,1)) ease-in-out infinite}
-    #boot-splash h1{margin:14px 0 4px;font-size:1.5rem;font-weight:800;letter-spacing:-.02em}
-    #boot-splash p{margin:0;color:#94a3b8;font-size:.85rem}
-    #boot-splash .dots{display:flex;justify-content:center;gap:7px;margin-top:18px}
-    #boot-splash .dots span{width:7px;height:7px;border-radius:50%;background:#7c3aed;animation:bootDot calc(1s * var(--boot-speed,1)) ease-in-out infinite}
-    #boot-splash .dots span:nth-child(2){animation-delay:.15s}#boot-splash .dots span:nth-child(3){animation-delay:.3s}
-    @keyframes bootIn{from{opacity:0;transform:translate3d(0,10px,0) scale(.98)}to{opacity:1;transform:none}}
-    @keyframes bootPulse{50%{opacity:.6;transform:scale(1.05)}}
-    @keyframes bootDot{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
-    @media(prefers-reduced-motion:reduce){#boot-splash .boot-inner,#boot-splash img,#boot-splash .dots span{animation:none}}
+    #boot-splash .boot-inner{display:grid;place-items:center;width:100%;height:100%;opacity:1;transition:opacity calc(.12s * var(--boot-speed,1)) ease}
+    #boot-splash.is-leaving .boot-inner{opacity:0}
+    #boot-splash img{display:block;width:min(72vw,280px);height:auto;object-fit:contain}
+    @media(prefers-reduced-motion:reduce){#boot-splash,#boot-splash .boot-inner{transition:none}}
   </style>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="styles/cuemark-legacy.css">
@@ -64,26 +59,38 @@
   <script defer src="app.js"></script>
 </head>
 <body>
-  <div id="boot-splash" role="status" aria-label="Loading ScreenMark"><div class="boot-inner"><img src="icons/screenmark.svg" alt=""><h1>ScreenMark</h1><p>Loading your library</p><div class="dots" aria-hidden="true"><span></span><span></span><span></span></div></div></div>
+  <div id="boot-splash" role="status" aria-label="Loading ScreenMark"><div class="boot-inner"><img src="icons/episode-stack-intro.gif" alt=""></div></div>
   <script>
     (function () {
-      var mult = 1, off = false;
+      var mult = 1;
       try {
         var prefs = (JSON.parse(localStorage.getItem("splitapp_screenmark_v1") || "{}").preferences) || {};
         mult = { off: .001, fast: .7, normal: 1, slow: 1.2 }[prefs.animationSpeed] || 1;
-        off = prefs.reduceMotion === true || prefs.animationSpeed === "off" || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
       } catch (e) {}
-      var splash = document.getElementById("boot-splash");
+      var splash = document.getElementById("boot-splash"), image = splash.querySelector("img");
       splash.style.setProperty("--boot-speed", String(mult));
-      var start = Date.now(), minMs = off ? 0 : 500 * mult, done = false;
-      window.ScreenMarkSplash = { ready: function () {
-        if (done) return; done = true;
+      var start = 0, minMs = 3500, readyRequested = false, done = false;
+      function finishWhenReady() {
+        if (!readyRequested || !start || done) return;
+        done = true;
         setTimeout(function () {
           splash.classList.add("is-leaving");
           setTimeout(function () { splash.remove(); document.getElementById("boot-splash-css")?.remove(); }, 320 * mult + 40);
         }, Math.max(0, minMs - (Date.now() - start)));
-      } };
-      setTimeout(function () { window.ScreenMarkSplash.ready(); }, 6000);
+      }
+      function startIntro() {
+        if (start) return;
+        start = Date.now(); finishWhenReady();
+      }
+      function showStaticMark() {
+        if (image.src.endsWith("app-icon-512.png")) return;
+        image.src = "icons/app-icon-512.png";
+      }
+      if (image.complete && image.naturalWidth) startIntro();
+      else image.addEventListener("load", startIntro, { once: true });
+      image.addEventListener("error", function () { showStaticMark(); startIntro(); }, { once: true });
+      window.ScreenMarkSplash = { ready: function () { readyRequested = true; finishWhenReady(); } };
+      setTimeout(function () { window.ScreenMarkSplash.ready(); if (!start) startIntro(); }, 6000);
     })();
   </script>
   <div class="app-layout">
@@ -94,7 +101,7 @@
     <div class="app-shell">
     <header class="topbar">
       <div id="topbar-title-block"><p class="eyebrow" id="app-kicker"></p><h1 id="page-title">Dashboard</h1></div>
-      <div class="search-box discover-top-search" id="discover-top-search" role="search" hidden><i class="discover-search-leading" data-lucide="search" aria-hidden="true"></i><input id="discover-query" type="search" placeholder="Search shows" autocomplete="off" aria-label="Search shows or movies" enterkeyhint="search"><button class="discover-search-action discover-search-submit" type="button" data-discover-submit aria-label="Search" title="Search"><i data-lucide="search" aria-hidden="true"></i><span>Search</span></button><button class="discover-search-action discover-search-clear" type="button" data-discover-clear aria-label="Clear search" title="Clear search" hidden><i data-lucide="x" aria-hidden="true"></i></button></div>
+      <div class="search-box discover-top-search" id="discover-top-search" role="search" hidden><i class="discover-search-leading" data-lucide="search" aria-hidden="true"></i><input id="discover-query" type="search" placeholder="Search shows" autocomplete="off" aria-label="Search shows or movies" enterkeyhint="search"><button class="discover-search-action discover-search-clear" type="button" data-discover-clear aria-label="Clear search" title="Clear search" hidden><i data-lucide="x" aria-hidden="true"></i></button><button class="discover-search-action discover-search-submit" type="button" data-discover-submit aria-label="Search" title="Search"><i data-lucide="search" aria-hidden="true"></i><span>Search</span></button></div>
       <div class="ios-pills segmented header-type" id="header-type" role="group" aria-label="Filter by type" hidden></div>
       <button class="icon-button" id="header-filter" aria-label="Filter titles" title="Filter titles"><i data-lucide="list-filter" aria-hidden="true"></i></button>
     </header>

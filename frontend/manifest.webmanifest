@@ -3,8 +3,8 @@
   "short_name": "ScreenMark",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "background_color": "#08090c",
+  "theme_color": "#08090c",
   "icons": [
     {
       "src": "icons/app-icon-192.png",
