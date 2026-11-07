@@ -12,7 +12,7 @@ The registry in `frontend/backend/features/metadata.js` is the source of truth. 
 | `rottentomatoes` | Rotten Tomatoes (unofficial) | Movies, TV series | No |
 | `omdb` | OMDb | Movies, TV series | Required — [get a key](https://www.omdbapi.com/apikey.aspx) |
 
-Suggestions on Discover also use TVmaze schedules and the public iTunes top-movies chart (no key); chart titles are resolved through Mix fetch.
+Suggestions on Discover also use TVmaze schedules and the public iTunes top-movies chart (no key). Search results remain grouped by their originating metadata source.
 
 ## What each source returns
 
@@ -26,9 +26,9 @@ Suggestions on Discover also use TVmaze schedules and the public iTunes top-movi
 
 Every loader returns the same detail shape (`schemaVersion: 2`) with `watch` (`runtimeMinutes`, `episodeCount`, `seasonCount`) and a derived `facts` summary saved with the title: runtime, episode and season counts, total minutes, genres, release date, directors, writers, cast, networks, languages, countries, status, age rating, rating, awards, box office, tags and alternative names. Detail pages share a Links section with provider pills across titles, episodes and cast/person pages.
 
-## Mix detail merging
+## Source-specific results
 
-Mix fetch requests details from every enabled source that matches a title. It keeps a provider-labeled rating badge for each source that returns a rating, including that source's vote count in the badge tooltip. Episode guides and episode-rating rows are combined by season and episode number, so the same episode from multiple providers appears once; non-overlapping episodes remain, and missing details can be filled from another provider. Provider-specific episode links and source metadata stay attached to the preferred matching row.
+Each search source returns its own result set and source-specific View all page. Adding a result saves that provider's metadata on a distinct library entry. Same-name entries can coexist when they come from different sources or release years; details and episode guides are not merged across providers.
 
 ## Custom sources
 
@@ -50,7 +50,7 @@ Paths use dots and `[index]`. Only `http(s)` URLs are used; nothing from a custo
 
 ## Search, "All" and caching
 
-Search runs enabled sources for the chosen type concurrently; **All** runs movies and series and merges. Sources that need a key and have none are skipped. Successful JSON GET responses are cached in Cache Storage (`splitapp_screenmark_metadata`) for six hours; the cache step can never stall a request. The local preview server (`dev-server.js`) proxies the allowlisted metadata APIs and image hosts.
+Search runs enabled sources for the chosen type concurrently and displays each source's results separately. Sources that need a key and have none are skipped. Successful JSON GET responses are cached in Cache Storage (`splitapp_screenmark_metadata`) for six hours; the cache step can never stall a request. The local preview server (`dev-server.js`) proxies the allowlisted metadata APIs and image hosts.
 
 ## Per-source options
 

@@ -6,7 +6,7 @@ ScreenMark/
 │   ├── index.html                     # app shell and script entry point
 │   ├── app.js                         # routing, state, and interactions
 │   ├── app-config.js                  # app identity and categories
-│   ├── pages/                         # one render module per screen (incl. explore, mix, add)
+│   ├── pages/                         # render modules for library, watchlist, discovery, profile and settings screens
 │   ├── styles/                        # ios-ui.css (look + multi-screen), motion.css (animations, low-memory mode)
 │   ├── components/                    # shared frontend components
 │   └── backend/                       # single source for metadata and storage modules

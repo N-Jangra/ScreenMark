@@ -8,6 +8,6 @@
 - **Metadata cache:** responses use the Cache Storage namespace `splitapp_screenmark_metadata`; API-key-bearing requests are not cached.
 - **Secrets:** API keys are stored in this app's preferences. Do not commit personal API keys or `.env` files.
 
-Opening a title's details (or refreshing metadata) saves the provider response in `cachedDetails` and a compact `facts` summary on the item. The portable folder tree uses `<app-key>-db/movies/<item-id>/` for movies and `<app-key>-db/shows/<item-id>/` for series. Each title folder contains an `index.json` and any saved images. Existing `titles/` folders are recognized during startup sync and migrated to the category-specific layout.
+Opening a title's details (or refreshing metadata) saves the provider response in `cachedDetails` and a compact `facts` summary on the item. The portable folder tree stores movies at `<app-key>-db/movies/<metadata-source>/<item-id>/` and series at `<app-key>-db/series/<metadata-source>/<item-id>/`. The source folder uses the provider key (such as `tmdb` or `tvmaze`), or `manual` for entries without a metadata source. Each title folder contains an `index.json` and any saved images, keeping entries from different providers separate. Existing `shows/`, direct category folders, and `titles/` folders are recognized during startup sync and migrated after the new copy is safely written. The root database JSON and TAR backup remain complete portable snapshots.
 
 The three apps use separate storage keys and separate cache names.

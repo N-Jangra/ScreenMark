@@ -1,18 +1,21 @@
-# ScreenMark 0.1.1
+# ScreenMark 0.1.2
 
 ScreenMark is a local-first tracker for **movies and TV series**. It runs as a browser single-page app and as a Capacitor Android app, with an iOS-style interface that adapts from phones to tablets and desktops, and keeps its library in an app-specific storage namespace.
 
 ## What it does
 
 - Track movies (minutes watched) and TV series (episodes watched) with status, rating, progress and total.
-- Home with type and status filters, a filter sheet and a quick-action sheet on every card.
-- Discover movies and series across TVmaze, AniList, TMDB, TheTVDB, IMDb, Rotten Tomatoes and OMDb, with year, genre and sort filters plus suggestions when nothing is searched.
-- Source-backed Details pages: season and episode guides, cast and crew, ratings, screenshots and provider links; shared Links pills appear on title, episode and cast/person pages. Episode tracking updates Timeline activity, and metadata-backed series open on Episodes after being added.
-- Statistics: an overview with Watch time, Library breakdown, Activity and Ratings sub-pages (including a Not rated yet list), and a Timeline grouped by day.
-- Favorites (♥) from Details or the ⋮ menu, with a Favorites filter on Home.
-- **Mix fetch (beta):** one list across all sources, details and ratings merged from every enabled source; duplicate episodes are combined by season and episode number.
+- Separate Shows and Movies libraries, Favorites pages, and Watchlist / Upcoming pages for each type; each library supports filters and progress indicators.
+- Discover movies and series across TVmaze, AniList, TMDB, TheTVDB, IMDb, Rotten Tomatoes and OMDb. Search results are grouped by source, with a dedicated View all results page for each provider.
+- Without a search query, Discover shows suggestion shelves without repeating a catalog title across categories. Collection sharing from Shows and Movies produces a single PDF for all titles, with Save and Share actions.
+- Source-backed Details pages: season and episode guides, cast and crew, ratings, screenshots and provider links; shared Links pills appear on title, episode and cast/person pages. Episode tracking updates Timeline activity, and series details open on Episodes when an episode guide is available.
+- Details status choices follow episode progress: series offer Watchlist and Completed before tracking starts, then In Progress, On Hold, Dropped and Completed; movies offer Watchlist, Dropped and Completed. Unfinished series move to On Hold after 7 inactive days and Dropped after 30 days.
+- Statistics: a Shows / Movies overview with watch-time, progress, genre and collection charts, plus a separate Activity page and a Timeline grouped by day. Profile statistics show separate series time, episodes watched, movie time and movies watched cards.
+- Lightweight motion controls for reduced motion, page and sheet transitions, tap feedback, progress updates and optional loading placeholders. Android and detected low-resource devices skip decorative motion and blur, shorten transitions, and keep ordinary scrolling native.
+- Favorites (♥) from Details or the ⋮ menu, with dedicated favorites pages.
+- Metadata sources stay separate. Titles are identified by category, source, normalized name and year, so same-name entries from different catalogs can coexist.
 - **Custom sources:** add any JSON search API on a guided page.
-- Export (Android Save as screen, chunked) and import a JSON library backup; the library lives in IndexedDB with a device cover cache, plus Android encrypted storage, an optional folder database and daily backups.
+- Export (Android Save as screen, chunked) and import a JSON library backup; the library lives in IndexedDB with a device cover cache, plus Android encrypted storage, an optional folder database and daily backups. Folder title mirrors are grouped by media type and metadata source.
 
 ## Metadata providers
 
@@ -37,7 +40,7 @@ The app lists them under **Settings → Metadata Sources**. TMDB, TheTVDB and OM
 - [Metadata sources](docs/metadata.md) — providers, API keys and fetching behavior.
 - [Storage](docs/storage.md) — library persistence, image cache and backups.
 - [Data schema](docs/db-schema.md) and [file layout](docs/file-schema.md).
-- [Release notes](CHANGELOG.md) — changes for 0.1.1 and earlier versions.
+- [Release notes](CHANGELOG.md) — current 0.1.2 changes and earlier release notes.
 - [Frontend module map](frontend/README.md).
 
 ## Run locally
@@ -59,4 +62,4 @@ Open the local URL printed by the server. For Android, run `npm run cap:sync` be
 
 ## Release build
 
-`python3 compile_apk.py` builds a signed release APK into `dist/screenmark-<version>-release.apk` (signed when `android/keystore.properties` exists). Use `--version 0.1.1` to set the version or `--debug` for a debug APK next to the script. Without `--version` it keeps the version in `android/app/build.gradle`.
+`python3 compile_apk.py` builds a signed release APK into `dist/screenmark-<version>-release.apk` (signed when `android/keystore.properties` exists). Use `--version 0.1.2` to set the version or `--debug` for a debug APK next to the script. Without `--version` it keeps the version in `android/app/build.gradle`.
