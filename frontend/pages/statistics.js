@@ -1,17 +1,14 @@
-// Statistics: an overview page plus watch time, library, and activity sub-pages.
+// Statistics overview and activity sub-page.
 (() => {
   window.SplitAppPages = window.SplitAppPages || {};
   const renderStatistics = context => {
     const { items: allItems, history: allHistory, config, prefs = {}, esc, roles, statsRange = "week", statsCategory = "series", statsSubpage = "", statsActivityDate = "", statsWatchtimePage = 0 } = context;
     const scopeCategory = statsCategory === "movie" ? "movie" : "series";
-    const scoped = ["watchtime", "library", "activity"].includes(statsSubpage);
+    const scoped = statsSubpage === "activity";
     const items = scoped ? allItems.filter(item => item.category === scopeCategory) : allItems;
     const scopedIds = new Set(items.map(item => String(item.id)));
     const history = scoped ? allHistory.filter(entry => scopedIds.has(String(entry.itemId))) : allHistory;
-    const statisticsInBottomBar = prefs.navBar?.visible?.statistics !== false;
-    const statisticsBack = statisticsInBottomBar
-      ? `<span class="detail-heading-spacer" aria-hidden="true"></span>`
-      : `<button type="button" class="detail-back" data-go="explore"><span aria-hidden="true">‹</span> Back</button>`;
+    const statisticsBack = `<button type="button" class="detail-back" data-go="profile"><span aria-hidden="true">‹</span> Profile</button>`;
     const nounPlural = config.nounPlural || "titles", nounOne = config.noun || "title";
     const total = items.length;
     const completed = items.filter(item => String(item.status).toLowerCase() === "completed").length;
@@ -135,11 +132,6 @@
     const activityPanel = `<article class="stats-panel stats-activity-panel"><div class="stats-activity-chart stats-activity-chart-${month ? "month" : "week"}">${activityBars}</div><div class="stats-activity-summary"><span>${activityTotal} ${activityTotal === 1 ? "update" : "updates"} in this period</span><span>${history.length} total ${history.length === 1 ? "update" : "updates"}</span></div><p class="stats-activity-day-note"><strong>${esc(selectedDayLabel)}</strong><span>${dayEvents.length} ${dayEvents.length === 1 ? "change" : "changes"} · Tap a bar to inspect another day.</span></p></article><article class="stats-panel stats-activity-feed"><header class="stats-panel-heading"><div><span class="stats-eyebrow">SELECTED DAY</span><h3>Recent updates</h3></div><span class="stats-total-chip">${dayEvents.length} events</span></header>${eventRows || `<p class="stats-empty-copy">No library changes on this day. Select another bar to review its activity.</p>`}<button type="button" class="button secondary small" data-go="timeline">Open full timeline <span aria-hidden="true">→</span></button></article>`;
 
     // ---- Overview
-    const destinations = [
-      ["watchtime", "clock-3", "Watch time", "Time watched, runtimes and what’s left.", `${durText(watchedMinutes)} watched`],
-      ["library", "library", "Library breakdown", `See how your ${nounPlural} are spread across statuses.`, `${completed} completed · ${queued} on ${roles.queued.toLowerCase()}`],
-      ["activity", "activity", "Activity", "Review recent changes and your tracking rhythm.", `${activityTotal} in the last ${month ? "30 days" : "7 days"}`]
-    ];
     const mediaCategory = statsCategory === "movie" ? "movie" : "series";
     const mediaItems = items.filter(item => item.category === mediaCategory);
     const isShowStats = mediaCategory === "series";
@@ -187,14 +179,12 @@
     const lowerChartRows = isShowStats ? mediaEpisodeRows : mediaMovieRows;
     const mediaTabs = `<nav class="stats-media-tabs" role="tablist" aria-label="Statistics category"><button type="button" role="tab" aria-selected="${isShowStats}" class="${isShowStats ? "active" : ""}" data-stats-category="series">Shows</button><button type="button" role="tab" aria-selected="${!isShowStats}" class="${!isShowStats ? "active" : ""}" data-stats-category="movie">Movies</button></nav>`;
     const statsBoard = `<div class="stats-reference-board"><article class="stats-reference-card stats-reference-chart-card"><h2>${topChartTitle}</h2>${chartMarkup(topChartRows, isShowStats ? "HOURS BY SHOW" : "HOURS BY MOVIE")}</article>${bigNumberCard(isShowStats ? "Total episodes watched" : "Movies watched", isShowStats ? mediaEpisodesWatched.toLocaleString() : mediaCompleted.toLocaleString(), isShowStats ? `Across ${mediaItems.length} ${mediaPlural}` : `Completed from ${mediaItems.length} saved ${mediaPlural}`)}<article class="stats-reference-card stats-reference-chart-card"><h2>${lowerChartTitle}</h2>${chartMarkup(lowerChartRows, isShowStats ? "EPISODES BY SHOW" : "HOURS BY MOVIE")}</article>${marathonPanel}${bigNumberCard(`Added ${mediaPlural}`, mediaItems.length.toLocaleString(), `${mediaWatching} currently ${isShowStats ? "watching" : "in progress"}`)}${tableCard(`Top ${isShowStats ? "show" : "movie"} genres`, "GENRE", isShowStats ? "SHOWS" : "MOVIES", mediaGenreRows, `Genre details for your ${mediaPlural} will appear here.`)}${tableCard(isShowStats ? "Top show networks" : "Top movie studios", isShowStats ? "NETWORK" : "STUDIO", isShowStats ? "SHOWS" : "MOVIES", networkRows, `Provider details for your ${mediaPlural} will appear here.`)}</div>`;
-    const overview = `<section class="stats-overview"><header class="detail-page-heading analytics-page-heading">${statisticsBack}<strong>Statistics</strong><span class="stats-subpage-badge">${total} ${nounPlural.toUpperCase()}</span></header>${mediaTabs}${statsBoard}<section class="stats-section stats-explore-section"><div class="stats-section-heading"><div><span class="stats-eyebrow">DETAILS</span><h2>Explore your stats</h2><p>Open a section for a closer look.</p></div></div><div class="stats-destinations">${destinations.map(([key, icon, title, description, value]) => `<button type="button" class="stats-destination" data-go="statistics/${key}"><span class="stats-destination-icon"><i data-lucide="${icon}" aria-hidden="true"></i></span><span class="stats-destination-copy"><strong>${title}</strong><small>${description}</small></span><span class="stats-destination-value">${value}</span><i class="stats-destination-arrow" data-lucide="chevron-right" aria-hidden="true"></i></button>`).join("")}</div></section></section>`;
+    const overview = `<section class="stats-overview"><header class="detail-page-heading analytics-page-heading">${statisticsBack}<strong>Statistics</strong><span class="stats-subpage-badge">${total} ${nounPlural.toUpperCase()}</span></header>${mediaTabs}${statsBoard}</section>`;
     const pages = {
-      watchtime: { title: "Watch time", subtitle: "See time watched, runtimes and what remains.", badge: `${known.length}/${total} DATA`, body: `${timePanel}${timeStatusPanel}${timeTitlePanel}${runtimePanel}` },
-      library: { title: "Library breakdown", subtitle: `Understand the status of every ${nounOne} you’re tracking.`, badge: `${total} ${nounPlural.toUpperCase()}`, body: `${statusPanel}${scoped ? "" : typePanel}${genresPanel}` },
       activity: { title: "Activity", subtitle: "See how your library has changed over the selected period.", badge: `${activityTotal} UPDATES`, body: `<div class="stats-activity-toolbar">${rangeSwitch}<span>${month ? "Last 30 days" : "Last 7 days"}</span></div>${activityPanel}` }
     };
     const selectedPage = pages[statsSubpage];
-    const subpage = selectedPage ? `<section class="stats-subpage stats-subpage-${esc(statsSubpage)}"><header class="detail-page-heading analytics-page-heading"><button type="button" class="detail-back" data-go="statistics"><span aria-hidden="true">‹</span> All statistics</button><strong>${selectedPage.title}</strong><span class="stats-subpage-badge">${selectedPage.badge}</span></header>${scoped ? mediaTabs : ""}<div class="stats-subpage-intro"><span class="stats-eyebrow">STATISTICS</span><h1>${selectedPage.title}</h1><p>${selectedPage.subtitle}</p></div>${selectedPage.body}</section>` : "";
+    const subpage = selectedPage ? `<section class="stats-subpage stats-subpage-${esc(statsSubpage)}"><header class="detail-page-heading analytics-page-heading"><button type="button" class="detail-back" data-go="profile"><span aria-hidden="true">‹</span> Profile</button><strong>${selectedPage.title}</strong><span class="stats-subpage-badge">${selectedPage.badge}</span></header>${scoped ? mediaTabs : ""}<div class="stats-subpage-intro"><span class="stats-eyebrow">STATISTICS</span><h1>${selectedPage.title}</h1><p>${selectedPage.subtitle}</p></div>${selectedPage.body}</section>` : "";
     const empty = total === 0 && !statsSubpage ? `<div class="stats-empty-state"><span aria-hidden="true">▥</span><strong>Your stats will appear here.</strong><p>Add ${nounPlural} to your library to get started.</p><a href="#dashboard">Go to your library <span aria-hidden="true">→</span></a></div>` : "";
     return `<section class="stats-page">${statsSubpage ? subpage : overview}${empty}</section>`;
   };

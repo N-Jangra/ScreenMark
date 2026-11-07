@@ -1,5 +1,4 @@
-/* Motion + performance layer. Transform/opacity only (GPU-cheap), scaled by Animation speed,
-   and trimmed automatically on low-memory devices (html[data-lowend=true]) or with Reduce motion. */
+/* Motion + performance layer: short transform/opacity movement, with low-end and reduced-motion fallbacks. */
 :root{--ease-out:cubic-bezier(.2,.7,.2,1);--ease-spring:cubic-bezier(.32,.72,0,1)}
 
 /* ---- Page transitions (direction aware) ---- */
@@ -30,9 +29,9 @@ dialog::backdrop{animation:sp-fade calc(var(--speed,180ms) * 1.4) ease both}
 
 /* ---- Micro-interactions ---- */
 .floating-add-button:not([hidden]){animation:sp-fab calc(var(--speed,180ms) * 2) var(--ease-spring) both}
-.button,button,[role=button],a.demo-poster-open,.ios-pill,.icon-button,.nav-button,.sidebar-nav-button,.card-menu-button,.icon-picker-option,.entry-status-option{transition:transform calc(var(--speed,180ms) * .7) var(--ease-out),background-color var(--speed,180ms) ease,color var(--speed,180ms) ease,box-shadow var(--speed,180ms) ease}
+.button,button,[role=button],a.demo-poster-open,.ios-pill,.icon-button,.nav-button,.sidebar-nav-button,.card-menu-button,.icon-picker-option,.entry-status-option{transition:transform calc(var(--speed,180ms) * .7) var(--ease-out),background-color var(--speed,180ms) ease,color var(--speed,180ms) ease}
 button:active,[role=button]:active,a.demo-poster-open:active,.ios-pill:active,.floating-add-button:active{transform:scale(.97)}
-:is(.item-card,.discover-card,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section){transition:transform calc(var(--speed,180ms) * .7) var(--ease-out),box-shadow calc(var(--speed,180ms) * .7) var(--ease-out)}
+:is(.item-card,.discover-card,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section){transition:transform calc(var(--speed,180ms) * .7) var(--ease-out),border-color var(--speed,180ms) ease}
 :is(.item-card,.discover-card,.demo-poster-tile,.demo-up-next-card):active{transform:scale(.985)}
 .nav-button.active .nav-icon{animation:sp-fab calc(var(--speed,180ms) * 1.6) var(--ease-spring) both}
 .progress-line span,.bar-track span,.demo-up-next-progress i,.stats-time-progress span,.stats-overview-progress i,.season-progress i{transition:width calc(var(--speed,180ms) * 2.4) var(--ease-out)}
@@ -57,8 +56,8 @@ html[data-lowend=true] body[data-nav-dir] #page-content.page-route-enter{animati
 
 /* ---- Reduce motion / Animation speed Off ---- */
 body[data-reduced-motion=true] *,body[data-reduced-motion=true] *::before,body[data-reduced-motion=true] *::after,
-body[data-reduced-motion=true] dialog::backdrop{animation-duration:.001ms!important;animation-delay:0s!important;transition-duration:.001ms!important}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after,dialog::backdrop{animation-duration:.001ms!important;animation-delay:0s!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
+body[data-reduced-motion=true] dialog::backdrop{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after,dialog::backdrop{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* ---- Settings → Animations: style choices (body data-* set by applyPreferences) ---- */
 @keyframes sp-zoom{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
@@ -83,7 +82,7 @@ body[data-hover-lift=true] :is(.item-card,.discover-card,.demo-poster-tile,.demo
 body[data-hover-lift=true] .detail-carousel-card:hover{transform:translate3d(0,-3px,0)}}
 body[data-nav-bounce=false] .nav-button.active .nav-icon{animation:none}
 body[data-progress-anim=false] :is(.progress-line span,.bar-track span,.demo-up-next-progress i,.stats-time-progress span,.stats-overview-progress i,.season-progress i){transition:none}
-body[data-shimmer=false] :is(.discover-suggest-loading span,[class*=skeleton],[class*=shimmer]){animation:none}
+body[data-shimmer=false] :is(.discover-suggest-loading span,.discover-catalog-loading span,[class*=skeleton],[class*=shimmer]){animation:none}
 
 /* Android touch scrolling: keep the document on the native viewport scroller, add momentum to
    horizontal rails, and avoid blur layers while the finger is moving. */
@@ -97,7 +96,12 @@ dialog,.setting-picker-list,.import-preview-list ul{overscroll-behavior:contain}
 }
 @media(max-width:767px){html{scrollbar-gutter:auto}}
 html[data-perf="low"] #page-content.page-route-enter{animation:none!important}
-html[data-perf="low"] :is(.floating-add-button,.nav-button.active .nav-icon,.discover-suggest-loading span,[class*=skeleton],[class*=shimmer]){animation:none!important}
+html[data-perf="low"] :is(.floating-add-button,.nav-button.active .nav-icon,.discover-suggest-loading span,.discover-catalog-loading span,[class*=skeleton],[class*=shimmer]){animation:none!important}
 html[data-perf="low"] :is(.progress-line span,.bar-track span,.demo-up-next-progress i,.stats-time-progress span,.stats-overview-progress i,.season-progress i){transition:none!important}
 html[data-perf="low"] .item-card{transition:none!important}
 html[data-perf="low"] dialog::backdrop{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+html[data-lowend="true"] #page-content.page-route-enter{animation-duration:110ms!important}
+html[data-lowend="true"] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section){animation:none!important}
+html[data-lowend="true"] :is(.floating-add-button,.nav-button.active .nav-icon,.discover-suggest-loading span,.discover-catalog-loading span,[class*=skeleton],[class*=shimmer]){animation:none!important}
+html[data-lowend="true"] :is(.item-card,.discover-card,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section){transition-duration:120ms!important;transition-property:transform,border-color,background-color,color!important}
+@media(pointer:coarse){html[data-lowend="true"] :is(.chip-row,.timeline-filters,.detail-toolbar,.detail-carousel,.season-poster-deck,.tracking-episode-rail,.discover-rail,.discover-source-strip,.discover-genre-row,.detail-gallery,.icon-picker-carousel,.timeline-month-days,.detail-status-pills){scroll-behavior:auto!important}}

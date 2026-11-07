@@ -4,7 +4,7 @@
   window.SplitAppPages.details = context => {
     const {
       detailPreview, items, detailItemId, detailReturnPage, detailData,
-      detailLoading, detailError, detailEditMode, category, labelCategory, prefs, esc
+      detailLoading, detailError, detailEditMode, category, labelCategory, prefs, roles, esc
     } = context;
 
     const detailValue = value => Array.isArray(value)
@@ -169,12 +169,11 @@
       const progress = Math.max(0, Number(item.progress) || 0);
       const percent = goal ? Math.max(0, Math.min(100, Math.round(progress / goal * 100))) : 0;
       const unit = category(item.category)?.unit || "";
-      const sourceRatings = item.metadataSource === "mix" ? (loaded.sourceRatings || []).filter(row => Number(row.rating) > 0) : [];
       const facts = [
         ["Year", loaded.year || item.year],
-        ["Rating", !sourceRatings.length && loaded.rating ? `★ ${loaded.rating}` : ""]
+        ["Rating", loaded.rating ? `★ ${loaded.rating}` : ""]
       ].filter(([, value]) => value !== "" && value !== undefined && value !== null);
-      const savedLibraryItem = detailPreview ? items.find(saved => saved.category === item.category && saved.title.toLowerCase() === String(item.title || "").toLowerCase()) : null;
+      const savedLibraryItem = detailPreview ? items.find(saved => context.titleIdentity?.(saved) === context.titleIdentity?.(item)) : null;
       const alreadyInLibrary = Boolean(savedLibraryItem);
       const fields = (loaded.fields || []).filter(row => row && row.value !== "" && row.value != null);
       const links = (loaded.links || []).map(link => ({ ...link, href: safeUrl(link.url) })).filter(link => link.href);
@@ -188,7 +187,10 @@
       const purchase = loaded.purchase && safeUrl(loaded.purchase.url)
         ? `<div class="ios-buy"><div class="ios-buy-copy"><p>${loaded.purchase.isFree ? "Play" : "Buy"} ${esc(item.title)} <span>on Steam</span></p>${buySub ? `<small>${esc(buySub)}</small>` : ""}</div><strong>${esc(loaded.purchase.price || "")}</strong><a class="button primary" href="${esc(loaded.purchase.url)}" target="_blank" rel="noopener noreferrer">${loaded.purchase.isFree ? "Play on Steam" : "Buy on Steam"}</a></div>`
         : "";
-      const statuses = category(item.category)?.statuses || [];
+      const seriesProgress = item.category === "series" ? Math.max(Number(item.progress) || 0, (item.watchedEpisodeIds || []).length) : 0;
+      const statuses = item.category === "series"
+        ? (seriesProgress > 0 ? [roles.active, roles.hold, roles.dropped, roles.done] : [roles.queued, roles.done])
+        : item.category === "movie" ? [roles.queued, roles.dropped, roles.done] : (category(item.category)?.statuses || []);
       const watchedSet = new Set((item.watchedEpisodeIds || []).map(String));
       const indexedSections = sections.map((section, index) => ({ section, index })), taken = new Set();
       const takeSlot = pattern => indexedSections.filter(({ section, index }) => !taken.has(index) && pattern.test(section.title || "") && taken.add(index));
@@ -255,7 +257,7 @@
       let detailBody;
       if (hasTabs) {
         const tabs = [slots.episodes.length && ["episodes", "Episodes"], ["overview", "Overview"], hasRatingTab && ["ratings", "Ratings"], slots.cast.length && ["cast", "Cast & Crew"]].filter(Boolean);
-        const activeTab = tabs.some(([key]) => key === context.detailTab) ? context.detailTab : tabs.find(([key]) => key === "overview")?.[0] || tabs[0][0];
+        const activeTab = tabs.some(([key]) => key === context.detailTab) ? context.detailTab : tabs.find(([key]) => key === "episodes")?.[0] || tabs.find(([key]) => key === "overview")?.[0] || tabs[0][0];
         const panel = (key, html) => `<div class="detail-tab-panel" data-detail-panel="${key}"${activeTab === key ? "" : " hidden"}>${html}</div>`;
         detailBody = `<div class="detail-tabs" role="tablist">${tabs.map(([key, label]) => `<button type="button" role="tab" class="${activeTab === key ? "active" : ""}" aria-selected="${activeTab === key}" data-detail-tab="${key}">${label}</button>`).join("")}</div>`
           + (slots.episodes.length ? panel("episodes", part.episodes) : "")
@@ -269,13 +271,13 @@
       return `<div class="detail-page demo-cinema-page demo-title-page ${item.category === "series" ? "demo-show-page" : "demo-movie-page"}">
         <article class="detail-hero ios-hero">
           ${detailHeading}
-          <div class="ios-hero-bg"${(landscape || image) ? ` style="background-image:url('${esc(landscape || image)}')"` : ""}><span class="hero-source-badge"><i data-lucide="${item.category === "movie" ? "film" : "tv"}" aria-hidden="true"></i>${esc(item.metadataSource === "mix" ? `Mix · ${(loaded.mixSources || []).join(" + ") || "all sources"}` : source?.name || item.metadataSource || "ScreenMark")} • ${esc(category(item.category)?.singular || labelCategory(item.category))}</span></div>
+          <div class="ios-hero-bg"${(landscape || image) ? ` style="background-image:url('${esc(landscape || image)}')"` : ""}><span class="hero-source-badge"><i data-lucide="${item.category === "movie" ? "film" : "tv"}" aria-hidden="true"></i>${esc(source?.name || item.metadataSource || "ScreenMark")} • ${esc(category(item.category)?.singular || labelCategory(item.category))}</span></div>
           <div class="ios-hero-body">
             ${image ? detailImage : `<div class="detail-image-placeholder">${esc(category(item.category)?.icon || "✦")}</div>`}
             <div class="detail-hero-copy">
               ${(() => { const label = `${item.category === "movie" ? "🎞" : "📺"} ${source?.name || item.metadataSource || "ScreenMark"} · ${category(item.category)?.singular || labelCategory(item.category)}`; return sourceUrl ? `<a class="dh-source-tag" href="${esc(sourceUrl)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : `<span class="dh-source-tag">${esc(label)}</span>`; })()}
               <h2>${esc(canProgress ? item.title : (loaded.title || item.title))}</h2>
-              <div class="detail-badges">${facts.slice(0, 3).map(([label, value]) => label === "Rating" ? `<span class="is-rating">★ ${esc(String(value).replace(/^★\s*/, ""))}</span>` : `<span class="${label === "Year" ? "is-year" : ""}">${esc(detailValue(value))}</span>`).join("")}${sourceRatings.map(row => { const short = ({ tmdb: "TMDB", imdb: "IMDb", rottentomatoes: "RT", tvmaze: "TVmaze", tvdb: "TVDB", anilist: "AniList" })[row.source] || row.label; return `<span class="is-rating source-rating-tag" title="${esc(row.label)} rating${row.ratingCount ? ` · ${Number(row.ratingCount).toLocaleString()} votes` : ""}"><b>${esc(short)}</b> ★ ${Number(row.rating).toFixed(1)}</span>`; }).join("")}${canProgress ? `<span class="ios-status-badge${item.status === (category(item.category)?.statuses || []).slice(-1)[0] ? " is-done" : ""}">${esc(item.status)}</span>` : ""}${(() => { const m = Number(item.facts?.runtimeMinutes || loaded.facts?.runtimeMinutes) || 0; return m ? `<span class="is-runtime">${m}${item.category === "movie" ? " min" : "m"}</span>` : ""; })()}${loaded.badge ? `<span class="detail-age-badge">${esc(loaded.badge)}</span>` : ""}</div>
+              <div class="detail-badges">${facts.slice(0, 3).map(([label, value]) => label === "Rating" ? `<span class="is-rating">★ ${esc(String(value).replace(/^★\s*/, ""))}</span>` : `<span class="${label === "Year" ? "is-year" : ""}">${esc(detailValue(value))}</span>`).join("")}${canProgress ? `<span class="ios-status-badge${item.status === (category(item.category)?.statuses || []).slice(-1)[0] ? " is-done" : ""}">${esc(item.status)}</span>` : ""}${(() => { const m = Number(item.facts?.runtimeMinutes || loaded.facts?.runtimeMinutes) || 0; return m ? `<span class="is-runtime">${m}${item.category === "movie" ? " min" : "m"}</span>` : ""; })()}${loaded.badge ? `<span class="detail-age-badge">${esc(loaded.badge)}</span>` : ""}</div>
               ${(loaded.tags || []).length ? `<p class="detail-genres">${esc(loaded.tags.slice(0, 4).join(" · "))}</p>` : ""}
             </div>
           </div>

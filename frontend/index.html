@@ -28,9 +28,9 @@
   <link rel="stylesheet" href="styles/cuemark-legacy.css">
   <link rel="stylesheet" href="styles/details.css">
   <link rel="stylesheet" href="styles/ios-ui.css">
-  <link rel="stylesheet" href="styles/motion.css">
   <link rel="stylesheet" href="styles/ui-polish.css">
   <link rel="stylesheet" href="styles/demo-pages.css">
+  <link rel="stylesheet" href="styles/motion.css">
   <script>
     if (location.protocol === "file:") {
       document.write('<script src="../local-secrets.js"><\/script>');
@@ -44,20 +44,17 @@
   <script defer src="backend/features/sources.js"></script>
   <script defer src="backend/features/discover.js"></script>
   <script defer src="backend/features/show-detail-controller.js"></script>
-  <script defer src="backend/features/mix-merge.js"></script>
-  <script defer src="backend/features/mix.js"></script>
   <script defer src="backend/features/show-detail.js"></script>
   <script defer src="components/dates.js"></script>
   <script defer src="components/library.js"></script>
   <script defer src="pages/dashboard.js"></script>
   <script defer src="pages/search.js"></script>
   <script defer src="pages/discover.js"></script>
-  <script defer src="pages/explore.js"></script>
-  <script defer src="pages/mix.js"></script>
   <script defer src="pages/details.js"></script>
   <script defer src="pages/add.js"></script>
   <script defer src="pages/timeline.js"></script>
   <script defer src="pages/statistics.js"></script>
+  <script defer src="pages/profile.js"></script>
   <script defer src="pages/settings.js"></script>
   <script defer src="pages/sync.js"></script>
   <script defer src="components/share-perf.js"></script>
@@ -73,12 +70,12 @@
       var mult = 1, off = false;
       try {
         var prefs = (JSON.parse(localStorage.getItem("splitapp_screenmark_v1") || "{}").preferences) || {};
-        mult = { off: .001, fast: .5, normal: 1, slow: 1.75 }[prefs.animationSpeed] || 1;
-        off = prefs.reduceMotion === true || prefs.animationSpeed === "off";
+        mult = { off: .001, fast: .7, normal: 1, slow: 1.2 }[prefs.animationSpeed] || 1;
+        off = prefs.reduceMotion === true || prefs.animationSpeed === "off" || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
       } catch (e) {}
       var splash = document.getElementById("boot-splash");
       splash.style.setProperty("--boot-speed", String(mult));
-      var start = Date.now(), minMs = off ? 0 : 1200 * mult, done = false;
+      var start = Date.now(), minMs = off ? 0 : 500 * mult, done = false;
       window.ScreenMarkSplash = { ready: function () {
         if (done) return; done = true;
         setTimeout(function () {
@@ -91,23 +88,23 @@
   </script>
   <div class="app-layout">
     <aside class="app-sidebar" id="app-sidebar" aria-label="Sidebar navigation">
-      <a class="sidebar-brand" href="#dashboard" aria-label="ScreenMark dashboard"><img src="icons/screenmark.svg" alt=""><span>ScreenMark</span></a>
+      <a class="sidebar-brand" href="#discover" aria-label="ScreenMark Discover"><img src="icons/screenmark.svg" alt=""><span>ScreenMark</span></a>
       <nav class="sidebar-nav" id="sidebar-nav" aria-label="Main navigation"></nav>
     </aside>
     <div class="app-shell">
     <header class="topbar">
-      <div><p class="eyebrow" id="app-kicker"></p><h1 id="page-title">Dashboard</h1></div>
+      <div id="topbar-title-block"><p class="eyebrow" id="app-kicker"></p><h1 id="page-title">Dashboard</h1></div>
+      <div class="search-box discover-top-search" id="discover-top-search" role="search" hidden><i class="discover-search-leading" data-lucide="search" aria-hidden="true"></i><input id="discover-query" type="search" placeholder="Search shows" autocomplete="off" aria-label="Search shows or movies" enterkeyhint="search"><button class="discover-search-action discover-search-submit" type="button" data-discover-submit aria-label="Search" title="Search"><i data-lucide="search" aria-hidden="true"></i><span>Search</span></button><button class="discover-search-action discover-search-clear" type="button" data-discover-clear aria-label="Clear search" title="Clear search" hidden><i data-lucide="x" aria-hidden="true"></i></button></div>
       <div class="ios-pills segmented header-type" id="header-type" role="group" aria-label="Filter by type" hidden></div>
-      <a class="icon-button" id="header-explore-settings" href="#settings/metadata-sources" aria-label="Metadata sources settings" title="Metadata sources settings" hidden><i data-lucide="settings-2" aria-hidden="true"></i></a>
       <button class="icon-button" id="header-filter" aria-label="Filter titles" title="Filter titles"><i data-lucide="list-filter" aria-hidden="true"></i></button>
     </header>
     <main id="page-content" tabindex="-1"></main>
     <button class="floating-add-button" id="floating-add" type="button" aria-label="Add title" title="Add title"><i data-lucide="plus" aria-hidden="true"></i></button>
     <nav class="bottom-bar" id="bottom-bar" aria-label="Main navigation">
-      <button data-page="dashboard" class="nav-button active"><span class="nav-icon">⌂</span><span>Home</span></button>
+      <button data-page="series-watchlist" class="nav-button"><span class="nav-icon"><i data-lucide="tv"></i></span><span>Shows</span></button>
+      <button data-page="movie-watchlist" class="nav-button"><span class="nav-icon"><i data-lucide="clapperboard"></i></span><span>Movies</span></button>
       <button data-page="discover" class="nav-button"><span class="nav-icon">✧</span><span>Discover</span></button>
-      <button data-page="explore" class="nav-button"><span class="nav-icon">◎</span><span>Explore</span></button>
-      <button data-page="settings" class="nav-button"><span class="nav-icon">⚙</span><span>Settings</span></button>
+      <button data-page="profile" class="nav-button"><span class="nav-icon">◉</span><span>Profile</span></button>
     </nav>
     </div>
   </div>
