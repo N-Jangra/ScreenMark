@@ -260,8 +260,8 @@
     const imageSource = useLocalThumb
       ? `data-deferred-image data-local-item-id="${esc(item.id)}" data-lazy-src="${esc(source || "")}"`
       : `src="${esc(source)}"`;
-    const hiddenFallback = fallback.replace(/^(<[a-z][\w-]*)(?=[\s>])/i, "$1 hidden");
-    return `<img ${imageSource}${className ? ` class="${esc(className)}"` : ""} alt="${esc(alt)}" loading="lazy" decoding="async" onerror="this.hidden=true;if(this.nextElementSibling)this.nextElementSibling.hidden=false">${hiddenFallback}`;
+    const placeholder = useLocalThumb ? fallback : fallback.replace(/^(<[a-z][\w-]*)(?=[\s>])/i, "$1 hidden");
+    return `<img ${imageSource}${useLocalThumb ? " hidden" : ""}${className ? ` class="${esc(className)}"` : ""} alt="${esc(alt)}" loading="lazy" decoding="async" onerror="this.hidden=true;if(this.nextElementSibling)this.nextElementSibling.hidden=false">${placeholder}`;
   }
   window.SplitAppImageMarkup = imageMarkup;
   const category = key => config.categories.find(item => item.key === key) || config.categories[0];
@@ -694,7 +694,7 @@
     }
     const parentForRef = detailRef?.type === "episode" ? itemById(String(detailItemId)) : null;
     const refItem = parentForRef?.category === "series" && (parentForRef.cachedDetails?.sections || []).some(section => section.kind === "episodes" && (section.items || []).some(row => String(row.id) === String(detailRef.id) || String(row.ref?.id) === String(detailRef.id))) ? parentForRef : null;
-    return { statsSubpage, statsCategory, statsActivityDate, statsRange, profileCollectionSort, profileStatusFilter, profileGenreFilter, profileStatusGroups, watchlistTab, watchlistView: currentWatchlistView(), metadataSyncState, metadataSyncCounts: page === "sync" ? syncCounts() : null, changeLog, history, logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, itemById, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, logEntries, roles, trackedStatuses, statusIcon, discoverCategory: currentDiscoverCategory(), discoverQuery, addMetadataQuery, settingsGroup, settingsParam, settingsFrom, discoverSource, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: itemById(String(entryDraftId)) || null, addReturnPage, navItems, metadataSourceFilter, titleIdentity,
+    return { statsSubpage, statsCategory, statsActivityDate, statsRange, profileCollectionSort, profileStatusFilter, profileGenreFilter, profileStatusGroups, libraryLoading: !libraryRestoreComplete, watchlistTab, watchlistView: currentWatchlistView(), metadataSyncState, metadataSyncCounts: page === "sync" ? syncCounts() : null, changeLog, history, logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, itemById, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, logEntries, roles, trackedStatuses, statusIcon, discoverCategory: currentDiscoverCategory(), discoverQuery, addMetadataQuery, settingsGroup, settingsParam, settingsFrom, discoverSource, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: itemById(String(entryDraftId)) || null, addReturnPage, navItems, metadataSourceFilter, titleIdentity,
       detailData, detailError, detailLoading, detailReturnPage, detailRef, detailRefOffset, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, detailCastOnline, refItem, category, labelCategory, defaultStatus, esc, imageMarkup, safeLucideName };
   }
   // ---- Device artwork cache (IndexedDB blobs) ----
@@ -898,13 +898,31 @@
       .filter(({ rect }) => rect.bottom >= -180 && rect.top <= viewportHeight + 360 && rect.right >= -180 && rect.left <= viewportWidth + 220)
       .forEach(({ image }) => { image.loading = "eager"; });
   }
+  function prioritizeVisibleCollectionImages(root = document) {
+    const collectionPage = ["series", "movies", "series-favorites", "movie-favorites"].includes(page);
+    const watchlistPage = ["series-watchlist", "movie-watchlist"].includes(page);
+    if (!collectionPage && !watchlistPage) return;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const selector = collectionPage ? ".profile-collection-grid img" : ".watchlist-card img";
+    const cardSelector = collectionPage ? ".profile-poster" : ".watchlist-card";
+    const images = [...(root?.querySelectorAll?.(selector) || [])];
+    images.map(image => ({ image, rect: (image.closest(cardSelector) || image).getBoundingClientRect() }))
+      .filter(({ rect }) => rect.bottom >= -120 && rect.top < viewportHeight + 240)
+      .slice(0, 12)
+      .forEach(({ image }, index) => { image.loading = "eager"; if (index < 6 && "fetchPriority" in image) image.fetchPriority = "high"; });
+  }
   function finishDeferredImage(image, source) {
     if (!image?.isConnected) return;
     delete image.dataset.localItemId; delete image.dataset.lazySrc;
     if (/^http:\/\//i.test(String(source || ""))) source = "";
     const detailTrigger = image.closest("[data-detail-image-src]");
     if (detailTrigger && source) detailTrigger.dataset.detailImageSrc = source;
-    if (source) image.src = window.SplitAppDiscovery?.imageUrl?.(source) || source;
+    if (source) {
+      const reveal = () => { image.hidden = false; if (image.nextElementSibling) image.nextElementSibling.hidden = true; };
+      image.addEventListener("load", reveal, { once: true });
+      image.src = window.SplitAppDiscovery?.imageUrl?.(source) || source;
+      if (image.complete && image.naturalWidth) reveal();
+    }
     else { image.hidden = true; if (image.nextElementSibling) image.nextElementSibling.hidden = false; }
   }
   async function drainDeferredImages() {
@@ -912,7 +930,8 @@
     deferredDrain = (async () => {
       const hydrate = window.SplitAppBackend?.hydrateThumbnails;
       while (deferredQueue.length) {
-        const batch = deferredQueue.splice(0, 24);
+        const batchSize = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 2 ? 16 : 40;
+        const batch = deferredQueue.splice(0, batchSize);
         const cached = await cachedThumbUrls(batch.map(record => [thumbKeyOf(record.item), thumbSigOf(record.item)]));
         const slow = [];
         for (const record of batch) {
@@ -963,6 +982,7 @@
   }
 
   let metadataLibraryReady = false;
+  let libraryRestoreComplete = false;
   function render() {
     if (metadataLibraryReady && !metadataSync && metadataSyncState?.entries?.some(entry => ["queued", "running"].includes(entry.status)) && navigator.onLine && prefs.metadataMode !== "offline" && !document.hidden) queueMicrotask(() => startMetadataSync(null, true, "needed", true, true));
     document.body.dataset.page = page;
@@ -1127,12 +1147,33 @@
     window.lucide?.createIcons({ root: content, attrs: { "aria-hidden": "true" } });
     window.lucide?.createIcons({ root: $("#discover-top-search"), attrs: { "aria-hidden": "true" } });
     observeDeferredImages(content);
-    content.querySelector("[data-collection-more]")?.addEventListener("click", event => {
+    prioritizeVisibleCollectionImages(content);
+    const collectionMore = content.querySelector("[data-collection-more]");
+    collectionMore?.addEventListener("click", event => {
       if (window.SplitAppPages.loadMoreCollection?.(event.currentTarget.dataset.collectionMore)) render();
     });
-    content.querySelectorAll("[data-watchlist-more]").forEach(button => button.addEventListener("click", () => {
-      if (window.SplitAppPages.loadMoreWatchlist?.(button.dataset.watchlistMore)) render();
-    }));
+    if (collectionMore && window.IntersectionObserver) {
+      const observer = new IntersectionObserver(entries => {
+        if (!entries.some(entry => entry.isIntersecting)) return;
+        observer.disconnect(); contentObservers.delete(observer); collectionMore.click();
+      }, { rootMargin: "900px 0px" });
+      contentObservers.set(observer, collectionMore);
+      observer.observe(collectionMore);
+    }
+    const watchlistMoreButtons = [...content.querySelectorAll("[data-watchlist-more]")];
+    watchlistMoreButtons.forEach(button => {
+      button.addEventListener("click", () => {
+        if (window.SplitAppPages.loadMoreWatchlist?.(button.dataset.watchlistMore)) render();
+      });
+      if (window.IntersectionObserver) {
+        const observer = new IntersectionObserver(entries => {
+          if (!entries.some(entry => entry.isIntersecting)) return;
+          observer.disconnect(); contentObservers.delete(observer); button.click();
+        }, { rootMargin: "900px 0px" });
+        contentObservers.set(observer, button);
+        observer.observe(button);
+      }
+    });
     content.querySelector("#item-form")?.addEventListener("keydown", event => {
       if (event.key !== "Enter" || event.defaultPrevented || event.target.matches("textarea, #add-metadata-query")) return;
       event.preventDefault();
@@ -3711,6 +3752,7 @@
     else loadDetails();
   }
   const finishStartup = success => {
+    libraryRestoreComplete = true;
     if (!success) {
       if (nativeFolderStorage && storageFolderGate) storageFolderGate.hidden = false;
       window.ScreenMarkSplash?.ready?.();

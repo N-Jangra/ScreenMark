@@ -767,9 +767,10 @@ body[data-theme="light"] .profile-identity h2 { color: #fff; }
 .profile-visibility-toggle { justify-self: end; border: 1px solid transparent !important; border-radius: 8px !important; }
 .profile-visibility-toggle.is-active { background: var(--d-gold) !important; color: var(--d-gold-fg) !important; }
 .profile-collection-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); align-items: start; gap: 5px; padding: 0 5px; }
-.profile-collection-grid .profile-poster { width: 100%; min-width: 0; aspect-ratio: 2 / 3; border-radius: 1px; }
+.profile-collection-grid .profile-poster { width: 100%; min-width: 0; aspect-ratio: 2 / 3; border-radius: 1px; contain: layout paint; }
 .profile-collection-grid .profile-poster-title { display: none; }
 .profile-collection-grid .demo-poster-progress { height: 5px; }
+.profile-collection-skeleton-card { display: block; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 8px; background: linear-gradient(100deg,var(--d-surface) 20%,var(--d-elev) 48%,var(--d-surface) 76%); background-size: 220% 100%; animation: sp-shimmer 1.25s ease-in-out infinite; }
 .profile-status-groups { display: grid; gap: 14px; }
 .profile-status-group { display: grid; gap: 8px; }
 .profile-status-group > h3 { justify-self: center; margin: 0; padding: 4px 10px; border-radius: 99px; background: #777985; color: #fff; font: 800 10px/1 var(--d-font); text-transform: uppercase; }
@@ -866,7 +867,7 @@ body:is([data-page="series-watchlist"],[data-page="movie-watchlist"]):has(.watch
 .watchlist-section-heading-spacer { grid-column: 1; grid-row: 1; }
 .watchlist-section-heading > h3 { grid-column: 2; grid-row: 1; justify-self: center; margin: 0; padding: 4px 10px; border-radius: 99px; background: #777985; color: #fff; font: 800 10px/1 var(--d-font); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
 .watchlist-section > h3 { justify-self: center; margin: 0 0 2px; padding: 4px 10px; border-radius: 99px; background: #777985; color: #fff; font: 800 10px/1 var(--d-font); letter-spacing: .04em; text-transform: uppercase; }
-.watchlist-card { display: grid; grid-template-columns: 88px minmax(0,1fr) 40px; gap: 12px; align-items: center; min-height: 104px; padding: 9px; border: 1px solid var(--d-line2); border-radius: 13px; background: linear-gradient(145deg,var(--d-elev),var(--d-surface) 52%); color: var(--d-t1); box-shadow: 0 6px 18px rgba(0,0,0,.24),inset 0 1px rgba(255,255,255,.035); }
+.watchlist-card { display: grid; grid-template-columns: 88px minmax(0,1fr) 40px; gap: 12px; align-items: center; min-height: 104px; padding: 9px; border: 1px solid var(--d-line2); border-radius: 13px; background: linear-gradient(145deg,var(--d-elev),var(--d-surface) 52%); color: var(--d-t1); box-shadow: 0 6px 18px rgba(0,0,0,.24),inset 0 1px rgba(255,255,255,.035); contain: layout; }
 .watchlist-card.is-upcoming:not(.is-card-view):not(.is-poster-view) { grid-template-columns: 88px minmax(0,1fr) 58px; gap: 10px; }
 .watchlist-card.is-upcoming:not(.is-card-view):not(.is-poster-view) .watchlist-airdate { color: var(--d-gold); font-size: 14px; font-weight: 800; line-height: 1.15; text-align: center; white-space: nowrap; }
 .watchlist-card[data-watchlist-open] { cursor: pointer; }
@@ -890,6 +891,12 @@ body:is([data-page="series-watchlist"],[data-page="movie-watchlist"]):has(.watch
 .watchlist-browse { display: block; min-height: 40px; margin: 14px auto 0; padding: 0 20px; border: 1px solid var(--d-t2); border-radius: 99px; background: var(--d-surface); color: var(--d-t1); font-size: 12px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
 .watchlist-empty { display: grid; justify-items: center; align-content: center; gap: 10px; min-height: calc(100dvh - 190px); padding: 26px 20px; text-align: center; }
 .watchlist-content.is-empty .watchlist-empty { width: 100%; min-height: 0; height: 100%; padding: 18px 20px; }
+.watchlist-loading-skeleton { display: grid; gap: 10px; width: 100%; padding: 12px 9px; }
+.watchlist-loading-skeleton > span { display: block; border: 1px solid var(--d-line2); border-radius: 13px; background: linear-gradient(100deg,var(--d-surface) 20%,var(--d-elev) 48%,var(--d-surface) 76%); background-size: 220% 100%; animation: sp-shimmer 1.25s ease-in-out infinite; }
+.watchlist-loading-skeleton.is-list > span { height: 104px; }
+.watchlist-loading-skeleton.is-posters { grid-template-columns: repeat(auto-fill,minmax(96px,1fr)); }
+.watchlist-loading-skeleton.is-posters > span { aspect-ratio: 2 / 3; }
+.watchlist-loading-skeleton.is-cards > span { aspect-ratio: 1.78 / 1; }
 .watchlist-empty h2 { margin: 0; color: var(--d-t1); font: 750 18px/1.25 var(--d-font); }
 .watchlist-empty p { margin: 2px 0 10px; color: var(--d-t2); font-size: 13px; }
 .watchlist-empty-illustration { display: grid; place-items: center; width: 118px; height: 118px; margin: 1px 0 4px; border-radius: 50%; background: radial-gradient(circle at 50% 50%,color-mix(in srgb,var(--d-gold) 20%,transparent),color-mix(in srgb,var(--d-gold) 5%,transparent) 68%,transparent 70%); color: var(--d-gold); }

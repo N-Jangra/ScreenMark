@@ -109,7 +109,9 @@
       const grouped = ordered.map(status => ({ status, rows: groupMap.get(status) })).filter(group => group.rows.length);
       content = grouped.length ? `<div class="profile-status-groups">${grouped.map(group => `<section class="profile-status-group"><h3>${esc(group.status)}</h3>${gridFor(group.rows)}</section>`).join("")}</div>` : "";
     } else content = gridFor(filtered.slice(0, visibleCount));
-    if (!filtered.length) content = `<div class="profile-empty profile-list-empty"><i data-lucide="library" aria-hidden="true"></i><strong>${categoryItems.length ? "No titles match this filter" : favorites ? "No favorites yet" : `No ${title.toLowerCase()} yet`}</strong><span>${categoryItems.length ? "Choose another status or clear the filter." : "Titles you add to your library will appear here."}</span></div>`;
+    if (!filtered.length) content = context.libraryLoading && !items.length
+      ? `<div class="profile-collection-grid profile-collection-skeleton" role="status" aria-label="Loading library">${Array.from({ length: 12 }, () => `<span class="profile-collection-skeleton-card" aria-hidden="true"></span>`).join("")}</div>`
+      : `<div class="profile-empty profile-list-empty"><i data-lucide="library" aria-hidden="true"></i><strong>${categoryItems.length ? "No titles match this filter" : favorites ? "No favorites yet" : `No ${title.toLowerCase()} yet`}</strong><span>${categoryItems.length ? "Choose another status or clear the filter." : "Titles you add to your library will appear here."}</span></div>`;
     const filterControl = filtersApplied
       ? `<footer class="profile-filter-bar"><button type="button" class="profile-filter-icon" data-open-profile-filters aria-label="Open filters"><i data-lucide="sliders-horizontal" aria-hidden="true"></i></button><button type="button" class="profile-sort-pill" data-open-profile-filters aria-label="Sort by ${esc(selectedSortLabel)}">${esc(selectedSortLabel)} <i data-lucide="chevron-down" aria-hidden="true"></i></button></footer>`
       : `<button type="button" class="profile-filter-pill" data-open-profile-filters><i data-lucide="sliders-horizontal" aria-hidden="true"></i><span>Filters</span></button>`;
@@ -246,6 +248,9 @@
     }
     const hasRows = sections.length > 0;
     const empty = `<div class="watchlist-empty"><span class="watchlist-empty-illustration"><i data-lucide="${category === "series" ? "tv" : "popcorn"}" aria-hidden="true"></i></span><h2>${tab === "upcoming" ? `No upcoming ${category === "series" ? "episodes" : "movies"} yet` : "Your watchlist is empty!"}</h2><p>${tab === "upcoming" ? "Upcoming titles with a known release date will appear here." : `Add ${category === "series" ? "shows" : "movies"} you want to watch.`}</p><button type="button" data-go="discover">Discover ${category === "series" ? "shows" : "movies"}</button></div>`;
+    const loading = context.libraryLoading && !items.length
+      ? `<div class="watchlist-loading-skeleton is-${esc(watchlistView)}" role="status" aria-label="Loading library">${Array.from({ length: watchlistView === "posters" ? 6 : 3 }, () => `<span aria-hidden="true"></span>`).join("")}</div>`
+      : empty;
     const viewOrder = ["list", "posters", "cards"], viewIndex = Math.max(0, viewOrder.indexOf(watchlistView)), currentView = viewOrder[viewIndex];
     const viewIcon = currentView === "list" ? "list" : currentView === "posters" ? "layout-grid" : "rectangle-horizontal";
     const viewLabel = currentView === "list" ? "List" : currentView === "posters" ? "Posters" : "Cards";
@@ -254,7 +259,7 @@
       const firstSection = sections.findIndex(section => section.includes("<h3>"));
       if (firstSection >= 0) sections[firstSection] = sections[firstSection].replace(/<h3>(.*?)<\/h3>/, '<div class="watchlist-section-heading"><span class="watchlist-section-heading-spacer" aria-hidden="true"></span><h3>$1</h3>' + viewToggle + '</div>');
     }
-    return `<section class="watchlist-page${hasRows ? "" : " is-empty"}"><header class="watchlist-tabs" role="tablist"><button type="button" class="${tab === "watchlist" ? "active" : ""}" data-watchlist-tab="watchlist" role="tab" aria-selected="${tab === "watchlist"}">Watchlist</button><button type="button" class="${tab === "upcoming" ? "active" : ""}" data-watchlist-tab="upcoming" role="tab" aria-selected="${tab === "upcoming"}">Upcoming</button></header><main class="watchlist-content${hasRows ? ` is-${currentView}` : " is-empty"}">${hasRows ? sections.join("") : empty}</main>${hasRows && tab === "watchlist" && category === "series" ? `<button type="button" class="watchlist-browse" data-go="series">Browse all shows</button>` : hasRows && tab === "watchlist" && category === "movie" ? `<button type="button" class="watchlist-browse" data-go="movies">Browse all movies</button>` : ""}</section>`;
+    return `<section class="watchlist-page${hasRows ? "" : " is-empty"}"><header class="watchlist-tabs" role="tablist"><button type="button" class="${tab === "watchlist" ? "active" : ""}" data-watchlist-tab="watchlist" role="tab" aria-selected="${tab === "watchlist"}">Watchlist</button><button type="button" class="${tab === "upcoming" ? "active" : ""}" data-watchlist-tab="upcoming" role="tab" aria-selected="${tab === "upcoming"}">Upcoming</button></header><main class="watchlist-content${hasRows ? ` is-${currentView}` : " is-empty"}">${hasRows ? sections.join("") : loading}</main>${hasRows && tab === "watchlist" && category === "series" ? `<button type="button" class="watchlist-browse" data-go="series">Browse all shows</button>` : hasRows && tab === "watchlist" && category === "movie" ? `<button type="button" class="watchlist-browse" data-go="movies">Browse all movies</button>` : ""}</section>`;
   }
 
   window.SplitAppPages.watchlistCard = watchlistCard;
