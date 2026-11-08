@@ -2,6 +2,107 @@
 
 All notable changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] — 2026-11-08
+
+### Added
+
+- Appearance now offers a charcoal Dark theme alongside System, Light and AMOLED. Bottom navigation adds filled-pill and minimal active states, names-only labels, and more per-destination icon choices.
+- Settings → Animations adds Slow motion, Zoom page transitions, Scale sheets and dialogs, Fade tap feedback, Smooth/Snappy/Spring progress styles, and Shimmer/Soft pulse/Static placeholders. Choices persist, reset to defaults, and respect reduced-motion and low-resource settings.
+- PDF sharing adds List/Poster grid views, App/Light/Dark themes, an optional title page and a live layout preview for whole collections; individual movie and series exports add Detailed/Compact views, theme choices and a first-page preview.
+
+- A Node test suite for every local HTTP route, built-in metadata search and detail dispatch, custom-source mapping, and IndexedDB/data-worker operations (`npm test`).
+- Source-specific detail navigation for series, movies, episodes, cast and related titles, keeping supported content in ScreenMark's shared UI.
+- AniList anime series load paginated episode data by AniList's MyAnimeList ID through Tenrai, with paced/retried requests and alternate-title, year-aware TVmaze fallback when no Tenrai guide is available.
+- Bounded metadata refresh concurrency with automatic checks for saved titles and retry/resume handling.
+- Metadata sync progress uses compact local records, resumes legacy interrupted entries, and preserves completed history when no refresh is due.
+- IndexedDB thumbnail cleanup and bounded object URL caching, plus cache limits for generated share files.
+- Thumbnail downloads enforce a streaming byte limit before buffering, cap both output dimensions, and release decoded bitmap resources after processing.
+- Share PDF cover and screenshot loading is bounded on low-memory devices, timed-out late images are released, and generated share bitmaps are closed after rendering.
+- Lazy image reads from the saved Android folder can request a 16 MB cap; archive and migration reads remain unbounded so large backup data is preserved.
+- Library, collection, watchlist and detail posters now load local cached thumbnails on demand, with visible artwork placeholders until the image is ready or when it is unavailable.
+- Lazy metadata, gallery, episode and match artwork uses asynchronous decoding and hides broken images while preserving the surrounding placeholder surface.
+- Large collections and watchlist sections render in 100-title batches, with per-filter paging and cached collection sorting to keep large libraries responsive.
+- Library ID lookups build their in-memory index once per array revision, avoiding repeated full scans for missing IDs during details and sync work.
+- Startup reconciliation merges scoped item changes without serializing an extra full-library copy; IndexedDB upgrade blocking now fails clearly and releases stale connections on version changes.
+- Removed obsolete animation and navigation preferences, kept the supported lightweight transition controls, and restored the Theme picker in Appearance.
+- Fixed startup overriding the saved theme; new installs default to Light and Appearance choices now persist across reloads.
+- Metadata sync progress counts now update incrementally instead of rescanning every queued title after each response, avoiding quadratic progress bookkeeping on large libraries.
+- Large metadata refresh checkpoints are stored in 256-entry chunks and write only dirty chunks; the sync status page reads cached counters and the existing library index instead of rescanning the full queue and library on each progress render.
+- Restored refresh entries whose metadata source was disabled are recorded as skipped, so restart recovery finishes cleanly without retrying a stale provider request indefinitely.
+- Removed 806 CSS rules whose required class names no longer occur in the live HTML/JS, including retired home/collection, purchase-panel, and previous sync-status styles; runtime-generated detail/status classes remain protected. Removed unused discovery API exports and unused backend folder-helper wrappers.
+- Metadata, saved-folder import, artwork hydration and folder-mirroring workers now claim queue jobs with constant-time cursors rather than repeated array front-removal.
+- Concurrent workers recheck cursor bounds after idle/network waits to prevent duplicate or out-of-range claims at the end of a queue.
+- Verified overlapping IndexedDB scoped/full write ordering in an isolated browser context; removed unused settings-template arguments and data.
+- Background source refresh now omits cast, recommendation and gallery payloads and avoids recommendation fan-out; interactive detail pages retain those sections.
+- Detail loading reserves correctly shaped synopsis, facts, artwork and episode placeholders only where data is missing; shimmer is enabled by default and respects motion and low-end settings.
+- Movie details now group content into Overview, Details, Media, Ratings and Cast & Crew tabs when each section has data; the movie tab row scrolls horizontally on narrow screens instead of compressing labels.
+- Detail screens no longer wait for Android folder-image reads before starting the provider load or rendering; local artwork merges in as a background update, and visible episode/cast images are prioritized when a detail panel opens.
+- Cast, character and episode routes now render page-shaped loading skeletons immediately, preserving the portrait/credit list, character appearances, episode still/synopsis/cast and saved-series guide positions while provider data loads. Loading status remains available to assistive technology; placeholders honor the existing shimmer and reduced-motion settings.
+- Fixed the JS Android launch intro replaying twice: the GIF now plays its 3.43-second sequence once, then waits for startup readiness and the existing 500 ms gap before revealing app data. Android's separate system launch splash remains unchanged.
+- Discover now holds complete card-shaped placeholders through poster, type/rating badges, title, year, genre chips and add-control positions during both suggestions and search. Loaded cards show up to two available genres and keep a neutral artwork placeholder visible until each poster loads; failed requests clear skeletons instead of leaving placeholders stuck on screen.
+- Watchlist Poster mode now uses a portrait poster grid like the Shows and Movies pages, with the next season/episode badge, watched count and progress bar over the series poster. It uses the title poster rather than the next episode still.
+- Android's native WebView edge-stretch effect is disabled so fixed bottom navigation stays pinned during pull-to-refresh; the app's custom refresh gesture still moves only page content.
+- Light theme now honors the selected Default or custom accent instead of replacing it with a fixed violet CSS value.
+- Light theme Profile filters, season/episode cards, and Watchlist refresh indicators now use light surfaces and readable filter-chip contrast.
+- Library edits compare only editable fields, retain the existing ID-to-position index on same-position replacement, and skip persistence for no-op edits. Metadata sync comparison no longer deep-clones the full provider payload before serializing it.
+- Metadata provider responses and cached JSON are streamed and capped at 12 MB before parsing or caching, limiting oversized-payload memory spikes on low-memory devices.
+- Startup reconciliation now tracks scoped item and preference mutations instead of serializing a duplicate copy of every library record on the UI thread; imports and history clearing use incremental persistence.
+- Startup now waits for the initial library restore, plays the complete intro animation (including its configured repeat), and holds the finished mark for 500 ms before showing app data. A stalled GIF falls back to the static mark without bypassing the data-ready check.
+
+### Changed
+
+- Detail skeletons now use one subtle animated sweep per placeholder section instead of animating every bar; cold series expose the Episodes tab and skeleton immediately, empty Synopsis placeholders do not duplicate the empty overview card, and shimmer-off/reduced-motion/low-resource settings suppress the sweep.
+- Removed the app-wide floating Add button; manual entry now starts from the Add manually button in the Profile header, keeping library and detail pages clear.
+- Library persistence writes changed records incrementally through a data worker, with smaller database indexes and bounded background artwork hydration.
+- Removed the remaining dashboard-only CSS selectors and layout rules after removing the Dashboard renderer; shared Discover and details styling remains active.
+- Removed a persisted share/PDF cache that had no reader; the IndexedDB upgrade reclaims its old blobs.
+- Removed stale Search, Explore and mixed-fetch CSS hooks alongside the deleted page and fetch modules.
+- Removed the unreferenced search-result rerender helper after confirming no active page calls it.
+- Android storage operations close streams and cursors reliably; scheduled encrypted backups honor a configurable retention limit.
+- Daily TAR backups use Apache Commons Compress for PAX-compatible long UTF-8 paths, stream each file, and can be restored from the archive through the native storage plugin.
+- TAR backup creation no longer sends a second full database JSON string across the WebView bridge.
+- Metadata requests enforce HTTPS, reject redirects, and use source-specific provider settings; the local preview proxy restricts origins, destinations, and response sizes.
+- Custom metadata sources in localhost preview use their own HTTPS endpoint directly and its CORS policy instead of being sent to the fixed-provider proxy allowlist.
+- Low-resource Android devices use shorter visual work and reduced metadata/artwork concurrency.
+- Legacy Dashboard and Search hashes route directly to Discover; Android back uses Shows Watchlist as the app home.
+
+### Fixed
+
+- Add/Edit title now uses a full-width, safe-area-aware sticky header aligned with Settings subpages.
+- Clearing Library history now explains that Timeline and Statistics → Activity use the same saved activity records and asks for confirmation; a late journal read can no longer restore cleared entries.
+- Simplified per-source options hints, removed blank helper rows, and replaced the full device User-Agent placeholder with a short default label.
+
+- Cleaned up Metadata Sources by removing repeated instructions, tightening the empty custom-source state, and using the app’s active theme text, surface, border and accent colors.
+
+- Unified settings and subsettings switches across Light, Dark and AMOLED: matched track/thumb sizing, theme-token off/on colors, and consistent focus/disabled states. Removed the superseded source-specific and dark-only switch overrides.
+
+- Light theme controls now use light surfaces for Profile filters, season/episode cards, and the Watchlist pull-to-refresh indicator; profile filter text no longer uses a dark-only shadow.
+
+- Light theme's Default accent now uses the same gold as AMOLED instead of switching to indigo; the Light, System and AMOLED theme previews match.
+- Appearance option popups now give the heading and unselected options the same theme surface; the low-memory Android header override no longer makes the heading a different shade.
+- Mobile series/movie details and Episode, Cast and Character pages place Back and action controls over the hero artwork in theme-matched floating surfaces, including Android low-end styling.
+- Discover search now uses a real search form: the on-screen Search button and Android keyboard action submit through the same handler and the keyboard closes after submission. Improved narrow-width control sizing and input focus feedback, and made duplicate-submit protection specific to query, type, and source.
+- Appearance accent colors now carry through Shows, Movies, Details, Watchlists, Profile, Discover, Statistics and Settings. Legacy page tokens, selected controls, progress indicators and gradients follow the chosen accent in both Light and dark themes.
+- Removed an unreferenced legacy Backups redirect page. The frontend integrity tests now verify local app-shell assets, script syntax, and runtime-file reachability.
+- Upcoming episodes can no longer be marked watched from detail, season, or progress controls; earlier-episode auto-marking skips unaired episodes, and the Upcoming tab filters watched episodes immediately without a refresh.
+- Startup now validates persisted JSON shapes and waits for IndexedDB restoration before saving migrations, preserving the library when the local mirror is malformed; thumbnail cache reads reject stale signatures and non-Blob records.
+- TAR restore accepts both the root-level ScreenMark database entry and the mirrored `database.json` inside the current folder tree.
+- Pending IndexedDB operations are replayed in order through the main-thread fallback when the data worker fails or times out, instead of being dropped.
+- Reduced Motion and Motion Off use the static app mark and skip animated playback while retaining the startup data-ready check.
+- Restoring an encrypted backup replaces the previous item set so deleted titles cannot reappear from stale records.
+- Empty-library encrypted backups restore correctly, and monthly automatic metadata refresh timers are split below the browser timeout limit instead of overflowing.
+- Background sync resumes safely after connectivity, visibility or metadata-mode changes.
+- The empty Statistics state now links to the current Shows Watchlist route.
+- Details and episode loading use local cached records and safe placeholders while source requests are pending or unavailable.
+- Watchlist and Upcoming cards use shared image handling for remote URL routing, local thumbnail cache hydration and image failure placeholders across list, poster and card layouts; local artwork begins loading earlier near the viewport.
+- Route transitions no longer compete between base and motion stylesheets; route, sheet, press and progress motion use consistent easing while honoring reduced-motion and low-resource preferences.
+- Detail-page Light theme styling keeps title, movie, episode, cast and character screens consistent: artwork fades blend into light surfaces, episode overlay copy and badges remain legible, portrait framing uses restrained shadows, and floating controls follow active theme tokens.
+- Removed stale frontend page and icon references no longer included in the app shell.
+
+### Removed
+
+- The unreachable legacy Dashboard renderer and its script include; Dashboard and Search hashes remain supported aliases to Discover.
+
 ## [0.1.2] — 2026-11-07
 
 ### Added
