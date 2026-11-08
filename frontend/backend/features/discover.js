@@ -3,14 +3,82 @@
   const metadata = window.SplitAppMetadata;
   const appKey = metadata.appKey;
   const cacheName = `splitapp_${appKey}_metadata`;
+  let cachePrunePromise = null, cachePrunedAt = 0;
   const capacitor = window.Capacitor;
   const nativeApp = Boolean(capacitor?.isNativePlatform?.() || ["android", "ios"].includes(capacitor?.getPlatform?.()));
-  const nativeHttp = window.CapacitorHttp || capacitor?.Plugins?.CapacitorHttp || capacitor?.Plugins?.Http || null;
+  const nativeHttp = window.CapacitorHttp || capacitor?.Plugins?.CapacitorHttp || null;
   const filePreview = !nativeApp && location.protocol === "file:";
   const localPreview = !nativeApp && location.protocol.startsWith("http") && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
   const fileProxy = "http://127.0.0.1:3000/proxy?url=";
+  const maxMetadataResponseBytes = 12 * 1024 * 1024;
   const encode = value => encodeURIComponent(String(value || "").trim());
+  function secureEndpoint(value) {
+    let endpoint;
+    try { endpoint = new URL(String(value || ""), location.href); } catch { throw new Error("Metadata endpoint URL is invalid."); }
+    if (endpoint.username || endpoint.password) throw new Error("Metadata endpoint URLs cannot contain embedded credentials.");
+    if (endpoint.protocol === "https:") return endpoint.href;
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname);
+    if (!nativeApp && endpoint.protocol === "http:" && loopback) return endpoint.href;
+    throw new Error("Metadata endpoints must use HTTPS (HTTP is allowed only for localhost during web preview).");
+  }
+  async function readBoundedText(response, label) {
+    const limitMessage = `${label} exceeds the 12 MB limit.`;
+    const declaredLength = Number(response.headers.get("content-length")) || 0;
+    if (declaredLength > maxMetadataResponseBytes) {
+      try { await response.body?.cancel(); } catch (_) {}
+      throw new Error(limitMessage);
+    }
+    if (!response.body?.getReader) {
+      const body = await response.text();
+      if (new Blob([body]).size > maxMetadataResponseBytes) throw new Error(limitMessage);
+      return body;
+    }
+    const reader = response.body.getReader(), decoder = new TextDecoder();
+    let bytes = 0, text = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        bytes += value.byteLength;
+        if (bytes > maxMetadataResponseBytes) {
+          try { await reader.cancel(); } catch (_) {}
+          throw new Error(limitMessage);
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+      return text + decoder.decode();
+    } finally { reader.releaseLock(); }
+  }
+  async function fetchWithTimeout(url, options = {}, responseType = "json") {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error("Metadata request timed out.")), 25000);
+    const externalSignal = options.signal;
+    const abort = () => controller.abort(externalSignal.reason);
+    externalSignal?.addEventListener("abort", abort, { once: true });
+    if (externalSignal?.aborted) abort();
+    try {
+      const response = await fetch(url, { ...options, redirect: "error", referrerPolicy: "no-referrer", signal: controller.signal });
+      let data = null;
+      if (response.ok) {
+        const body = await readBoundedText(response, "Metadata provider response");
+        data = responseType === "text" ? body : (() => {
+          try { return JSON.parse(body.replace(/^\uFEFF/, "")); }
+          catch { throw new Error("Metadata provider returned invalid JSON."); }
+        })();
+      }
+      return { response, data };
+    }
+    finally { clearTimeout(timer); externalSignal?.removeEventListener("abort", abort); }
+  }
+  async function cachedJson(response) {
+    const body = await readBoundedText(response, "Cached metadata");
+    try { return JSON.parse(body.replace(/^\uFEFF/, "")); }
+    catch { throw new Error("Cached metadata is invalid."); }
+  }
   async function wireRequest(url, options = {}, responseType = "json") {
+    url = secureEndpoint(url);
+    const directPreview = options.directPreview === true;
+    if (directPreview) { options = { ...options }; delete options.directPreview; }
     const method = String(options.method || "GET").toUpperCase();
     const headers = { Accept: responseType === "text" ? "text/html,application/xhtml+xml,*/*" : "application/json", ...(options.headers || {}) };
     // Browsers refuse to set Cookie / User-Agent. The Android app sends them as-is; the local preview passes them to its proxy; a plain website drops them.
@@ -23,73 +91,116 @@
     if (nativeApp && nativeHttp?.request) {
       const response = await nativeHttp.request({
         url, method, headers, data: options.body || null,
-        responseType: responseType === "text" ? "text" : "json", connectTimeout: 15000, readTimeout: 20000
+        // Read as text so the payload can be size-checked before JSON parsing.
+        responseType: "text", connectTimeout: 15000, readTimeout: 20000, disableRedirects: true
       });
       const status = Number(response?.status || 0);
       if (status >= 400) throw Object.assign(new Error(`${status} ${response.statusText || "Metadata request failed"}`), { status });
       const data = response?.data;
-      if (responseType === "text") return typeof data === "string" ? data : String(data ?? "");
       if (typeof data === "string") {
-        try { return JSON.parse(data); }
+        if (new Blob([data]).size > maxMetadataResponseBytes) throw new Error("Metadata provider response exceeds the 12 MB limit.");
+        if (responseType === "text") return data;
+        try { return JSON.parse(data.replace(/^\uFEFF/, "")); }
         catch { throw new Error("Metadata provider returned invalid JSON."); }
       }
+      if (responseType === "text") return String(data ?? "");
+      if (data != null && new Blob([JSON.stringify(data)]).size > maxMetadataResponseBytes) throw new Error("Metadata provider response exceeds the 12 MB limit.");
       return data;
     }
     let response;
     if (localPreview) {
-      response = await fetch(`/proxy?url=${encodeURIComponent(url)}`, { method, headers, body: options.body });
+      const endpoint = new URL(url);
+      const localHttp = endpoint.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname);
+      response = await fetchWithTimeout(localHttp || directPreview ? endpoint.href : `/proxy?url=${encodeURIComponent(url)}`, { method, headers, body: options.body, signal: options.signal }, responseType);
     } else if (filePreview) {
       try {
-        response = await fetch(`${fileProxy}${encodeURIComponent(url)}`, { method, headers, body: options.body });
-        if (!response.ok) throw Object.assign(new Error(`${response.status} ${response.statusText}`), { status: response.status });
+        response = await fetchWithTimeout(`${fileProxy}${encodeURIComponent(url)}`, { method, headers, body: options.body, signal: options.signal }, responseType);
+        if (!response.response.ok) throw Object.assign(new Error(`${response.response.status} ${response.response.statusText}`), { status: response.response.status });
       } catch (proxyError) {
-        try { response = await fetch(url, { method, headers, body: options.body }); }
+        if (options.signal?.aborted) throw proxyError;
+        try { response = await fetchWithTimeout(url, { method, headers, body: options.body, signal: options.signal }, responseType); }
         catch (_) { throw new Error("Firefox blocks metadata requests from file://. Start the local preview with npm run serve, then open http://127.0.0.1:3000."); }
       }
     } else {
-      response = await fetch(url, { method, headers, body: options.body });
+      response = await fetchWithTimeout(url, { method, headers, body: options.body, signal: options.signal }, responseType);
     }
-    if (!response.ok) throw Object.assign(new Error(`${response.status} ${response.statusText}`), { status: response.status });
-    return responseType === "text" ? await response.text() : await response.json();
+    if (!response.response.ok) throw Object.assign(new Error(`${response.response.status} ${response.response.statusText}`), { status: response.response.status });
+    return response.data;
   }
   // Cache Storage can stall on some devices/profiles; never let it block a request.
-  const cacheStep = (promise, ms = 2500) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error("cache timeout")), ms))]);
+  const cacheStep = (promise, ms = 2500) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("cache timeout")), ms);
+    Promise.resolve(promise).then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
+  });
+  function pruneMetadataCache(cache) {
+    if (cachePrunePromise || Date.now() - cachePrunedAt < 10 * 60 * 1000) return cachePrunePromise || Promise.resolve();
+    cachePrunedAt = Date.now();
+    cachePrunePromise = (async () => {
+      const keys = await cacheStep(cache.keys());
+      const rows = [];
+      for (let offset = 0; offset < keys.length; offset += 32) {
+        const batch = await Promise.all(keys.slice(offset, offset + 32).map(async request => {
+          const response = await cacheStep(cache.match(request));
+          return { request, at: Number(response?.headers.get("x-splitapp-cached-at")) || 0 };
+        }));
+        rows.push(...batch);
+      }
+      const cutoff = Date.now() - 14 * 86400000;
+      const expired = rows.filter(row => !row.at || row.at < cutoff);
+      const current = rows.filter(row => row.at >= cutoff).sort((a, b) => b.at - a.at);
+      const remove = new Set(expired.map(row => row.request.url));
+      current.slice(400).forEach(row => remove.add(row.request.url));
+      await Promise.all([...remove].map(url => cacheStep(cache.delete(url))));
+    })().catch(() => {}).finally(() => { cachePrunePromise = null; });
+    return cachePrunePromise;
+  }
   // Every request to a known source picks up that source's domain / user agent / cookies from Settings.
   function applySource(url, options = {}) {
     let host = ""; try { host = new URL(url).hostname; } catch (_) { return { url, options }; }
     const provider = metadata.providers.find(source => source.domain === host); if (!provider) return { url, options };
     const resolved = metadata.resolve(provider.key, url, options);
-    return { url: resolved.url, options: { ...options, headers: { ...(options.headers || {}), ...resolved.headers } } };
+    const headers = { ...(options.headers || {}), ...resolved.headers };
+    if (provider.accept && !Object.keys(headers).some(name => name.toLowerCase() === "accept")) headers.Accept = provider.accept;
+    return { url: resolved.url, options: { ...options, headers } };
   }
   async function requestJson(url, options = {}) {
     ({ url, options } = applySource(url, options));
+    url = secureEndpoint(url);
     const method = String(options.method || "GET").toUpperCase();
     const canCache = method === "GET" && !options.noCache && !options.forceRefresh && window.caches && !/[?&](?:key|apikey)=/i.test(url);
     let cache = null, stale = null;
     if (canCache) {
       try {
         cache = await cacheStep(window.caches.open(cacheName)); stale = await cacheStep(cache.match(url));
+        pruneMetadataCache(cache);
         const fetchedAt = Number(stale?.headers.get("x-splitapp-cached-at")) || 0;
-        if (stale && fetchedAt && Date.now() - fetchedAt < 6 * 60 * 60 * 1000) return stale.json();
+        if (stale && fetchedAt && Date.now() - fetchedAt < 6 * 60 * 60 * 1000) return cachedJson(stale);
       } catch { cache = null; stale = null; }
     }
     try {
       const data = await wireRequest(url, options, "json");
       if (cache) {
-        const headers = new Headers({ "Content-Type": "application/json", "x-splitapp-cached-at": String(Date.now()) });
-        try { await cacheStep(cache.put(url, new Response(JSON.stringify(data), { status: 200, headers }))); } catch { /* caching is best-effort */ }
+        try {
+          const serialized = JSON.stringify(data);
+          if (new Blob([serialized]).size <= maxMetadataResponseBytes) {
+            const headers = new Headers({ "Content-Type": "application/json", "x-splitapp-cached-at": String(Date.now()) });
+            await cacheStep(cache.put(url, new Response(serialized, { status: 200, headers })));
+          }
+        } catch { /* caching is best-effort */ }
       }
       return data;
     } catch (error) {
-      if (stale && options.offlineFallback !== "none") return stale.json();
+      if (stale && options.offlineFallback !== "none") return cachedJson(stale);
       throw error;
     }
   }
-  const requestText = (url, options = {}) => { ({ url, options } = applySource(url, options)); return wireRequest(url, options, "text"); };
-  const imageHosts = new Set(["static.tvmaze.com", "s4.anilist.co", "m.media-amazon.com", "image.tmdb.org", "is1-ssl.mzstatic.com", "img.youtube.com"]);
+  const requestText = (url, options = {}) => { ({ url, options } = applySource(url, options)); return wireRequest(secureEndpoint(url), options, "text"); };
+  const imageHosts = new Set(["static.tvmaze.com", "s4.anilist.co", "cdn.myanimelist.net", "media.kitsu.io", "media.kitsu.app", "m.media-amazon.com", "image.tmdb.org", "is1-ssl.mzstatic.com", "img.youtube.com"]);
   const imageUrl = value => {
     const url = String(value || "");
-    if (!/^https?:\/\//i.test(url) || nativeApp) return url;
+    if (!/^https?:\/\//i.test(url)) return url;
+    if (!/^https:\/\//i.test(url)) return "";
+    if (nativeApp) return url;
     try { if (!imageHosts.has(new URL(url).hostname)) return url; } catch (_) { return url; }
     if (filePreview) return `${fileProxy}${encodeURIComponent(url)}`;
     if (localPreview) return `/proxy?url=${encodeURIComponent(url)}`;
@@ -114,7 +225,13 @@
   };
   const tvdbTokens = new Map();
   const tvdbTokenLifetime = 28 * 24 * 60 * 60 * 1000;
+  const trimTvdbTokens = () => {
+    const now = Date.now();
+    for (const [key, value] of tvdbTokens) if (!value.pending && value.expiresAt <= now) tvdbTokens.delete(key);
+    while (tvdbTokens.size > 8) tvdbTokens.delete(tvdbTokens.keys().next().value);
+  };
   const getTvdbToken = async (key, settings) => {
+    trimTvdbTokens();
     const cached = tvdbTokens.get(key);
     if (cached?.token && cached.expiresAt > Date.now()) return cached.token;
     if (cached?.pending) return cached.pending;
@@ -123,6 +240,7 @@
         const token = login?.data?.token;
         if (!token) throw new Error("TheTVDB did not return a login token.");
         tvdbTokens.set(key, { token, expiresAt: Date.now() + tvdbTokenLifetime });
+        trimTvdbTokens();
         return token;
       })
       .catch(error => {
@@ -130,6 +248,7 @@
         throw error?.status === 401 ? new Error("TheTVDB rejected your API key. Check it in Metadata Sources.") : error;
       });
     tvdbTokens.set(key, { pending });
+    trimTvdbTokens();
     return pending;
   };
   const tvdbGet = async (path, settings) => {
@@ -163,6 +282,10 @@
   };
   const tvmazeResult = (show, category) => result("tvmaze", category, show.id, show.name, { year: show.premiered?.slice(0, 4), image: show.image?.medium || show.image?.original, description: textFromHtml(show.summary), rating: show.rating?.average, genres: show.genres || [], goal: 0, url: show.url, subtitle: [show.premiered?.slice(0, 4), show.type, show.network?.name || show.webChannel?.name].filter(Boolean).join(" · ") });
   const anilistFormats = category => category === "movie" ? "[MOVIE]" : "[TV, TV_SHORT, ONA, OVA, SPECIAL]";
+  const anilistData = response => {
+    if (!response?.data && response?.errors?.length) throw new Error(`AniList: ${response.errors.map(error => error.message).filter(Boolean).join("; ") || "request failed"}`);
+    return response?.data || {};
+  };
   const anilistRows = (rows, category) => (rows || []).map(row => result("anilist", category, row.id, row.title?.english || row.title?.romaji, { year: row.startDate?.year, image: row.coverImage?.large || row.coverImage?.medium, description: textFromHtml(row.description), rating: row.averageScore ? row.averageScore / 10 : 0, genres: row.genres || [], goal: category === "movie" ? 0 : (row.episodes || 0), url: row.siteUrl, subtitle: [row.startDate?.year, row.format, row.averageScore ? `★ ${(row.averageScore / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") }));
   const ANILIST_FIELDS = "id title{romaji english} coverImage{large medium} description startDate{year} averageScore episodes format genres siteUrl";
   const searchers = {
@@ -173,7 +296,26 @@
     anilist: async (query, category, settings) => {
       const gql = `query($q:String){Page(perPage:15){media(search:$q,type:ANIME,format_in:${anilistFormats(category)},sort:SEARCH_MATCH){${ANILIST_FIELDS}}}}`;
       const data = await requestJson("https://graphql.anilist.co", { ...settings, method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ query: gql, variables: { q: query } }) });
-      return anilistRows(data.data?.Page?.media, category);
+      return anilistRows(anilistData(data).Page?.media, category);
+    },
+    jikan: async (query, category, settings) => {
+      const type = category === "movie" ? "movie" : "tv";
+      const data = await sourceJson("jikan", `https://api.jikan.moe/v4/anime?q=${encode(query)}&type=${type}&limit=15&sfw=true`, settings);
+      return (data.data || []).map(row => result("jikan", category, row.mal_id, row.title_english || row.title || row.title_japanese, {
+        year: row.year || String(row.aired?.from || row.year || "").slice(0, 4), image: row.images?.webp?.large_image_url || row.images?.jpg?.large_image_url || row.images?.webp?.image_url || "",
+        description: textFromHtml(row.synopsis), rating: row.score || 0, genres: (row.genres || []).map(genre => genre.name).filter(Boolean), goal: category === "series" ? Number(row.episodes) || 0 : 0,
+        url: row.url || `https://myanimelist.net/anime/${row.mal_id}`, subtitle: [row.year || String(row.aired?.from || "").slice(0, 4), row.type, row.score ? `★ ${Number(row.score).toFixed(1)}` : ""].filter(Boolean).join(" · ")
+      }));
+    },
+    kitsu: async (query, category, settings) => {
+      const subtype = category === "movie" ? "movie" : "TV";
+      const url = `https://kitsu.io/api/edge/anime?filter[text]=${encode(query)}&filter[subtype]=${encode(subtype)}&page[limit]=15&sort=-userCount`;
+      const response = await sourceJson("kitsu", url, settings);
+      return (response.data || []).map(row => {
+        const attributes = row.attributes || {}, poster = attributes.posterImage || {};
+        const title = attributes.titles?.en || attributes.titles?.en_jp || attributes.canonicalTitle || "Untitled";
+        return result("kitsu", category, row.id, title, { year: String(attributes.startDate || "").slice(0, 4), image: poster.large || poster.medium || poster.small || "", description: textFromHtml(attributes.synopsis || attributes.description), rating: Number(attributes.averageRating) / 10 || 0, goal: category === "series" ? Number(attributes.episodeCount) || 0 : 0, genres: [], url: `https://kitsu.io/anime/${attributes.slug || row.id}`, subtitle: [attributes.startDate?.slice(0, 4), attributes.subtype, attributes.averageRating ? `★ ${(Number(attributes.averageRating) / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") });
+      });
     },
     omdb: async (query, category, settings) => {
       const key = settings.apiKeys?.omdb?.trim(); if (!key) throw new Error("Add an OMDb API key in Settings → Metadata Sources.");
@@ -225,13 +367,18 @@
     return value ? String(value).split(/,\s*/).filter(Boolean) : [];
   };
   const fillTemplate = (template, values) => String(template || "").replace(/\{(query|id|apikey)\}/g, (_, key) => key === "apikey" ? encodeURIComponent(values.apikey || "") : encodeURIComponent(values[key] ?? ""));
-  const safeHttp = url => { try { const parsed = new URL(url); return ["https:", "http:"].includes(parsed.protocol) ? parsed.href : ""; } catch { return ""; } };
   function customRequest(config, url, settings) {
-    const safe = safeHttp(url);
-    if (!safe) throw new Error("The custom source URL must start with http:// or https://.");
+    const safe = secureEndpoint(url);
     const headers = {};
-    if (config.apiKey && config.apiKeyHeader) headers[config.apiKeyHeader] = config.apiKey;
-    return requestJson(safe, { ...settings, headers });
+    if (config.apiKey && config.apiKeyHeader) {
+      const name = String(config.apiKeyHeader).trim();
+      if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,80}$/.test(name) || /^(host|cookie|origin|referer|content-length|connection|transfer-encoding|proxy-.*|sec-.*)$/i.test(name)) throw new Error("Choose a valid, non-restricted API-key header name.");
+      headers[name] = String(config.apiKey).slice(0, 2048);
+    }
+    // Custom hosts are intentionally outside the dev proxy allowlist. In local
+    // preview, call them directly and rely on their CORS policy instead of
+    // routing a user-configured endpoint through a fixed-provider proxy.
+    return requestJson(safe, { ...settings, headers, directPreview: true });
   }
   const mapCustomResult = (config, row, category, index) => {
     const map = config.map || {};
@@ -323,7 +470,7 @@
       return [tmdbRows(trending.results, "Trending"), tmdbRows(latest.results, "Latest")];
     });
     if (want("anilist")) jobs.push(async () => {
-      const list = async sort => { const gql = `query{Page(perPage:24){media(type:ANIME,format_in:${anilistFormats(category)},sort:${sort},isAdult:false){${ANILIST_FIELDS}}}}`; const data = await requestJson("https://graphql.anilist.co", { ...settings, method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ query: gql }) }); return anilistRows(data.data?.Page?.media, category); };
+      const list = async sort => { const gql = `query{Page(perPage:24){media(type:ANIME,format_in:${anilistFormats(category)},sort:${sort},isAdult:false){${ANILIST_FIELDS}}}}`; const data = await requestJson("https://graphql.anilist.co", { ...settings, method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ query: gql }) }); return anilistRows(anilistData(data).Page?.media, category); };
       const [trendingNow, popular] = await Promise.all([list("TRENDING_DESC"), list("POPULARITY_DESC")]);
       const noun = category === "movie" ? "anime movies" : "anime";
       return [{ source: "anilist", title: `Trending ${noun}`, items: trendingNow }, { source: "anilist", title: `Popular ${noun}`, items: popular }];
@@ -370,5 +517,7 @@
     if (!merged.length && settled.every(entry => entry.status === "rejected")) throw settled[0].reason;
     return merged;
   }
-  window.SplitAppDiscovery = Object.freeze({ appKey, search, searchSource, trending, testCustomSource, loadCustomDetails, requestJson, requestText, sourceJson, sourceText, tmdbGet, tvdbGet, encode, result, imageUrl, textFromHtml });
+  // Keep only entry points consumed by the app and detail controller. Provider
+  // helpers such as result/textFromHtml remain private implementation details.
+  window.SplitAppDiscovery = Object.freeze({ search, searchSource, trending, testCustomSource, loadCustomDetails, requestJson, sourceText, tmdbGet, tvdbGet, encode, imageUrl });
 })();

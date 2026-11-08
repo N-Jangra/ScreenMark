@@ -18,6 +18,9 @@ public class BackupSchedulerPlugin extends Plugin {
 
     @PluginMethod
     public void schedule(PluginCall call) {
+        int retention = Math.max(3, Math.min(20, call.getInt("retention", 10)));
+        getContext().getSharedPreferences("screenmark_backup_location", android.content.Context.MODE_PRIVATE)
+            .edit().putInt("retention", retention).apply();
         PeriodicWorkRequest work = new PeriodicWorkRequest.Builder(
             EncryptedBackupWorker.class, 24, TimeUnit.HOURS
         ).build();

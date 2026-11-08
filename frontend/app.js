@@ -3,6 +3,7 @@
 
   const config = window.APP_CONFIG;
   const titles = { discover: "Discover", details: "Details", add: "Add title", timeline: "Timeline", statistics: "Statistics", profile: "Profile", series: "Series", movies: "Movies", "series-favorites": "Series Favorites", "movie-favorites": "Movie Favorites", "series-watchlist": "Shows Watchlist", "movie-watchlist": "Movies Watchlist", settings: "Settings", sync: "Metadata Sync" };
+  const hasPage = name => Object.prototype.hasOwnProperty.call(titles, name);
   const navItems = [
     { key: "series-watchlist", label: "Shows", icon: "tv" },
     { key: "movie-watchlist", label: "Movies", icon: "clapperboard" },
@@ -11,22 +12,24 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "amoled", textSize: "normal", dateFormat: "auto", iconStyle: "inline", imageStorage: "all", favoritesOnly: false, reduceMotion: false, animationSpeed: "fast", animationCustom: 100, animationEasing: "smooth", pageTransition: "slide", cardEntrance: "none", animationStagger: false, sheetAnimation: "slide", pressEffect: "shrink", hoverLift: false, navBounce: false, progressAnimation: true, skeletonShimmer: false, mainColor: "default", accentColorDefaultVersion: 2,
-    showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, bottomBarLayout: "spread", navIcons: { discover: "bookmark", "series-watchlist": "tv", "movie-watchlist": "clapperboard", profile: "user-round" },
+    theme: "system", textSize: "normal", dateFormat: "auto", imageStorage: "all", reduceMotion: false, animationSpeed: "fast", pageTransition: "slide", sheetAnimation: "slide", pressEffect: "shrink", progressAnimation: true, progressStyle: "smooth", skeletonShimmer: true, placeholderAnimation: "shimmer", mainColor: "default", accentColorDefaultVersion: 2,
+    showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, navIcons: { discover: "bookmark", "series-watchlist": "tv", "movie-watchlist": "clapperboard", profile: "user-round" },
     navBar: { order: navKeys, visible: { "series-watchlist": true, "movie-watchlist": true, discover: true, profile: true } },
-    metadataSourceOrder: ["tvmaze", "anilist", "omdb"], customSources: [],
-    dashboardView: "list", dashboardDefaultCategory: "series", cardCorners: "rounded", dashboardGroupBy: "status", dashboardSort: "alphabetical-asc", dashboardStatusFilter: "all", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true,
-    automaticCompletion: "automatic", defaultStatus: "", progressIncrement: 1,
+    metadataSourceOrder: ["tvmaze", "imdb", "omdb", "tvdb", "tmdb", "rottentomatoes", "anilist", "kitsu", "jikan"], customSources: [],
+    dashboardDefaultCategory: "series", cardCorners: "rounded",
+    automaticCompletion: "automatic", defaultStatus: "",
     metadataSyncWorkers: 2, syncRequestDelay: 0, syncScope: "needed",
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30,
-    metadataMode: "online", metadataSources: { tvmaze: true, anilist: true, omdb: false, imdb: true, rottentomatoes: true }, metadataRefreshInterval: "weekly", offlineFallback: "cached", thumbnailSize: "medium",
+    metadataMode: "online", metadataSources: { tvmaze: true, imdb: true, omdb: false, tvdb: false, tmdb: false, rottentomatoes: true, anilist: true, kitsu: false, jikan: false }, metadataRefreshInterval: "weekly", offlineFallback: "cached", thumbnailSize: "medium",
     backgroundBackups: false,
     apiKeys: {}, sourceOptions: {}
   };
   const themePalettes = {
     light: { mode:"light", background:"#f8fafc", shell:"#f8fafc", surface:"#ffffff", surface2:"#f1f5f9", line:"rgba(15,23,42,.10)", text:"#0f172a", muted:"#64748b" },
+    dark: { mode:"dark", background:"#111827", shell:"#111827", surface:"#1f2937", surface2:"#273449", line:"rgba(203,213,225,.15)", text:"#f3f4f6", muted:"#a1aab8" },
     amoled: { mode:"dark", background:"#000000", shell:"#000000", surface:"#101010", surface2:"#1a1a1a", line:"rgba(255,255,255,.12)", text:"#f8fafc", muted:"#a1a1aa" }
   };
+  const defaultAccentColor = "#f5c518";
   function safeLucideName(value, fallback = "circle") {
     const name = String(value || "");
     if (name === "↺" || name === "↻") return "rotate-ccw";
@@ -34,40 +37,44 @@
     return window.lucide?.icons?.[exportName] ? name : fallback;
   }
   const storageKey = window.SplitAppBackend?.storageKey || `splitapp_${config.key}_v1`;
+  const removedPreferenceKeys = ["iconStyle", "bottomBarLayout", "progressIncrement", "animationCustom", "animationEasing", "cardEntrance", "animationStagger", "hoverLift", "navBounce"];
   const librarySnapshotKey = `${storageKey}_snapshot`;
   let librarySnapshotTimer = 0;
+  const isRecord = value => value !== null && typeof value === "object" && !Array.isArray(value);
   let stored = {};
-  try { stored = JSON.parse(localStorage.getItem(storageKey) || "{}"); } catch (_) { stored = {}; }
-  const prefs = { ...prefsDefaults, ...(stored.preferences || {}) };
-  const migrateAccentColorDefault = Number(stored.preferences?.accentColorDefaultVersion) < 2;
-  if (migrateAccentColorDefault && (!stored.preferences?.mainColor || stored.preferences.mainColor === "#6366f1")) prefs.mainColor = "default";
+  try { const parsed = JSON.parse(localStorage.getItem(storageKey) || "{}"); if (isRecord(parsed)) stored = parsed; } catch (_) {}
+  const storedPreferences = isRecord(stored.preferences) ? stored.preferences : {};
+  const prefs = { ...prefsDefaults, ...storedPreferences };
+  const migrateAccentColorDefault = Number(storedPreferences.accentColorDefaultVersion) < 2;
+  if (migrateAccentColorDefault && (!storedPreferences.mainColor || storedPreferences.mainColor === "#6366f1")) prefs.mainColor = "default";
   const motionIsReduced = () => Boolean(prefs.reduceMotion) || prefs.animationSpeed === "off" || Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
-  if (Number(stored.preferences?.motionProfileVersion) < 1) {
-    if (prefs.pageTransition === "slide") prefs.pageTransition = "rise";
-    if (prefs.cardEntrance === "rise") prefs.cardEntrance = "none";
-    if (prefs.animationStagger === true) prefs.animationStagger = false;
-    prefs.motionProfileVersion = 1;
+  function normalizeMotionPreferences() {
+    if (!["off", "fast", "normal", "slow"].includes(prefs.animationSpeed)) prefs.animationSpeed = prefsDefaults.animationSpeed;
+    if (!["slide", "fade", "zoom", "none"].includes(prefs.pageTransition)) prefs.pageTransition = prefsDefaults.pageTransition;
+    if (!["slide", "fade", "scale"].includes(prefs.sheetAnimation)) prefs.sheetAnimation = prefsDefaults.sheetAnimation;
+    if (!["shrink", "fade", "none"].includes(prefs.pressEffect)) prefs.pressEffect = prefsDefaults.pressEffect;
+    if (!["smooth", "snappy", "spring"].includes(prefs.progressStyle)) prefs.progressStyle = prefsDefaults.progressStyle;
+    if (!["shimmer", "pulse", "static"].includes(prefs.placeholderAnimation)) prefs.placeholderAnimation = prefsDefaults.placeholderAnimation;
+    prefs.progressAnimation = prefs.progressAnimation !== false;
+    prefs.skeletonShimmer = prefs.skeletonShimmer !== false;
   }
-  if (Number(stored.preferences?.motionProfileVersion) < 2) {
-    if (!["off", "fast", "normal"].includes(prefs.animationSpeed)) prefs.animationSpeed = "normal";
-    if (!["slide", "fade", "none"].includes(prefs.pageTransition)) prefs.pageTransition = "slide";
-    if (!["slide", "fade"].includes(prefs.sheetAnimation)) prefs.sheetAnimation = "slide";
-    prefs.cardEntrance = "none";
-    prefs.animationStagger = false;
-    prefs.hoverLift = false;
-    prefs.navBounce = false;
-    prefs.skeletonShimmer = false;
-    prefs.animationEasing = "smooth";
+  normalizeMotionPreferences();
+  if (Number(storedPreferences.motionProfileVersion) < 2) {
+    if (!["off", "fast", "normal", "slow"].includes(prefs.animationSpeed)) prefs.animationSpeed = "normal";
+    if (!["slide", "fade", "zoom", "none"].includes(prefs.pageTransition)) prefs.pageTransition = "slide";
+    if (!["slide", "fade", "scale"].includes(prefs.sheetAnimation)) prefs.sheetAnimation = "slide";
+    if (!Object.prototype.hasOwnProperty.call(storedPreferences, "skeletonShimmer")) prefs.skeletonShimmer = true;
     prefs.motionProfileVersion = 2;
   }
+  removedPreferenceKeys.forEach(key => delete prefs[key]);
   delete prefs.appLook;
   delete prefs.recentlyAddedLimit;
   delete prefs.appDisplayName;
   delete prefs.bottomBarCorners;
-  prefs.apiKeys = { ...prefsDefaults.apiKeys, ...(stored.preferences?.apiKeys || {}) };
-  prefs.sourceOptions = { ...(stored.preferences?.sourceOptions || {}) };
-  prefs.metadataSources = { ...prefsDefaults.metadataSources, ...(stored.preferences?.metadataSources || {}) };
-  const migrateManualMetadataSources = Number(stored.preferences?.manualMetadataSourcesVersion) < 1;
+  prefs.apiKeys = { ...prefsDefaults.apiKeys, ...(isRecord(storedPreferences.apiKeys) ? storedPreferences.apiKeys : {}) };
+  prefs.sourceOptions = { ...(isRecord(storedPreferences.sourceOptions) ? storedPreferences.sourceOptions : {}) };
+  prefs.metadataSources = { ...prefsDefaults.metadataSources, ...(isRecord(storedPreferences.metadataSources) ? storedPreferences.metadataSources : {}) };
+  const migrateManualMetadataSources = Number(storedPreferences.manualMetadataSourcesVersion) < 1;
   if (migrateManualMetadataSources) {
     prefs.metadataSources.imdb = true;
     prefs.metadataSources.rottentomatoes = true;
@@ -89,7 +96,7 @@
   function migrateLegacyMixItems(list = items) {
     let changed = false;
     for (const item of list) {
-      if (item.metadataSource !== "mix" && item.source !== "mix") continue;
+      if (!isRecord(item) || (item.metadataSource !== "mix" && item.source !== "mix")) continue;
       const preferred = item.mixPrimary?.key && item.mixPrimary?.providerId ? item.mixPrimary : null;
       const alternate = Object.entries(item.sourceIds || {}).find(([key, id]) => key !== "mix" && id != null && id !== "");
       const source = preferred || (alternate ? { key: alternate[0], providerId: alternate[1] } : null);
@@ -105,10 +112,9 @@
   function normalizeNavigationPrefs() {
     if (["icon", "icons-only"].includes(prefs.bottomBarStyle) && !Object.prototype.hasOwnProperty.call(stored.preferences || {}, "bottomBarLabels")) prefs.bottomBarLabels = "icons-only";
     if (prefs.bottomBarStyle === "soft") prefs.bottomBarStyle = "box";
-    if (["icon", "icons-only", "pill"].includes(prefs.bottomBarStyle)) prefs.bottomBarStyle = "box";
-    if (!["icon-color", "underline"].includes(prefs.bottomBarStyle)) prefs.bottomBarStyle = prefsDefaults.bottomBarStyle;
-    prefs.iconStyle = "inline";
-    if (!["icons-labels", "icons-only"].includes(prefs.bottomBarLabels)) prefs.bottomBarLabels = prefsDefaults.bottomBarLabels;
+    if (["icon", "icons-only"].includes(prefs.bottomBarStyle)) prefs.bottomBarStyle = "box";
+    if (!["icon-color", "underline", "pill", "minimal"].includes(prefs.bottomBarStyle)) prefs.bottomBarStyle = prefsDefaults.bottomBarStyle;
+    if (!["icons-labels", "icons-only", "labels-only"].includes(prefs.bottomBarLabels)) prefs.bottomBarLabels = prefsDefaults.bottomBarLabels;
     prefs.showSidebar = prefs.showSidebar !== false;
     prefs.showScrollbars = prefs.showScrollbars === true;
     if (prefs.bottomBarBackground === "solid") prefs.bottomBarTransparency = 100;
@@ -120,35 +126,33 @@
       if (legacyIcons[icon]) prefs.navIcons[key] = legacyIcons[icon];
       else if (icon !== "brand") prefs.navIcons[key] = safeLucideName(icon, prefsDefaults.navIcons[key]);
     });
-    prefs.bottomBarLayout = prefsDefaults.bottomBarLayout;
     prefs.navBar = { order: [...navKeys], visible: { ...prefsDefaults.navBar.visible } };
     const savedSourceOrder = Array.isArray(prefs.metadataSourceOrder) ? prefs.metadataSourceOrder : [];
     const sourceKeys = window.SplitAppSources.list().map(source => source.key);
     prefs.metadataSourceOrder = [...savedSourceOrder.filter((key, index) => sourceKeys.includes(key) && savedSourceOrder.indexOf(key) === index), ...sourceKeys.filter(key => !savedSourceOrder.includes(key))];
   }
-  let items = Array.isArray(stored.items) ? stored.items : [];
-  let history = Array.isArray(stored.history) ? stored.history : [];
+  let items = Array.isArray(stored.items) ? stored.items.filter(item => isRecord(item) && item.id != null && String(item.id) !== "") : [];
+  let history = Array.isArray(stored.history) ? stored.history.filter(isRecord) : [];
   const [initialHashPath, initialHashQuery = ""] = location.hash.slice(1).split("?");
   const initialRoute = initialHashPath.split("/");
   let discoverSource = new URLSearchParams(initialHashQuery).get("source") || "";
   const legacyExploreRoute = initialRoute[0] === "explore";
-  let page = legacyExploreRoute ? "settings" : initialRoute[0] === "search" ? "dashboard" : initialRoute[0] in titles ? initialRoute[0] : "series-watchlist";
-  if (page === "dashboard") page = "discover";
+  let page = legacyExploreRoute ? "settings" : ["dashboard", "search"].includes(initialRoute[0]) ? "discover" : hasPage(initialRoute[0]) ? initialRoute[0] : "series-watchlist";
   const legacyDashboardSettingsRoute = initialRoute[0] === "settings" && initialRoute[1] === "dashboard";
   let settingsGroup = page === "settings" ? (legacyExploreRoute ? "metadata-sources" : (legacyDashboardSettingsRoute || initialRoute[1] === "nav-layout") ? null : initialRoute[1] === "manage-backups" ? "backups" : initialRoute[1] || null) : null;
   let settingsParam = initialRoute[0] === "settings" ? new URLSearchParams(initialHashQuery).get("id") || "" : "", settingsFrom = "", renderedSettingsGroup;
   const statsSections = ["activity"];
   const normalizeStatsSection = section => section === "playtime" ? "watchtime" : section === "breakdown" ? "library" : section;
   let statsSubpage = page === "statistics" && statsSections.includes(initialRoute[1]) ? normalizeStatsSection(initialRoute[1]) : "";
-  let renderedRoute = null, inAppNav = false, statsRange = "week", statsCategory = "series", statsActivityDate = "", statsWatchtimePage = 0, addCategory = "", discoverCategoryChoice = "";
+  let renderedRoute = null, inAppNav = false, statsRange = "week", statsCategory = "series", statsActivityDate = "", addCategory = "", discoverCategoryChoice = "";
   let setPullToRefreshEnabled = () => {};
   let metadataSourceFilter = "all";
-  let entryDraftId = null, addReturnPage = "dashboard";
-  let libraryQuery = new URLSearchParams(location.search).get("q") || "";
+  let entryDraftId = null, addReturnPage = "discover";
   let discoverQuery = "";
   let addMetadataQuery = "";
   let timelineFilter = "all", timelineSearch = "", timelineMonth = "", timelineYear = "", timelineFrom = "", timelineTo = "";
   let profileCollectionSort = "alpha", profileStatusFilter = "all", profileGenreFilter = "all", profileStatusGroups = false;
+  let profileCollectionCacheRevision = -1;
   let discoverSearchFocused = false;
   let watchlistTab = "watchlist";
   let watchlistViews = { series: "list", movie: "list" };
@@ -160,35 +164,85 @@
   const currentWatchlistView = () => watchlistViews[page === "movie-watchlist" ? "movie" : "series"];
   let logQuery = "", logFrom = "", logTo = "";
   let historyQuery = "", historyFrom = "", historyTo = "";
+  const metadataSyncStorageKey = `${storageKey}_metadata_sync`;
+  const metadataSyncChunkSize = 256;
+  const metadataSyncChunkKey = index => `${metadataSyncStorageKey}_chunk_${index}`;
   let metadataSyncState = null;
-  let historyJournalLoaded = false, logJournalLoaded = false;
-  try { metadataSyncState = JSON.parse(localStorage.getItem(`${storageKey}_metadata_sync`) || "null"); } catch (_) {}
-  if (metadataSyncState?.entries) { let recovered = false; metadataSyncState.entries.forEach(entry => { if (entry.status === "running") { entry.status = "queued"; recovered = true; } }); if (recovered) { try { localStorage.setItem(`${storageKey}_metadata_sync`, JSON.stringify(metadataSyncState)); } catch (_) {} } }
-  let dashboardStatusFilter = prefs.dashboardStatusFilter || "all";
-  if (prefs.dashboardView === "cards") prefs.dashboardView = "grid";
-  if (["compact-list", "detailed-grid", "timeline"].includes(prefs.dashboardView)) prefs.dashboardView = "list";
-  if (!["list", "grid", "posters-plus", "compact-grid", "large-grid"].includes(prefs.dashboardView)) prefs.dashboardView = "list";
-  if (prefs.dashboardSort === "title") prefs.dashboardSort = "alphabetical-asc";
-  else if (prefs.dashboardSort === "recent") prefs.dashboardSort = "created-desc";
-  else if (["rating", "rating-desc", "highest-rated"].includes(prefs.dashboardSort)) prefs.dashboardSort = "alphabetical-asc";
-  if (!["all", ...config.categories[0].statuses].includes(dashboardStatusFilter)) dashboardStatusFilter = prefs.dashboardStatusFilter = "all";
+  let metadataSyncChunks = [], metadataSyncEntryPositions = new Map(), metadataSyncDirtyChunks = new Set();
+  let metadataSyncChunkCount = 0, metadataSyncPersistedChunkCount = 0, metadataSyncIndexedState = null;
+  let metadataSyncNeedsCheckpoint = false;
+  let historyJournalLoaded = false, logJournalLoaded = false, historyJournalRevision = 0;
+  const compactSyncEntry = entry => [String(entry.id ?? ""), String(entry.status || "queued"), String(entry.sourceIdentity || ""), Number(entry.retryAfterAt) || 0, String(entry.error || "").slice(0, 240)];
+  const inflateSyncEntry = entry => Array.isArray(entry)
+    ? { id: String(entry[0] ?? ""), status: String(entry[1] || "queued"), sourceIdentity: String(entry[2] || ""), retryAfterAt: Number(entry[3]) || 0, error: String(entry[4] || "") }
+    : entry;
+  const indexMetadataSyncState = state => {
+    metadataSyncChunks = []; metadataSyncEntryPositions = new Map();
+    (state?.entries || []).forEach((entry, index) => {
+      const chunkIndex = Math.floor(index / metadataSyncChunkSize), offset = index % metadataSyncChunkSize;
+      (metadataSyncChunks[chunkIndex] ||= [])[offset] = compactSyncEntry(entry);
+      metadataSyncEntryPositions.set(String(entry.id), index);
+    });
+    metadataSyncChunkCount = metadataSyncChunks.length;
+    metadataSyncIndexedState = state;
+  };
+  const markMetadataSyncEntryDirty = entry => {
+    if (metadataSyncIndexedState !== metadataSyncState || !entry) return;
+    const position = metadataSyncEntryPositions.get(String(entry.id));
+    if (position === undefined) return;
+    const chunkIndex = Math.floor(position / metadataSyncChunkSize);
+    metadataSyncChunks[chunkIndex][position % metadataSyncChunkSize] = compactSyncEntry(entry);
+    metadataSyncDirtyChunks.add(chunkIndex);
+  };
+  try {
+    const parsed = JSON.parse(localStorage.getItem(metadataSyncStorageKey) || "null");
+    if (isRecord(parsed) && parsed.version === 3) {
+      const requestedChunkCount = Math.floor(Number(parsed.chunkCount) || 0);
+      const chunkCount = Math.max(0, Math.min(4096, requestedChunkCount)), entries = [];
+      let badChunk = requestedChunkCount !== chunkCount;
+      for (let index = 0; index < chunkCount; index++) {
+        try {
+          const chunk = JSON.parse(localStorage.getItem(metadataSyncChunkKey(index)) || "null");
+          if (!Array.isArray(chunk)) { badChunk = true; continue; }
+          entries.push(...chunk);
+        } catch (_) { badChunk = true; }
+      }
+      metadataSyncState = { version: 3, startedAt: Number(parsed.startedAt) || 0, finishedAt: Number(parsed.finishedAt) || 0, scope: String(parsed.scope || "needed"), entries };
+      metadataSyncPersistedChunkCount = chunkCount;
+      metadataSyncNeedsCheckpoint = badChunk;
+    } else if (isRecord(parsed)) metadataSyncState = parsed;
+  } catch (_) {}
+  if (metadataSyncState) {
+    const sourceEntries = Array.isArray(metadataSyncState.entries) ? metadataSyncState.entries : [];
+    const validEntries = sourceEntries.map(inflateSyncEntry)
+      .filter(entry => isRecord(entry) && entry.id != null && String(entry.id) !== "")
+      .map(entry => ({ id: String(entry.id), status: ["queued", "running", "done", "checked", "failed", "skipped"].includes(entry.status) ? entry.status : "queued", sourceIdentity: String(entry.sourceIdentity || ""), retryAfterAt: Number(entry.retryAfterAt) || 0, error: String(entry.error || "").slice(0, 240) }));
+    let recovered = !Array.isArray(metadataSyncState.entries) || validEntries.length !== sourceEntries.length;
+    metadataSyncState.entries = validEntries;
+    validEntries.forEach(entry => { if (entry.status === "running") { entry.status = "queued"; recovered = true; } });
+    metadataSyncNeedsCheckpoint ||= recovered || metadataSyncState.version !== 3;
+    metadataSyncState.version = 3;
+    indexMetadataSyncState(metadataSyncState);
+    if (metadataSyncNeedsCheckpoint) metadataSyncChunks.forEach((_, index) => metadataSyncDirtyChunks.add(index));
+  }
   delete prefs.defaultCategory;
   const oldCategoryPreference = prefs.dashboardDefaultCategory;
-  let activeCategory = oldCategoryPreference === "remember" ? "series" : oldCategoryPreference || "series";
-  if (!config.categories.some(category => category.key === activeCategory)) activeCategory = "series";
+  let preferredCategory = oldCategoryPreference === "remember" ? "series" : oldCategoryPreference || "series";
+  if (!config.categories.some(category => category.key === preferredCategory)) preferredCategory = "series";
   const migrateDashboardCategory = oldCategoryPreference === "remember" || !oldCategoryPreference;
-  if (migrateDashboardCategory) prefs.dashboardDefaultCategory = activeCategory;
+  if (migrateDashboardCategory) prefs.dashboardDefaultCategory = preferredCategory;
+  ["dashboardView", "dashboardGroupBy", "dashboardSort", "dashboardStatusFilter", "dashboardRowActions", "favoritesOnly", "oneHandedMode", "tabletTwoColumn"].forEach(key => delete prefs[key]);
   let toastTimer;
   const detailIdFromQuery = query => { const raw = String(query || ""); return raw.startsWith("=") ? decodeURIComponent(raw.slice(1)) : new URLSearchParams(raw).get("id") || ""; };
-  let detailTab = "", detailSeason = "", detailStack = [], detailRef = null, detailRefOffset = 0, refData = null, refLoading = false, refError = "", refRequest = 0;
-  let detailItemId = initialRoute[0] === "details" ? detailIdFromQuery(initialHashQuery) || null : null, detailPreview = null, detailData = null, detailError = "", detailLoading = false, detailEditMode = false, detailReturnPage = "dashboard", detailRequest = 0;
+  let detailTab = "", detailSeason = "", detailStack = [], detailRef = null, detailRefOffset = 0, refData = null, refLoading = false, refError = "", refRequest = 0, detailAbortController = null, refAbortController = null;
+  let detailItemId = initialRoute[0] === "details" ? detailIdFromQuery(initialHashQuery) || null : null, detailPreview = null, detailData = null, detailError = "", detailLoading = false, detailEditMode = false, detailReturnPage = "discover", detailRequest = 0;
   let detailImagePosition = 0;
-  const dashboardPageSize = 40;
-  let dashboardLazyObserver = null;
   let searchRenderTimer = null;
-  let discoverRequestId = 0;
+  let discoverRequestId = 0, discoverAbortController = null;
   let addMetadataRequestId = 0;
   let localMutationRevision = 0;
+  let fullMutationRevision = 0, metadataMutationRevision = 0, historyReplaceRevision = 0;
+  const itemMutationRevisions = new Map();
   let discoverCache = null;
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -200,6 +254,16 @@
     return target?.closest(selector) || null;
   };
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  function imageMarkup(item, source, alt = "", fallback = "", className = "") {
+    const useLocalThumb = Boolean(item?.id && item.thumbnailPath && !item.localThumbnailData && !item.localPortraitData && !item.customCover);
+    if (!source && !useLocalThumb) return fallback;
+    const imageSource = useLocalThumb
+      ? `data-deferred-image data-local-item-id="${esc(item.id)}" data-lazy-src="${esc(source || "")}"`
+      : `src="${esc(source)}"`;
+    const placeholder = useLocalThumb ? fallback : fallback.replace(/^(<[a-z][\w-]*)(?=[\s>])/i, "$1 hidden");
+    return `<img ${imageSource}${useLocalThumb ? " hidden" : ""}${className ? ` class="${esc(className)}"` : ""} alt="${esc(alt)}" loading="lazy" decoding="async" onerror="this.hidden=true;if(this.nextElementSibling)this.nextElementSibling.hidden=false">${placeholder}`;
+  }
+  window.SplitAppImageMarkup = imageMarkup;
   const category = key => config.categories.find(item => item.key === key) || config.categories[0];
   const labelCategory = key => category(key)?.label || key;
   // Status roles let the shared UI talk about "queued / active / done" without hard-coding status names.
@@ -208,8 +272,17 @@
   const statusIcon = status => ({ [roles.queued]: "bookmark", [roles.active]: "circle-play", [roles.hold]: "circle-pause", [roles.dropped]: "circle-x", [roles.done]: "circle-check" })[status] || "circle";
   const defaultStatus = key => category(key)?.statuses?.[0] || roles.queued;
   const seriesProgressComplete = (item, info, progress = Number(item?.progress) || 0) => info?.total ? progress >= info.total : Number(item?.goal) > 0 && progress >= Number(item.goal);
+  const latestEpisodeActivityByItem = () => {
+    const latest = new Map();
+    history.forEach(entry => {
+      if (entry?.type !== "episode" || /marked unwatched/i.test(String(entry.action || ""))) return;
+      const id = String(entry.itemId || ""), at = Number(entry.at) || 0;
+      if (id && at > (latest.get(id) || 0)) latest.set(id, at);
+    });
+    return latest;
+  };
   function applySeriesInactivityTransitions() {
-    const now = Date.now(), changed = new Set();
+    const now = Date.now(), changed = new Set(), latestActivity = latestEpisodeActivityByItem();
     for (const item of items) {
       if (item.category === "movie") {
         if ([roles.active, roles.hold].includes(item.status)) { item.status = roles.queued; item.updatedAt = now; changed.add(item.id); }
@@ -222,8 +295,7 @@
         continue;
       }
       if ([roles.done, roles.dropped].includes(item.status)) continue;
-      const lastWatchedEvent = history.filter(entry => String(entry.itemId) === String(item.id) && entry.type === "episode" && !/marked unwatched/i.test(String(entry.action || ""))).sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0))[0];
-      const lastProgressAt = Number(item.lastProgressAt) || Number(lastWatchedEvent?.at) || Number(item.updatedAt) || Number(item.createdAt) || now;
+      const lastProgressAt = Number(item.lastProgressAt) || latestActivity.get(String(item.id)) || Number(item.updatedAt) || Number(item.createdAt) || now;
       if (!Number(item.lastProgressAt)) { item.lastProgressAt = lastProgressAt; changed.add(item.id); }
       const idleFor = now - lastProgressAt;
       const nextStatus = idleFor >= 30 * 86400000 ? roles.dropped : idleFor >= 7 * 86400000 ? roles.hold : item.status === roles.queued ? roles.active : item.status;
@@ -233,6 +305,7 @@
       changed.add(item.id);
     }
     if (changed.size) persist({ ids: [...changed] });
+    scheduleSeriesInactivityCheck(latestActivity);
     return changed.size > 0;
   }
   // Each open sheet/dialog gets a history entry so the back button (or Android back) closes it first.
@@ -267,10 +340,11 @@
   }
   function closePopup(dialog, { preserveHistory = false, immediate = false, fromPop = false } = {}) {
     if (!dialog) return;
-    if (!immediate && dialog.id === "setting-picker-dialog" && dialog.open && !dialog.dataset.closeAnimating) {
+    if (!immediate && dialog.matches?.(".choice-dialog, dialog.ios-action-sheet") && dialog.open && !dialog.dataset.closeAnimating) {
       const reduced = motionIsReduced();
-      const speed = prefs.animationSpeed === "fast" ? 120 : 180;
-      const duration = reduced ? 0 : Math.min(160, Math.max(0, speed * .8));
+      const preferredSpeed = prefs.animationSpeed === "fast" ? 120 : prefs.animationSpeed === "slow" ? 280 : 180;
+      const speed = document.documentElement.dataset.lowend === "true" ? Math.min(preferredSpeed, 120) : preferredSpeed;
+      const duration = reduced ? 0 : Math.min(240, Math.max(0, speed * .8));
       if (duration) {
         const popped = fromPop || closingFromPop;
         dialog.dataset.closeAnimating = "true"; dialog.classList.add("is-closing");
@@ -299,8 +373,17 @@
   // Bursts are coalesced into one write ~250ms after the last change.
   let persistTimer = 0, persistWaiters = [], persistFull = false;
   const persistIds = new Set(), persistRemoved = new Set();
+  function noteLocalMutation(scope, revision) {
+    if (!scope || typeof scope !== "object") { fullMutationRevision = revision; historyReplaceRevision = revision; return; }
+    if (scope.meta) metadataMutationRevision = revision;
+    if (scope.replaceHistory) historyReplaceRevision = revision;
+    const ids = [...(scope.ids || []), ...(scope.removed || [])];
+    if (!scope.meta && !ids.length) { fullMutationRevision = revision; return; }
+    ids.forEach(id => itemMutationRevisions.set(String(id), revision));
+  }
   function persist(scope) {
     localMutationRevision += 1;
+    noteLocalMutation(scope, localMutationRevision);
     if (scope && typeof scope === "object") {
       (scope.ids || []).forEach(id => persistIds.add(String(id)));
       (scope.removed || []).forEach(id => persistRemoved.add(String(id)));
@@ -311,10 +394,10 @@
     return promise;
   }
   const migratedStoredMixItems = migrateLegacyMixItems();
-  if (migratedStoredMixItems || seedLocalApiKeys || migrateManualMetadataSources || migrateAccentColorDefault) persist();
   const migrateLocalRatings = items.some(item => Object.prototype.hasOwnProperty.call(item, "rating") || Object.values(item.episodeNotes || {}).some(note => Object.prototype.hasOwnProperty.call(note || {}, "rating")));
   const legacyPreferences = stored.preferences || {};
-  const migrateRemovedPreferences = ["showRatings", "ratingFormat", "dashboardDensity", "font", "categoryColors", "showThumbnails", "showProgress"].some(key => Object.prototype.hasOwnProperty.call(legacyPreferences, key)) || ["rating", "rating-desc", "highest-rated"].includes(legacyPreferences.dashboardSort) || Boolean(legacyPreferences.theme && !["system", "light", "amoled"].includes(legacyPreferences.theme));
+  const migrateRemovedPreferences = ["showRatings", "ratingFormat", "dashboardDensity", "font", "categoryColors", "showThumbnails", "showProgress", ...removedPreferenceKeys].some(key => Object.prototype.hasOwnProperty.call(legacyPreferences, key)) || ["rating", "rating-desc", "highest-rated"].includes(legacyPreferences.dashboardSort) || Boolean(legacyPreferences.theme && !["system", "light", "dark", "amoled"].includes(legacyPreferences.theme));
+  const pendingStartupMigration = migratedStoredMixItems || seedLocalApiKeys || migrateManualMetadataSources || migrateAccentColorDefault || migrateLocalRatings || migrateDashboardCategory || migrateRemovedPreferences;
   const stripLocalScores = item => {
     if (!item || typeof item !== "object") return item;
     delete item.rating;
@@ -326,20 +409,26 @@
     return item;
   };
   items.forEach(stripLocalScores);
-  delete prefs.showRatings; delete prefs.ratingFormat; delete prefs.dashboardDensity; delete prefs.font; delete prefs.categoryColors; delete prefs.showThumbnails; delete prefs.showProgress;
-  prefs.theme = "amoled";
-  if (migrateLocalRatings) persist();
-  else if (migrateDashboardCategory || migrateRemovedPreferences) persist({ meta: true });
+  delete prefs.showRatings; delete prefs.ratingFormat; delete prefs.dashboardDensity; delete prefs.font; delete prefs.categoryColors; delete prefs.showThumbnails; delete prefs.showProgress; removedPreferenceKeys.forEach(key => delete prefs[key]);
+  if (!["system", "light", "dark", "amoled"].includes(prefs.theme)) prefs.theme = prefsDefaults.theme;
   function flushPersist() {
     clearTimeout(persistTimer); persistTimer = 0;
     const waiters = persistWaiters; persistWaiters = [];
     if (!waiters.length) return;
     const scope = persistFull ? { full: true } : { ids: [...persistIds], removed: [...persistRemoved] };
     persistFull = false; persistIds.clear(); persistRemoved.clear();
-    const write = window.SplitAppBackend?.save({ items, history, preferences: prefs }, scope);
     const finish = () => waiters.forEach(resolve => resolve());
-    if (write?.catch) write.catch(error => { recordLog("error", `App data save failed: ${error.message || error}`); }).then(finish);
-    else finish();
+    try {
+      const changedItems = scope && typeof scope === "object" && scope.ids?.length
+        ? scope.ids.map(itemById).filter(Boolean)
+        : undefined;
+      const write = window.SplitAppBackend?.save({ items, history, preferences: prefs, changedItems }, scope);
+      if (write?.then) Promise.resolve(write).catch(error => { recordLog("error", `App data save failed: ${error.message || error}`); }).then(finish);
+      else finish();
+    } catch (error) {
+      recordLog("error", `App data save failed: ${error?.message || error}`);
+      finish();
+    }
   }
   function recordLog(level, message) {
     try {
@@ -383,21 +472,15 @@
     saveLibrarySnapshot();
   }
   function toast(message) {
-    const node = $("#toast"); node.classList.remove("has-action"); node.textContent = message; node.classList.add("show");
+    const node = $("#toast"); node.textContent = message; node.classList.add("show");
     clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove("show"), 2300);
   }
-  function toastUndo(message, undo, ms = 8000) {
-    const node = $("#toast"); node.textContent = "";
-    const label = document.createElement("span"); label.textContent = message;
-    const button = document.createElement("button"); button.type = "button"; button.className = "toast-undo"; button.textContent = "Undo";
-    button.addEventListener("click", async event => { event.stopPropagation(); node.classList.remove("show", "has-action"); try { await undo(); } catch (error) { recordLog("error", `Undo failed: ${error?.message || error}`); toast("Could not undo that."); } });
-    node.append(label, button); node.classList.add("show", "has-action"); clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove("show", "has-action"), ms);
-  }
   function applyPreferences() {
+    normalizeMotionPreferences();
     document.body.dataset.page = page;
     const selectedTheme = prefs.theme === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "amoled" : "light") : prefs.theme;
     const palette = themePalettes[selectedTheme] || themePalettes.amoled;
-    const accentColor = prefs.mainColor === "default" ? (palette.mode === "light" ? "#6366f1" : "#f5c518") : prefs.mainColor || "#6657d9";
+    const accentColor = prefs.mainColor === "default" ? defaultAccentColor : prefs.mainColor || defaultAccentColor;
     document.body.dataset.theme = palette.mode;
     document.body.dataset.palette = themePalettes[selectedTheme] ? selectedTheme : "amoled";
     document.body.style.background = palette.background;
@@ -412,7 +495,9 @@
       for (let step = 0; step <= 20 && Math.min(...surfaces.map(surface => contrast(color, surface))) < 4.5; step++) color = color.map((v, i) => Math.round(v + (target[i] - v) * .12));
       return `rgb(${color.join(",")})`;
     };
+    const accentForeground = contrast(toRgb(accentColor), [255, 255, 255]) >= contrast(toRgb(accentColor), [17, 24, 39]) ? "#ffffff" : "#111827";
     document.body.style.setProperty("--accent-text", readable(accentColor));
+    document.body.style.setProperty("--accent-foreground", accentForeground);
     document.body.style.setProperty("--warn-text", readable("#d97706"));
     document.body.style.setProperty("--danger-text", readable("#dc3545"));
     document.body.style.setProperty("--ok-text", readable("#16a34a"));
@@ -437,30 +522,34 @@
     root.dataset.lowend = String(lowEnd);
     root.dataset.nativeAndroid = String(nativeAndroid);
     document.body.dataset.corners = prefs.cardCorners;
-    document.body.dataset.dashboardView = prefs.dashboardView;
-    document.body.dataset.oneHanded = prefs.oneHandedMode || "off";
-    document.body.dataset.tabletColumns = String(prefs.tabletTwoColumn !== false);
     document.body.dataset.barStyle = prefs.bottomBarStyle;
     document.body.dataset.barLabels = prefs.bottomBarLabels;
     document.body.dataset.sidebar = prefs.showSidebar ? "shown" : "hidden";
     document.documentElement.dataset.showScrollbars = prefs.showScrollbars === true ? "true" : "false";
     window.Capacitor?.Plugins?.ScrollbarControl?.setEnabled?.({ enabled: prefs.showScrollbars === true }).catch(() => {});
-    document.body.dataset.barLayout = prefsDefaults.bottomBarLayout;
     document.body.dataset.iconStyle = "inline";
     window.SplitAppDates?.setFormat(prefs.dateFormat); window.SplitAppBackend?.setImageStorage?.(prefs.imageStorage);
     $("#bottom-bar").dataset.bg = prefs.bottomBarBackground;
     document.body.dataset.barBackground = prefs.bottomBarBackground;
-    document.documentElement.style.setProperty("--accent", accentColor);
+    document.body.style.setProperty("--accent", accentColor);
+    document.body.style.setProperty("--legacy-accent", accentColor);
+    document.body.style.setProperty("--legacy-glow", `color-mix(in srgb, ${accentColor} 15%, transparent)`);
+    document.body.style.setProperty("--d-gold", accentColor);
+    document.body.style.setProperty("--d-gold-fg", accentForeground);
+    document.body.style.setProperty("--d-gold-soft", `color-mix(in srgb, ${accentColor} ${palette.mode === "light" ? "12%" : "20%"}, ${palette.surface})`);
+    document.body.style.setProperty("--d-gold-border", `color-mix(in srgb, ${accentColor} 32%, transparent)`);
+    document.documentElement.style.setProperty("--ios-violet", accentColor);
+    document.documentElement.style.setProperty("--ios-indigo", accentColor);
+    document.documentElement.style.setProperty("--ios-grad", `linear-gradient(135deg, ${accentColor}, color-mix(in srgb, ${accentColor} 78%, white))`);
     document.documentElement.style.setProperty("--bar-alpha", String(Math.max(0, Math.min(100, Number(prefs.bottomBarTransparency))) / 100));
     document.documentElement.style.setProperty("--text-size", prefs.textSize === "large" ? "18px" : prefs.textSize === "small" ? "14px" : "16px");
     document.documentElement.style.setProperty("--item-art-width", prefs.thumbnailSize === "small" ? "48px" : prefs.thumbnailSize === "large" ? "72px" : "58px");
     document.documentElement.style.setProperty("--item-art-height", prefs.thumbnailSize === "small" ? "58px" : prefs.thumbnailSize === "large" ? "88px" : "72px");
     document.documentElement.style.setProperty("--discover-art-height", prefs.thumbnailSize === "small" ? "110px" : prefs.thumbnailSize === "large" ? "190px" : "150px");
-    const speedMs = prefs.reduceMotion || prefs.animationSpeed === "off" ? 0 : prefs.animationSpeed === "fast" ? 120 : 180;
+    const speedMs = prefs.reduceMotion || prefs.animationSpeed === "off" ? 0 : prefs.animationSpeed === "fast" ? 120 : prefs.animationSpeed === "slow" ? 280 : 180;
     document.documentElement.style.setProperty("--speed", `${speedMs}ms`);
-    const easing = { smooth: ["cubic-bezier(.2,.7,.2,1)", "cubic-bezier(.32,.72,0,1)"], spring: ["cubic-bezier(.32,.72,0,1)", "cubic-bezier(.32,.72,0,1)"], bouncy: ["cubic-bezier(.34,1.56,.64,1)", "cubic-bezier(.34,1.56,.64,1)"], linear: ["linear", "linear"] }[prefs.animationEasing] || ["cubic-bezier(.2,.7,.2,1)", "cubic-bezier(.32,.72,0,1)"];
-    document.documentElement.style.setProperty("--ease-out", easing[0]); document.documentElement.style.setProperty("--ease-spring", easing[1]);
-    Object.entries({ pageAnim: prefs.pageTransition || "slide", cardAnim: prefs.cardEntrance || "rise", stagger: prefs.animationStagger !== false, sheetAnim: prefs.sheetAnimation || "slide", press: prefs.pressEffect || "shrink", hoverLift: prefs.hoverLift === true, navBounce: prefs.navBounce !== false, progressAnim: prefs.progressAnimation !== false, shimmer: prefs.skeletonShimmer !== false }).forEach(([key, value]) => { document.body.dataset[key] = String(value); });
+    const placeholderAnimation = prefs.skeletonShimmer ? prefs.placeholderAnimation : "static";
+    Object.entries({ pageAnim: prefs.pageTransition, sheetAnim: prefs.sheetAnimation, press: prefs.pressEffect, progressAnim: prefs.progressAnimation, progressStyle: prefs.progressStyle, shimmer: placeholderAnimation !== "static", placeholderAnim: placeholderAnimation }).forEach(([key, value]) => { document.body.dataset[key] = String(value); });
     $("#app-kicker").textContent = config.name.toUpperCase();
     document.title = `${config.name} · ${page === "settings" && settingsGroup ? settingsGroup : titles[page]}`;
     renderSidebar();
@@ -523,10 +612,10 @@
   function goto(next, updateHistory = true, back = false) {
     if (!back) rememberScroll();
     if (next === "explore") next = "settings/metadata-sources";
-    if (next === "dashboard") next = "discover";
-    if (next === "search") next = "dashboard";
+    if (next === "dashboard" || next === "search") next = "discover";
     const [nextPage, nextSection] = String(next).split("/");
-    page = nextPage in titles ? nextPage : "discover";
+    page = hasPage(nextPage) ? nextPage : "discover";
+    if (page !== "discover") { discoverAbortController?.abort(); discoverAbortController = null; suggestionsAbortController?.abort(); suggestionsAbortController = null; suggestionsPendingKey = ""; suggestionsRequest++; }
     if (page === "series-watchlist" || page === "movie-watchlist") watchlistTab = "watchlist";
     statsSubpage = page === "statistics" && statsSections.includes(nextSection) ? normalizeStatsSection(nextSection) : "";
     if (page !== "discover" && !(page === "details" && detailReturnPage === "discover")) { discoverSource = ""; discoverQuery = ""; discoverRequestId++; discoverCache = null; }
@@ -541,9 +630,14 @@
   // Keep the reading position for each page and settings subsection when browser Back is used.
   const scrollMemory = new Map();
   const scrollKey = () => page === "settings" ? `settings/${settingsGroup || ""}` : page === "details" ? `details/${detailItemId || ""}` : page === "statistics" ? `statistics/${statsSubpage || ""}` : page;
-  const rememberScroll = () => scrollMemory.set(scrollKey(), window.scrollY);
+  const rememberScroll = () => {
+    const key = scrollKey();
+    scrollMemory.delete(key); scrollMemory.set(key, window.scrollY);
+    while (scrollMemory.size > 100) scrollMemory.delete(scrollMemory.keys().next().value);
+  };
   const restoreScroll = () => {
-    const top = scrollMemory.get(scrollKey()) || 0;
+    const key = scrollKey(), top = scrollMemory.get(key) || 0;
+    if (scrollMemory.has(key)) { scrollMemory.delete(key); scrollMemory.set(key, top); }
     window.scrollTo({ top, behavior: "auto" });
     if (top) requestAnimationFrame(() => window.scrollTo({ top, behavior: "auto" }));
   };
@@ -562,7 +656,6 @@
     const route = page === "details" ? detailRoute() : page === "settings" && settingsGroup ? `settings/${settingsGroup}${settingsParam ? `?id=${encodeURIComponent(settingsParam)}` : ""}` : page === "discover" && discoverSource ? `discover?source=${encodeURIComponent(discoverSource)}` : page === "statistics" && statsSubpage ? `statistics/${statsSubpage}` : page;
     const url = new URL(location.href);
     url.search = "";
-    if (page === "dashboard" && libraryQuery) url.searchParams.set("q", libraryQuery);
     url.hash = route;
     const nextUrl = `${url.pathname}${url.search}${url.hash}`;
     if (`${location.pathname}${location.search}${location.hash}` !== nextUrl) {
@@ -583,6 +676,9 @@
     return value;
   }
   function pageContext() {
+    const activeDetailItem = detailPreview || itemById(String(detailItemId));
+    const activeDetailSource = activeDetailItem?.metadataSource || activeDetailItem?.source || "";
+    const detailCastOnline = Boolean(prefs.metadataMode !== "offline" && navigator.onLine && activeDetailSource && window.SplitAppSources?.isEnabled?.(activeDetailSource, prefs));
     let logEntries = [];
     try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
     if (settingsGroup === "logcat" && !logJournalLoaded) {
@@ -593,35 +689,58 @@
     try { const saved = JSON.parse(localStorage.getItem(`${storageKey}_history`) || "[]"); if (Array.isArray(saved)) changeLog = saved; } catch (_) {}
     if (settingsGroup === "history" && !historyJournalLoaded) {
       historyJournalLoaded = true;
-      window.SplitAppBackend?.readJournal?.("history").then(rows => { if (page === "settings" && settingsGroup === "history" && Array.isArray(rows)) { const local = changeLog; const keys = row => `${row.action}|${row.at}|${row.detail || ""}`; changeLog = [...new Map([...rows, ...local].map(row => [keys(row), row])).values()].sort((a, b) => (Number(b.at) || Date.parse(b.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0)); try { localStorage.setItem(`${storageKey}_history`, JSON.stringify(changeLog.slice(0, 2000))); } catch (_) {} render(); } }).catch(() => {});
+      const readRevision = historyJournalRevision;
+      window.SplitAppBackend?.readJournal?.("history").then(rows => { if (readRevision === historyJournalRevision && page === "settings" && settingsGroup === "history" && Array.isArray(rows)) { const local = changeLog; const keys = row => `${row.action}|${row.at}|${row.detail || ""}`; changeLog = [...new Map([...rows, ...local].map(row => [keys(row), row])).values()].sort((a, b) => (Number(b.at) || Date.parse(b.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0)); try { localStorage.setItem(`${storageKey}_history`, JSON.stringify(changeLog.slice(0, 2000))); } catch (_) {} render(); } }).catch(() => {});
     }
-    return { statsSubpage, statsCategory, statsActivityDate, statsRange, statsWatchtimePage, profileCollectionSort, profileStatusFilter, profileGenreFilter, profileStatusGroups, watchlistTab, watchlistView: currentWatchlistView(), metadataSyncState, changeLog, history, logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, logEntries, roles, trackedStatuses, statusIcon, activeCategory, discoverCategory: currentDiscoverCategory(), libraryQuery, discoverQuery, addMetadataQuery, statsRange, settingsGroup, settingsParam, settingsFrom, discoverSource, dashboardStatusFilter, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: items.find(item => item.id === entryDraftId) || null, addReturnPage, navItems, metadataSourceFilter, titleIdentity,
-      detailData, detailError, detailLoading, detailReturnPage, detailRef, detailRefOffset, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, refItem: detailRef?.type === "episode" ? items.find(entry => entry.category === "series" && (entry.cachedDetails?.sections || []).some(section => section.kind === "episodes" && section.items.some(row => String(row.id) === String(detailRef.id) || String(row.ref?.id) === String(detailRef.id)))) || null : null, category, labelCategory, defaultStatus, esc, safeLucideName };
-  }
-  function dashboardGroupItems(groupKey) {
-    const library = window.SplitAppLibrary.create(pageContext());
-    const groupBy = prefs.dashboardGroupBy || "status";
-    if (groupBy === "status") return library.dashboardItems(groupKey, libraryQuery);
-    let games = library.dashboardItems(null, libraryQuery);
-    if (dashboardStatusFilter !== "all") games = games.filter(item => item.status === dashboardStatusFilter);
-    if (groupBy === "category") return games.filter(item => String(item.category || "other") === groupKey);
-    if (groupBy === "release") return games.filter(item => String(item.year || "Unknown release date") === groupKey);
-    return games;
+    const parentForRef = detailRef?.type === "episode" ? itemById(String(detailItemId)) : null;
+    const refItem = parentForRef?.category === "series" && (parentForRef.cachedDetails?.sections || []).some(section => section.kind === "episodes" && (section.items || []).some(row => String(row.id) === String(detailRef.id) || String(row.ref?.id) === String(detailRef.id))) ? parentForRef : null;
+    return { statsSubpage, statsCategory, statsActivityDate, statsRange, profileCollectionSort, profileStatusFilter, profileGenreFilter, profileStatusGroups, libraryLoading: !libraryRestoreComplete, watchlistTab, watchlistView: currentWatchlistView(), metadataSyncState, metadataSyncCounts: page === "sync" ? syncCounts() : null, changeLog, history, logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, itemById, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, logEntries, roles, trackedStatuses, statusIcon, discoverCategory: currentDiscoverCategory(), discoverQuery, addMetadataQuery, settingsGroup, settingsParam, settingsFrom, discoverSource, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: itemById(String(entryDraftId)) || null, addReturnPage, navItems, metadataSourceFilter, titleIdentity,
+      detailData, detailError, detailLoading, detailReturnPage, detailRef, detailRefOffset, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, detailCastOnline, refItem, category, labelCategory, defaultStatus, esc, imageMarkup, safeLucideName };
   }
   // ---- Device artwork cache (IndexedDB blobs) ----
   // Order for every cover: on-device cache -> online (instant, HTTP-cached) -> saved-folder files.
   // The slow Android folder (storage framework) only fills the cache in the background.
   const nativeAndroid = Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor?.getPlatform?.() === "android");
   let itemIndex = new Map();
+  let itemIndexItems = null;
+  let providerItemIndex = new Map();
+  let providerItemIndexItems = null;
+  let providerItemIndexRevision = -1;
+  let titleIndex = new Map();
+  let titleIndexItems = null;
+  let titleIndexRevision = -1;
   function itemById(id) {
     const key = String(id);
-    let at = itemIndex.get(key);
-    if (at !== undefined && String(items[at]?.id) === key) return items[at];
-    itemIndex = new Map(items.map((row, index) => [String(row.id), index]));
-    at = itemIndex.get(key);
+    // Build once per immutable array revision, including for misses. Rebuilding
+    // on every absent lookup made repeated stale IDs turn into O(n × misses).
+    if (itemIndexItems !== items) {
+      itemIndex = new Map(items.map((row, index) => [String(row.id), index]));
+      itemIndexItems = items;
+    }
+    const at = itemIndex.get(key);
     return at === undefined ? undefined : items[at];
   }
+  function itemByProvider(source, category, providerId) {
+    if (providerItemIndexItems !== items || providerItemIndexRevision !== localMutationRevision) {
+      providerItemIndex = new Map();
+      items.forEach(item => {
+        if (!item?.metadataSource || !item?.providerId) return;
+        const key = `${item.metadataSource}\u0000${item.category || ""}\u0000${String(item.providerId)}`;
+        if (!providerItemIndex.has(key)) providerItemIndex.set(key, String(item.id));
+      });
+      providerItemIndexItems = items;
+      providerItemIndexRevision = localMutationRevision;
+    }
+    const id = providerItemIndex.get(`${source}\u0000${category || ""}\u0000${String(providerId)}`);
+    return id === undefined ? undefined : itemById(id);
+  }
+  function itemByTitleIdentity(identity) {
+    if (titleIndexItems !== items || titleIndexRevision !== localMutationRevision) { titleIndex = new Map(); titleIndexItems = items; titleIndexRevision = localMutationRevision; }
+    if (!titleIndex.size && items.length) items.forEach(item => { const key = titleIdentity(item); if (!titleIndex.has(key)) titleIndex.set(key, item); });
+    return titleIndex.get(identity);
+  }
   const thumbUrlCache = new Map(); // "key|sig" -> blob: URL
+  const thumbUrlCacheLimit = nativeAndroid ? 48 : 128;
   const thumbKeyOf = item => `${item.id}:p`;
   const thumbSigOf = item => String(item.localImageFingerprint || item.thumbnailPath || "");
   function rememberThumbUrl(key, sig, url) {
@@ -629,11 +748,17 @@
     for (const [oldKey, oldUrl] of thumbUrlCache) if (oldKey.startsWith(`${key}|`) && oldKey !== cacheKey) { URL.revokeObjectURL(oldUrl); thumbUrlCache.delete(oldKey); }
     if (thumbUrlCache.has(cacheKey)) URL.revokeObjectURL(thumbUrlCache.get(cacheKey));
     thumbUrlCache.delete(cacheKey); thumbUrlCache.set(cacheKey, url);
-    while (thumbUrlCache.size > 200) { const [oldKey, oldUrl] = thumbUrlCache.entries().next().value; URL.revokeObjectURL(oldUrl); thumbUrlCache.delete(oldKey); }
+    while (thumbUrlCache.size > thumbUrlCacheLimit) { const [oldKey, oldUrl] = thumbUrlCache.entries().next().value; URL.revokeObjectURL(oldUrl); thumbUrlCache.delete(oldKey); }
   }
   async function cachedThumbUrls(entries) {
-    const found = new Map(), need = [];
-    entries.forEach(([key, sig]) => { const cacheKey = `${key}|${sig}`, url = thumbUrlCache.get(cacheKey); if (url) { thumbUrlCache.delete(cacheKey); thumbUrlCache.set(cacheKey, url); found.set(key, url); } else need.push([key, sig]); });
+    const found = new Map(), need = [], seen = new Set();
+    entries.forEach(([key, sig]) => {
+      const cacheKey = `${key}|${sig}`, prefix = `${key}|`;
+      for (const [oldKey, oldUrl] of thumbUrlCache) if (oldKey.startsWith(prefix) && oldKey !== cacheKey) { URL.revokeObjectURL(oldUrl); thumbUrlCache.delete(oldKey); found.delete(key); }
+      const url = thumbUrlCache.get(cacheKey);
+      if (url) { thumbUrlCache.delete(cacheKey); thumbUrlCache.set(cacheKey, url); found.set(key, url); }
+      else if (!seen.has(key)) { need.push([key, sig]); seen.add(key); }
+    });
     if (need.length && window.SplitAppIDB?.getThumbs) {
       try {
         const sigByKey = new Map(need);
@@ -653,8 +778,10 @@
   }
   // Background work waits for an idle moment and for pending taps/scrolls.
   function yieldToUser() {
+    if (document.hidden) return Promise.resolve();
     return new Promise(resolve => {
       const go = () => {
+        if (document.hidden) { resolve(); return; }
         if (navigator.scheduling?.isInputPending?.()) { setTimeout(go, 40); return; }
         if (window.scheduler?.postTask) window.scheduler.postTask(resolve, { priority: "background" }).catch(resolve);
         else if (window.requestIdleCallback) window.requestIdleCallback(() => resolve(), { timeout: 1500 });
@@ -670,12 +797,33 @@
     if (typeof hydrate !== "function") return;
     thumbFillRunning = true;
     try {
-      const have = new Map(await window.SplitAppIDB.listThumbKeys());
+      const savedKeys = await window.SplitAppIDB.listThumbKeys();
+      const liveKeys = new Set(items.filter(item => item.thumbnailPath).map(thumbKeyOf));
+      const staleKeys = savedKeys.map(([key]) => key).filter(key => !liveKeys.has(key));
+      if (staleKeys.length) {
+        await window.SplitAppIDB.deleteThumbs?.(staleKeys);
+        const stalePrefixes = staleKeys.map(key => `${key}|`);
+        for (const [cacheKey, url] of thumbUrlCache) if (stalePrefixes.some(prefix => cacheKey.startsWith(prefix))) { URL.revokeObjectURL(url); thumbUrlCache.delete(cacheKey); }
+      }
+      const have = new Map(savedKeys.filter(([key]) => liveKeys.has(key)));
       const missing = items.filter(item => item.thumbnailPath && have.get(thumbKeyOf(item)) !== thumbSigOf(item));
-      for (let offset = 0; offset < missing.length; offset += 12) {
-        while (document.hidden) await new Promise(resolve => setTimeout(resolve, 3000));
+      const batchSize = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 2 ? 2 : 4;
+      for (let offset = 0; offset < missing.length; offset += batchSize) {
+        if (document.hidden) {
+          await new Promise(resolve => {
+            const onVisible = () => {
+              if (document.hidden) return;
+              document.removeEventListener("visibilitychange", onVisible);
+              resolve();
+            };
+            document.addEventListener("visibilitychange", onVisible);
+            // Close the race where the app became visible between the check and
+            // listener registration. This also avoids periodic wakeups in background.
+            if (!document.hidden) onVisible();
+          });
+        }
         await yieldToUser();
-        const clones = missing.slice(offset, offset + 12).map(item => ({ ...item, localThumbnailData: "", localPortraitData: "", localLandscapeData: "", backdrop: "", cachedDetails: undefined, localImageFiles: undefined }));
+        const clones = missing.slice(offset, offset + batchSize).map(item => ({ ...item, localThumbnailData: "", localPortraitData: "", localLandscapeData: "", backdrop: "", cachedDetails: undefined, localImageFiles: undefined }));
         try { await hydrate(clones); } catch (_) {}
         const entries = [];
         for (let index = 0; index < clones.length; index++) {
@@ -684,12 +832,78 @@
           if (blob) entries.push([thumbKeyOf(original), thumbSigOf(original), blob]);
         }
         if (entries.length) { try { await window.SplitAppIDB.putThumbs(entries); } catch (_) {} }
-        await new Promise(resolve => setTimeout(resolve, 250));
       }
     } finally { thumbFillRunning = false; }
   }
   const deferredQueue = [];
   let deferredTimer = 0, deferredDrain = null, deferredObserver = null;
+  const contentObservers = new Map();
+  function syncRatingsLayoutControls(rating, layout, automatic) {
+    rating.querySelectorAll("[data-ratings-layout]").forEach(button => {
+      const selected = button.dataset.ratingsLayout === layout;
+      button.classList.toggle("is-active", selected);
+      button.setAttribute("aria-pressed", String(selected));
+      const label = button.dataset.ratingsLayout === "horizontal" ? "Horizontal" : "Vertical";
+      button.setAttribute("aria-label", `${label} ratings layout${selected && automatic ? ", selected automatically" : ""}`);
+      button.title = `${label} layout${selected && automatic ? " · automatic" : ""}`;
+    });
+  }
+  function disposeContentResources(root) {
+    const images = [];
+    if (root?.matches?.("img[data-deferred-image]")) images.push(root);
+    images.push(...(root?.querySelectorAll?.("img[data-deferred-image]") || []));
+    const staleImages = new Set(images);
+    images.forEach(image => deferredObserver?.unobserve(image));
+    for (let index = deferredQueue.length - 1; index >= 0; index--) {
+      const image = deferredQueue[index].image;
+      if (staleImages.has(image) || !image.isConnected) deferredQueue.splice(index, 1);
+    }
+    for (const [observer, owner] of contentObservers) {
+      if (root === document || root === owner || root?.contains?.(owner)) {
+        observer.disconnect(); contentObservers.delete(observer);
+      }
+    }
+  }
+  const nativeImageFallbacks = new Map();
+  const nativeImageFallbackInflight = new Map();
+  const nativeImageFallbackHandlers = new WeakSet();
+  function attachNativeImageFallback(image) {
+    if (!nativeAndroid || nativeImageFallbackHandlers.has(image)) return;
+    nativeImageFallbackHandlers.add(image);
+    image.addEventListener("error", async () => {
+      const source = image.dataset.proxySource || image.currentSrc || image.getAttribute("src") || image.dataset.lazySrc || "";
+      if (!/^https:\/\//i.test(source) || image.dataset.nativeFallbackTried) return;
+      image.dataset.nativeFallbackTried = "true";
+      const nativeHttp = window.CapacitorHttp || window.Capacitor?.Plugins?.CapacitorHttp;
+      if (!nativeHttp?.get) return;
+      try {
+        let objectUrl = nativeImageFallbacks.get(source);
+        if (!objectUrl) {
+          let pending = nativeImageFallbackInflight.get(source);
+          if (!pending) {
+            pending = nativeHttp.get({ url: source, responseType: "blob", connectTimeout: 10000, readTimeout: 15000 }).then(response => {
+              const encoded = typeof response?.data === "string" ? response.data : "";
+              const contentType = Object.entries(response?.headers || {}).find(([key]) => key.toLowerCase() === "content-type")?.[1]?.split(";")[0] || "image/jpeg";
+              if (Number(response?.status) < 200 || Number(response?.status) >= 300 || !/^image\/[a-z0-9.+-]+$/i.test(contentType) || !encoded || encoded.length > 8 * 1024 * 1024) return "";
+              const binary = atob(encoded), bytes = new Uint8Array(binary.length);
+              for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+              return URL.createObjectURL(new Blob([bytes], { type: contentType }));
+            }).finally(() => nativeImageFallbackInflight.delete(source));
+            nativeImageFallbackInflight.set(source, pending);
+          }
+          objectUrl = await pending;
+          if (!objectUrl) return;
+          nativeImageFallbacks.set(source, objectUrl);
+          while (nativeImageFallbacks.size > 24) {
+            const [oldSource, oldUrl] = nativeImageFallbacks.entries().next().value;
+            nativeImageFallbacks.delete(oldSource); URL.revokeObjectURL(oldUrl);
+          }
+        }
+        image.addEventListener("load", () => { image.hidden = false; if (image.nextElementSibling) image.nextElementSibling.hidden = true; }, { once: true });
+        image.src = objectUrl;
+      } catch (_) { /* Preserve the normal image placeholder when native retrieval also fails. */ }
+    });
+  }
   function routeRemoteImages(root = document) {
     const resolveImage = window.SplitAppDiscovery?.imageUrl;
     if (typeof resolveImage !== "function") return;
@@ -697,8 +911,10 @@
     if (root.matches?.("img[src]")) images.push(root);
     images.push(...(root.querySelectorAll?.("img[src]") || []));
     images.forEach(image => {
+      attachNativeImageFallback(image);
       const source = image.getAttribute("src");
       if (!source || image.dataset.proxySource) return;
+      if (/^http:\/\//i.test(source)) { image.removeAttribute("src"); image.hidden = true; return; }
       const resolved = resolveImage(source);
       if (resolved !== source) {
         const fallback = image.onerror;
@@ -713,10 +929,41 @@
       }
     });
   }
+  function prioritizeVisibleDetailImages(root = document) {
+    const activePanel = root.querySelector?.(".detail-tab-panel:not([hidden])");
+    const scope = activePanel || root.querySelector?.(".demo-detail-content") || root;
+    const images = [...(scope?.querySelectorAll?.("img[loading=lazy]") || [])].slice(0, 36);
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+    images.map(image => ({ image, rect: image.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.bottom >= -180 && rect.top <= viewportHeight + 360 && rect.right >= -180 && rect.left <= viewportWidth + 220)
+      .forEach(({ image }) => { image.loading = "eager"; });
+  }
+  function prioritizeVisibleCollectionImages(root = document) {
+    const collectionPage = ["series", "movies", "series-favorites", "movie-favorites"].includes(page);
+    const watchlistPage = ["series-watchlist", "movie-watchlist"].includes(page);
+    if (!collectionPage && !watchlistPage) return;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const selector = collectionPage ? ".profile-collection-grid img" : ".watchlist-card img";
+    const cardSelector = collectionPage ? ".profile-poster" : ".watchlist-card";
+    const images = [...(root?.querySelectorAll?.(selector) || [])];
+    images.map(image => ({ image, rect: (image.closest(cardSelector) || image).getBoundingClientRect() }))
+      .filter(({ rect }) => rect.bottom >= -120 && rect.top < viewportHeight + 240)
+      .slice(0, 12)
+      .forEach(({ image }, index) => { image.loading = "eager"; if (index < 6 && "fetchPriority" in image) image.fetchPriority = "high"; });
+  }
   function finishDeferredImage(image, source) {
     if (!image?.isConnected) return;
     delete image.dataset.localItemId; delete image.dataset.lazySrc;
-    if (source) image.src = window.SplitAppDiscovery?.imageUrl?.(source) || source;
+    if (/^http:\/\//i.test(String(source || ""))) source = "";
+    const detailTrigger = image.closest("[data-detail-image-src]");
+    if (detailTrigger && source) detailTrigger.dataset.detailImageSrc = source;
+    if (source) {
+      const reveal = () => { image.hidden = false; if (image.nextElementSibling) image.nextElementSibling.hidden = true; };
+      image.addEventListener("load", reveal, { once: true });
+      image.src = window.SplitAppDiscovery?.imageUrl?.(source) || source;
+      if (image.complete && image.naturalWidth) reveal();
+    }
     else { image.hidden = true; if (image.nextElementSibling) image.nextElementSibling.hidden = false; }
   }
   async function drainDeferredImages() {
@@ -724,10 +971,12 @@
     deferredDrain = (async () => {
       const hydrate = window.SplitAppBackend?.hydrateThumbnails;
       while (deferredQueue.length) {
-        const batch = deferredQueue.splice(0, 24);
+        const batchSize = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 2 ? 16 : 40;
+        const batch = deferredQueue.splice(0, batchSize);
         const cached = await cachedThumbUrls(batch.map(record => [thumbKeyOf(record.item), thumbSigOf(record.item)]));
         const slow = [];
         for (const record of batch) {
+          if (!record.image.isConnected) continue;
           if (record.image.dataset.customCover) { finishDeferredImage(record.image, record.image.dataset.customCover); continue; }
           const hit = cached.get(thumbKeyOf(record.item));
           if (hit) finishDeferredImage(record.image, hit);
@@ -735,6 +984,8 @@
           else slow.push(record);
         }
         if (!slow.length || typeof hydrate !== "function") { slow.forEach(record => finishDeferredImage(record.image, record.online)); continue; }
+        for (let index = slow.length - 1; index >= 0; index--) if (!slow[index].image.isConnected) slow.splice(index, 1);
+        if (!slow.length) continue;
         const clones = slow.map(record => ({ ...record.item, localThumbnailData: "", localPortraitData: "", localLandscapeData: "", backdrop: "", cachedDetails: undefined, localImageFiles: undefined }));
         try { await hydrate(clones); } catch (error) { recordLog("warning", `Could not load saved artwork: ${error?.message || error}`); }
         slow.forEach((record, index) => {
@@ -754,10 +1005,12 @@
     if (image.dataset.customCover) { finishDeferredImage(image, image.dataset.customCover); return; }
     const warm = thumbUrlCache.get(`${thumbKeyOf(item)}|${thumbSigOf(item)}`);
     if (warm) { finishDeferredImage(image, warm); return; }
+    if (deferredQueue.length >= 256) { finishDeferredImage(image, online); return; }
     deferredQueue.push({ item, image, online });
     if (!deferredTimer) deferredTimer = setTimeout(() => { deferredTimer = 0; drainDeferredImages(); }, 0);
   }
   function observeDeferredImages(root = document) {
+    root?.querySelectorAll?.("img").forEach(attachNativeImageFallback);
     routeRemoteImages(root);
     const images = [...(root?.querySelectorAll?.("img[data-deferred-image]") || [])].filter(image => !image.hasAttribute("src"));
     if (!images.length) return;
@@ -766,53 +1019,16 @@
       if (!entry.isIntersecting) return;
       deferredObserver.unobserve(entry.target);
       activateDeferredImage(entry.target);
-    }), { rootMargin: "400px 0px" });
+    }), { rootMargin: "700px 0px" });
     images.forEach(image => deferredObserver.observe(image));
   }
 
-  function loadDashboardMore(button) {
-    const status = button.dataset.dashboardLoadMore;
-    const offset = Number(button.dataset.offset) || 0;
-    const games = button._dashboardItems || [];
-    const batch = games.slice(offset, offset + dashboardPageSize);
-    const target = $(`[data-dashboard-items="${CSS.escape(status)}"]`, button.closest("[data-dashboard-status-group]"));
-    if (!target || !batch.length) { button.remove(); return; }
-    const library = window.SplitAppLibrary.create(pageContext());
-    target.insertAdjacentHTML("beforeend", batch.map(library.card).join(""));
-    observeDeferredImages(target);
-    const nextOffset = offset + batch.length;
-    target.dataset.renderedCount = String(nextOffset);
-    button.dataset.offset = String(nextOffset);
-    const remaining = Math.max(0, games.length - nextOffset);
-    if (!remaining) {
-      dashboardLazyObserver?.unobserve(button);
-      button.remove();
-      return;
-    }
-    button.textContent = `Load more · ${remaining} remaining`;
-    button.setAttribute("aria-label", `Load more ${status}; ${remaining} remaining`);
-  }
-  function observeDashboardLoaders() {
-    dashboardLazyObserver?.disconnect();
-    dashboardLazyObserver = null;
-    if (page !== "dashboard") return;
-    const loaders = $$("[data-dashboard-load-more]");
-    if (!loaders.length) return;
-    loaders.forEach(button => { button._dashboardItems = dashboardGroupItems(button.dataset.dashboardLoadMore); });
-    if (!window.IntersectionObserver) return;
-    dashboardLazyObserver = new IntersectionObserver(entries => entries.forEach(entry => {
-      if (!entry.isIntersecting) return;
-      const button = entry.target;
-      dashboardLazyObserver.unobserve(button);
-      loadDashboardMore(button);
-      if (button.isConnected && button.dataset.offset < button._dashboardItems.length) dashboardLazyObserver.observe(button);
-    }), { rootMargin: "640px 0px" });
-    loaders.forEach(button => dashboardLazyObserver.observe(button));
-  }
+  let metadataLibraryReady = false;
+  let libraryRestoreComplete = false;
   function render() {
-    if (!metadataSync && metadataSyncState?.entries?.some(entry => ["queued", "running"].includes(entry.status)) && navigator.onLine && prefs.metadataMode !== "offline" && !document.hidden) queueMicrotask(() => startMetadataSync(null, true));
+    if (metadataLibraryReady && !metadataSync && metadataSyncState?.entries?.some(entry => ["queued", "running"].includes(entry.status)) && navigator.onLine && prefs.metadataMode !== "offline" && !document.hidden) queueMicrotask(() => startMetadataSync(null, true, "needed", true, true));
     document.body.dataset.page = page;
-    if (page === "dashboard") $("#page-title").innerHTML = `Screen<span>Mark</span>`; else $("#page-title").textContent = titles[page];
+    $("#page-title").textContent = titles[page];
     $("#topbar-title-block").hidden = page === "discover";
     $("#discover-top-search").hidden = page !== "discover";
     const discoverInput = $("#discover-query");
@@ -822,13 +1038,9 @@
       const clearButton = $("[data-discover-clear]");
       if (clearButton) clearButton.hidden = !discoverQuery.trim();
     }
-    $("#header-filter").hidden = true;
     const headerType = $("#header-type");
-    headerType.hidden = page !== "dashboard" && page !== "discover";
-    if (page === "dashboard") {
-      const count = key => key === "all" ? items.length : items.filter(item => item.category === key).length;
-      headerType.innerHTML = [...config.categories].sort((x, y) => (y.key === "movie") - (x.key === "movie")).map(row => [row.key, row.key === "series" ? "Series" : row.label]).map(([key, label]) => `<button type="button" class="lens-tab${activeCategory === key ? " on" : ""}" data-category-filter="${esc(key)}" aria-pressed="${activeCategory === key}">${esc(label)} <span class="l-cnt">${count(key)}</span></button>`).join("");
-    } else if (page === "discover") {
+    headerType.hidden = page !== "discover";
+    if (page === "discover") {
       const source = discoverSource ? window.SplitAppSources.list().find(row => row.key === discoverSource) : null;
       const categories = config.categories.filter(row => !source || source.categories.includes(row.key));
       headerType.hidden = categories.length < 2 || !(discoverSearchFocused || Boolean(discoverQuery.trim()));
@@ -838,10 +1050,12 @@
         return `<button type="button" class="lens-tab${selected ? " on" : ""}" data-discover-category="${esc(row.key)}" aria-pressed="${selected}">${esc(label)}</button>`;
       }).join("");
     }
-    if (page === "dashboard" || page === "details") { let touched = false; items.forEach(entry => { if (entry.cachedDetails && reconcileEpisodes(entry)) touched = true; }); if (touched) persist(); }
+    if (page === "details" && detailItemId) {
+      const viewedItem = itemById(detailItemId);
+      if (viewedItem?.cachedDetails && reconcileEpisodes(viewedItem)) persist({ ids: [viewedItem.id] });
+    }
     const content = $("#page-content");
     setPullToRefreshEnabled(["details", "discover", "series-watchlist", "movie-watchlist"].includes(page));
-    $("#floating-add").hidden = page !== "dashboard";
     if (page === "settings") { if (settingsGroup !== renderedSettingsGroup) { settingsFrom = renderedSettingsGroup || ""; renderedSettingsGroup = settingsGroup; } } else renderedSettingsGroup = undefined;
     const route = page === "settings" ? `settings/${settingsGroup || "index"}` : page === "statistics" && statsSubpage ? `statistics/${statsSubpage}` : page;
     const preservePageState = route === renderedRoute;
@@ -864,7 +1078,9 @@
       renderedRoute = route;
     }
     document.getElementById("collection-toolbar")?.remove();
+    disposeContentResources(content);
     content.innerHTML = window.SplitAppPages[page](pageContext());
+    if (page === "details") prioritizeVisibleDetailImages(content);
     if (enterRoute) requestAnimationFrame(() => { if (renderedRoute === route) content.classList.add("page-route-enter"); });
     const collectionToolbar = content.querySelector(".profile-filter-bar, .profile-filter-pill");
     if (collectionToolbar) {
@@ -906,6 +1122,21 @@
       episodeRail.addEventListener("scroll", queueSettle, { passive: true });
       settle();
     }
+    content.querySelectorAll('.ep-ratings[data-layout-mode="auto"]').forEach(rating => {
+      const resize = () => {
+        if (!rating.isConnected || rating.dataset.layoutMode !== "auto") return;
+        const next = window.SplitAppPages.autoRatingsLayout?.(rating.clientWidth, Number(rating.dataset.seasonCount) || 0, Number(rating.dataset.longest) || 0);
+        if (!next || next === rating.dataset.layout) return;
+        rating.dataset.layout = next;
+        syncRatingsLayoutControls(rating, next, true);
+      };
+      resize();
+      if (window.ResizeObserver) {
+        const observer = new ResizeObserver(resize);
+        contentObservers.set(observer, rating);
+        observer.observe(rating);
+      }
+    });
     content.querySelectorAll(".ep-ratings-v[data-ratings-lazy]").forEach(rating => {
       const grid = rating.querySelector(".ep-ratings-cols"), sentinel = rating.querySelector("[data-ratings-sentinel]");
       if (!grid || !sentinel) return;
@@ -917,13 +1148,17 @@
       const observer = new IntersectionObserver(entries => {
         if (!entries.some(entry => entry.isIntersecting)) return;
         const template = rating.querySelector("template[data-ratings-chunk]");
-        if (!template) { observer.disconnect(); sentinel.remove(); return; }
+        if (!template) { observer.disconnect(); contentObservers.delete(observer); sentinel.remove(); return; }
         grid.append(template.content);
         template.remove();
-        if (!rating.querySelector("template[data-ratings-chunk]")) { observer.disconnect(); sentinel.remove(); return; }
+        if (!rating.querySelector("template[data-ratings-chunk]")) { observer.disconnect(); contentObservers.delete(observer); sentinel.remove(); return; }
         observer.unobserve(sentinel);
-        requestAnimationFrame(() => observer.observe(sentinel));
+        requestAnimationFrame(() => {
+          if (sentinel.isConnected) observer.observe(sentinel);
+          else { observer.disconnect(); contentObservers.delete(observer); }
+        });
       }, { rootMargin: "700px 0px" });
+      contentObservers.set(observer, rating);
       observer.observe(sentinel);
     });
     if (page === "discover" && discoverCache && discoverCache.source === discoverSource && discoverCache.query === discoverQuery) paintDiscoverResults(discoverCache.results, discoverSource);
@@ -934,9 +1169,9 @@
       previousControls.forEach((saved, index) => {
         const target = saved.id ? document.getElementById(saved.id) : saved.name ? controls.find(element => element.name === saved.name && element.type === saved.type && (saved.type !== "radio" || element.value === saved.value)) : controls[index];
         if (!target || target.type === "file") return;
-        const stateBound = target.matches("[data-pref], #global-search, #library-search");
+        const stateBound = target.matches("[data-pref], #global-search");
         if (target.type !== "radio" && target.type !== "checkbox" && (!stateBound || target.value === saved.value)) target.value = saved.value;
-        if (saved.checked !== undefined && !target.matches("[data-pref], [data-detail-status], #dashboard-filter-form *")) target.checked = saved.checked;
+        if (saved.checked !== undefined && !target.matches("[data-pref], [data-detail-status]")) target.checked = saved.checked;
         if (saved.start !== null && typeof target.setSelectionRange === "function") {
           try { target.setSelectionRange(saved.start, saved.end); } catch (_) {}
         }
@@ -953,20 +1188,33 @@
     }
     window.lucide?.createIcons({ root: content, attrs: { "aria-hidden": "true" } });
     window.lucide?.createIcons({ root: $("#discover-top-search"), attrs: { "aria-hidden": "true" } });
-    window.lucide?.createIcons({ root: $("#header-filter"), attrs: { "aria-hidden": "true" } });
-    window.lucide?.createIcons({ root: $("#floating-add"), attrs: { "aria-hidden": "true" } });
-    observeDashboardLoaders();
     observeDeferredImages(content);
-    content.querySelector("[data-clear-collection-search]")?.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-      libraryQuery = "";
-      clearTimeout(searchRenderTimer);
-      const search = $("#global-search");
-      if (search) search.value = "";
-      event.currentTarget.hidden = true;
-      refreshSearchResults("dashboard", "#collection-results");
-      search?.focus();
+    prioritizeVisibleCollectionImages(content);
+    const collectionMore = content.querySelector("[data-collection-more]");
+    collectionMore?.addEventListener("click", event => {
+      if (window.SplitAppPages.loadMoreCollection?.(event.currentTarget.dataset.collectionMore)) render();
+    });
+    if (collectionMore && window.IntersectionObserver) {
+      const observer = new IntersectionObserver(entries => {
+        if (!entries.some(entry => entry.isIntersecting)) return;
+        observer.disconnect(); contentObservers.delete(observer); collectionMore.click();
+      }, { rootMargin: "900px 0px" });
+      contentObservers.set(observer, collectionMore);
+      observer.observe(collectionMore);
+    }
+    const watchlistMoreButtons = [...content.querySelectorAll("[data-watchlist-more]")];
+    watchlistMoreButtons.forEach(button => {
+      button.addEventListener("click", () => {
+        if (window.SplitAppPages.loadMoreWatchlist?.(button.dataset.watchlistMore)) render();
+      });
+      if (window.IntersectionObserver) {
+        const observer = new IntersectionObserver(entries => {
+          if (!entries.some(entry => entry.isIntersecting)) return;
+          observer.disconnect(); contentObservers.delete(observer); button.click();
+        }, { rootMargin: "900px 0px" });
+        contentObservers.set(observer, button);
+        observer.observe(button);
+      }
     });
     content.querySelector("#item-form")?.addEventListener("keydown", event => {
       if (event.key !== "Enter" || event.defaultPrevented || event.target.matches("textarea, #add-metadata-query")) return;
@@ -975,19 +1223,6 @@
     });
     content.querySelectorAll("[data-cancel-add]").forEach(button => button.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); entryDraftId = null; goto(addReturnPage); }));
     content.querySelectorAll("[data-save-item]").forEach(saveButton => saveButton.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); saveAddForm($("#item-form")); }));
-    content.querySelector("[data-open-discover-consent]")?.addEventListener("click", event => { event.preventDefault(); showPopup($("#discover-consent-dialog")); });
-    content.querySelectorAll("[data-close-discover-consent]").forEach(button => button.addEventListener("click", () => closePopup($("#discover-consent-dialog"))));
-    content.querySelector("[data-review-hltb-consent]")?.addEventListener("click", async event => {
-      event.preventDefault();
-      closePopup($("#discover-consent-dialog"));
-      const consent = window.Capacitor?.Plugins?.ProviderConsent;
-      try {
-        if (consent?.reviewHowLongToBeat) await consent.reviewHowLongToBeat();
-        else window.open("https://howlongtobeat.com/", "_blank", "noopener,noreferrer");
-        window.SplitAppDiscovery?.clearSourceCooldown?.("howlongtobeat");
-        if (page === "discover" && discoverSource === "howlongtobeat") { toast("Session saved. Searching again…"); submitDiscover(); }
-      } catch (error) { toast(error?.message || "Could not open HowLongToBeat."); }
-    });
     content.querySelector("#detail-edit-form")?.addEventListener("submit", saveDetailEdit);
     content.querySelectorAll(".detail-page [data-action]").forEach(button => button.addEventListener("click", event => {
       const action = button.dataset.action;
@@ -1051,30 +1286,6 @@
       prefs.navIcons[key] = safeLucideName(select.value, prefs.navIcons[key]);
       persist({ meta: true }); applyPreferences(); render();
     }));
-    content.querySelector("[data-close-dashboard-filter]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#dashboard-filter-dialog")); });
-    content.querySelector("[data-open-dashboard-filter]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showPopup($("#dashboard-filter-dialog")); });
-    content.querySelector("[data-reset-dashboard-filter]")?.addEventListener("click", event => {
-      event.preventDefault(); event.stopPropagation();
-      dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; prefs.favoritesOnly = false; libraryQuery = "";
-      prefs.dashboardView = "list"; prefs.dashboardSort = "alphabetical-asc"; prefs.dashboardGroupBy = "status";
-      persist({ meta: true }); applyPreferences(); historyPush(); closePopup($("#dashboard-filter-dialog")); render();
-    });
-    const dashboardFilterForm = content.querySelector("#dashboard-filter-form");
-    const applyDashboardFilter = () => {
-      if (!dashboardFilterForm) return;
-      prefs.dashboardView = dashboardFilterForm?.elements.view?.value || prefs.dashboardView;
-      prefs.dashboardSort = dashboardFilterForm.elements.sort?.value || prefs.dashboardSort;
-      prefs.dashboardGroupBy = dashboardFilterForm.elements.groupBy?.value || prefs.dashboardGroupBy;
-      persist({ meta: true }); applyPreferences(); closePopup($("#dashboard-filter-dialog")); render();
-    };
-    dashboardFilterForm?.addEventListener("submit", event => { event.preventDefault(); event.stopPropagation(); applyDashboardFilter(); });
-    dashboardFilterForm?.querySelector('[type="submit"]')?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); applyDashboardFilter(); });
-    content.querySelectorAll("[data-dashboard-view]").forEach(button => button.addEventListener("click", event => {
-      event.preventDefault(); event.stopPropagation(); setPreference("dashboardView", button.dataset.dashboardView);
-    }));
-    content.querySelectorAll("[data-dashboard-sort]").forEach(button => button.addEventListener("click", event => {
-      event.preventDefault(); event.stopPropagation(); setPreference("dashboardSort", button.dataset.dashboardSort);
-    }));
     content.querySelector("[data-open-timeline-filters]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showPopup($("#timeline-filter-dialog")); });
     content.querySelector("[data-clear-timeline-filters]")?.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
@@ -1121,8 +1332,7 @@
       if (button.type === "file") return; // let the file picker open
       event.preventDefault(); event.stopPropagation();
       const key = button.dataset.settingAction;
-      if (key === "resetDashboard") resetDashboard();
-      else if (key === "resetAnimations") resetAnimations();
+      if (key === "resetAnimations") resetAnimations();
       else if (key === "previewAnimations") previewAnimations();
       else if (key === "resetAppearance") resetAppearance();
       else if (key === "export") exportList();
@@ -1143,18 +1353,6 @@
     content.querySelector("[data-detail-image-close]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#detail-image-modal")); });
     content.querySelector("[data-detail-image-prev]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showDetailImage(detailImagePosition - 1); });
     content.querySelector("[data-detail-image-next]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); showDetailImage(detailImagePosition + 1); });
-  }
-  function refreshSearchResults(pageKey, targetSelector) {
-    const current = $(targetSelector);
-    const renderer = window.SplitAppPages[pageKey];
-    if (!current || !renderer) return;
-    const template = document.createElement("template");
-    template.innerHTML = renderer(pageContext());
-    const fresh = template.content.querySelector(targetSelector);
-    if (!fresh) return;
-    current.replaceChildren(...fresh.childNodes);
-    if (pageKey === "dashboard") observeDashboardLoaders();
-    window.lucide?.createIcons({ root: current, attrs: { "aria-hidden": "true" } });
   }
   async function refreshStorageDetails() {
     const target = $("#storage-cache-breakdown");
@@ -1221,6 +1419,7 @@
   }
   function applySelectedFolderData(selected) {
     items = Array.isArray(selected.items) ? selected.items.filter(item => config.categories.some(category => category.key === item.category)) : [];
+    itemIndexItems = null;
     history = Array.isArray(selected.history) ? selected.history : [];
     if (selected.loadedFromFolder) {
       Object.keys(prefs).forEach(key => delete prefs[key]);
@@ -1239,6 +1438,7 @@
       applySelectedFolderData(selected);
       await window.SplitAppBackend.save({ items, history, preferences: prefs });
       localMutationRevision += 1;
+      noteLocalMutation(null, localMutationRevision);
       applyPreferences(); render();
       toast(selected.loadedFromFolder ? "Database loaded from the selected folder." : "Database folder selected and current data saved.");
     } catch (error) {
@@ -1252,7 +1452,9 @@
       for (const url of thumbUrlCache.values()) URL.revokeObjectURL(url);
       thumbUrlCache.clear();
       await window.SplitAppIDB?.clearThumbs?.().catch(() => {});
-      await window.SplitAppIDB?.clearShareCache?.().catch(() => {});
+    }
+    if (kind === "temporary") {
+      try { await window.Capacitor?.Plugins?.CacheManager?.clearWebViewCache?.(); } catch (_) {}
     }
     if (!window.caches) return;
     const prefix = `splitapp_${config.key}`;
@@ -1264,9 +1466,11 @@
     await window.SplitAppBackend?.clearJournal?.("logcat");
   }
   async function clearLibraryHistory() {
+    historyJournalRevision += 1;
+    historyJournalLoaded = true;
     history = [];
     localStorage.removeItem(`${storageKey}_history`);
-    await Promise.all([persist(), window.SplitAppBackend?.clearJournal?.("history")]);
+    await Promise.all([persist({ meta: true, replaceHistory: true }), window.SplitAppBackend?.clearJournal?.("history")]);
   }
   async function runStorageAction(action) {
     if (action === "metadata" || action === "images" || action === "temporary") {
@@ -1280,14 +1484,14 @@
     }
     if (action === "clear-data") {
       if (!(await appConfirm("Clear all tracked movies, series and activity history from this device?", { title: "Clear tracked data", confirmLabel: "Clear", danger: true }))) return;
-      items = []; history = []; persist(); render(); toast("Tracked data cleared."); return;
+      items = []; itemIndexItems = null; history = []; persist(); render(); toast("Tracked data cleared."); return;
     }
     if (action === "factory-reset") {
       if (!(await appConfirm("Factory reset ScreenMark? This removes your library, settings, and app cache from this device.", { title: "Factory reset", confirmLabel: "Reset", danger: true }))) return;
       await clearAppCaches("temporary");
       localStorage.removeItem(`${storageKey}_log`);
       try { await window.Capacitor?.Plugins?.EncryptedStore?.clearState?.(); } catch (_) {}
-      items = []; history = [];
+      items = []; itemIndexItems = null; history = [];
       Object.keys(prefs).forEach(key => delete prefs[key]);
       Object.assign(prefs, JSON.parse(JSON.stringify(prefsDefaults)));
       prefs.navIcons = { ...prefsDefaults.navIcons };
@@ -1302,7 +1506,7 @@
     entryDraftId = item?.id || null;
     addMetadataQuery = item?.title || "";
     addMetadataRequestId++;
-    addCategory = item?.category || (activeCategory !== "all" ? activeCategory : config.categories[0].key);
+    addCategory = item?.category || (preferredCategory !== "all" ? preferredCategory : config.categories[0].key);
     goto("add");
     setTimeout(() => $("#item-form")?.elements.title.focus(), 50);
   }
@@ -1333,7 +1537,7 @@
       const currentBox = $("#add-metadata-results"), currentMessage = $("#add-metadata-message");
       if (!currentBox || !currentMessage) return;
       currentBox._results = results;
-      currentBox.innerHTML = results.slice(0, 16).map((result, index) => `<article class="add-metadata-result">${result.image ? `<img src="${esc(result.image)}" alt="" loading="lazy" onerror="this.hidden=true">` : ""}<div><strong>${esc(result.title)}</strong><small>${esc(result.source)}${result.year ? ` · ${esc(result.year)}` : ""}${result.subtitle ? ` · ${esc(result.subtitle)}` : ""}</small><p>${esc(result.description || "")}</p></div><button class="button secondary small" type="button" data-add-metadata-index="${index}">Use</button></article>`).join("");
+      currentBox.innerHTML = results.slice(0, 16).map((result, index) => `<article class="add-metadata-result">${result.image ? `<img src="${esc(result.image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : ""}<div><strong>${esc(result.title)}</strong><small>${esc(result.source)}${result.year ? ` · ${esc(result.year)}` : ""}${result.subtitle ? ` · ${esc(result.subtitle)}` : ""}</small><p>${esc(result.description || "")}</p></div><button class="button secondary small" type="button" data-add-metadata-index="${index}">Use</button></article>`).join("");
       currentMessage.textContent = results.length ? `${results.length} matches found${results.warnings?.length ? `; ${results.warnings.length} source(s) unavailable` : ""}.` : "No matches found.";
     } catch (error) {
       if (requestId !== addMetadataRequestId || page !== "add") return;
@@ -1393,9 +1597,9 @@
 
   function saveItem(event) {
     const form = event.currentTarget; const data = new FormData(form); const id = data.get("id");
-    const old = items.find(item => item.id === id); const key = data.get("category") || old?.category || config.categories[0]?.key;
+    const old = id ? itemById(id) : null; const key = data.get("category") || old?.category || config.categories[0]?.key;
     const image = String(data.get("image") || "");
-    const entry = { ...old, id: id || crypto.randomUUID(), title: String(data.get("title")).trim(), category: key, status: data.get("status") || defaultStatus(key), progress: Math.max(0, Number(data.get("progress")) || 0), goal: Math.max(0, Number(data.get("goal")) || 0), image, ...(image.startsWith("data:image/") ? { localThumbnailData: image } : {}), description: String(data.get("description") || "").trim(), metadataSource: String(data.get("metadataSource") || ""), providerId: String(data.get("providerId") || ""), url: String(data.get("url") || ""), year: String(data.get("year") || ""), createdAt: old?.createdAt || Date.now(), updatedAt: Date.now() };
+    const entry = { ...old, id: id || crypto.randomUUID(), title: String(data.get("title")).trim(), category: key, status: data.get("status") || defaultStatus(key), progress: Math.max(0, Number(data.get("progress")) || 0), goal: Math.max(0, Number(data.get("goal")) || 0), image, ...(image.startsWith("data:image/") ? { localThumbnailData: image } : {}), description: String(data.get("description") || "").trim(), metadataSource: String(data.get("metadataSource") || ""), providerId: String(data.get("providerId") || ""), url: String(data.get("url") || ""), year: String(data.get("year") || ""), createdAt: old?.createdAt || Date.now(), updatedAt: old?.updatedAt || Date.now() };
     if (key === "movie" && [roles.active, roles.hold].includes(entry.status)) entry.status = roles.queued;
     if (key === "series") {
       const progress = Math.max(entry.progress, (entry.watchedEpisodeIds || []).length);
@@ -1405,8 +1609,12 @@
     }
     stripLocalScores(entry);
     if (!entry.title) return;
-    if (old) items[items.indexOf(old)] = entry; else { items.unshift(entry); recordLibraryChange("added", `Added ${entry.title}.`, [entry.id]); }
-    if (old && JSON.stringify(old) !== JSON.stringify(entry)) recordLibraryChange("edited", `Updated ${entry.title}.`, [entry.id]);
+    const changed = !old || ["title", "category", "status", "progress", "goal", "image", "description", "metadataSource", "providerId", "url", "year"].some(field => !Object.is(old[field], entry[field]));
+    if (old && !changed) { entryDraftId = null; goto(addReturnPage); toast("No changes to save."); return; }
+    if (old) entry.updatedAt = Date.now();
+    if (old) { const oldIndex = itemIndex.get(String(old.id)); if (oldIndex !== undefined) items[oldIndex] = entry; }
+    else { items.unshift(entry); itemIndexItems = null; recordLibraryChange("added", `Added ${entry.title}.`, [entry.id]); }
+    if (old && changed) recordLibraryChange("edited", `Updated ${entry.title}.`, [entry.id]);
     if (entry.status !== roles.queued && entry.status !== old?.status) history.unshift({ itemId: entry.id, title: entry.title, action: entry.status, status: entry.status, at: Date.now() });
     persist({ ids: [entry.id] }); entryDraftId = null;
     if (!old && entry.category === "series" && entry.metadataSource) openAddedSeriesDetails(entry, addReturnPage);
@@ -1424,28 +1632,31 @@
     saveItem({ currentTarget: form });
   }
   async function updateProgress(id) {
-    const item = items.find(entry => entry.id === id); if (!item) return;
-    const step = Math.max(1, Number(category(item.category)?.step) || Number(prefs.progressIncrement) || 1); if (!stepEpisodes(item, step)) item.progress = (Number(item.progress) || 0) + step; item.updatedAt = Date.now();
+    const item = itemById(id); if (!item) return;
+    const step = Math.max(1, Number(category(item.category)?.step) || 1), stepped = stepEpisodes(item, step);
+    if (!stepped) item.progress = (Number(item.progress) || 0) + step;
+    else if (!stepped.changed) { toast("No released episodes are available to mark yet."); return; }
+    item.updatedAt = Date.now();
     const previousStatus = item.status;
     if (item.category === "series" && step > 0) { item.lastProgressAt = item.updatedAt; item.status = roles.active; }
     if (item.category === "series" && seriesProgressComplete(item, window.SplitAppLibrary.episodeInfo(item), item.progress)) item.status = roles.done;
     if (item.category !== "series" && item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = roles.done;
     if (item.category !== "series" && item.goal && item.progress >= item.goal && prefs.automaticCompletion === "ask" && await appConfirm(`Mark “${item.title}” completed?`, { title: "Completed?", confirmLabel: "Mark completed" })) item.status = roles.done;
     if (item.status !== previousStatus && trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
-    persist({ ids: [item.id] }); render(); toast("Progress updated.");
+    persist({ ids: [item.id] }); render(); toast(stepped?.skippedUpcoming ? `Progress updated; skipped ${stepped.skippedUpcoming} upcoming ${stepped.skippedUpcoming === 1 ? "episode" : "episodes"}.` : "Progress updated.");
   }
   async function deleteItem(id) {
-    const item = items.find(entry => entry.id === id); if (!item) return;
+    const item = itemById(id); if (!item) return;
     if (!(await appConfirm(`Delete “${item.title}” from your library?`, { title: "Delete title", confirmLabel: "Delete", danger: true }))) return;
     if (prefs.backupBeforeDestructive) exportList({ silent: true });
-    recordLibraryChange("removed", `Deleted ${item.title}.`, [id]); items = items.filter(entry => entry.id !== id);
+    recordLibraryChange("removed", `Deleted ${item.title}.`, [id]); items = items.filter(entry => entry.id !== id); itemIndexItems = null;
     persist({ removed: [id] }); entryDraftId = null; goto(addReturnPage); toast("Entry deleted.");
   }
   // ⋮ → Edit entry opens the title's details page in edit mode (same as its Edit button).
-  function openEdit(id) { if (items.some(entry => entry.id === id)) openDetails(id, true); }
+  function openEdit(id) { if (itemById(id)) openDetails(id, true); }
   function saveDetailEdit(event) {
     event.preventDefault();
-    const item = items.find(row => row.id === detailItemId);
+    const item = itemById(detailItemId);
     if (!item) return;
     const data = new FormData(event.currentTarget);
     const oldStatus = item.status;
@@ -1462,17 +1673,19 @@
 
   let discoverSubmitted = "", discoverSubmittedAt = 0;
   function submitDiscover() {
-    discoverQuery = $("#discover-query")?.value || discoverQuery;
+    discoverQuery = $("#discover-query")?.value ?? discoverQuery;
+    const category = currentDiscoverCategory();
+    const requestKey = `${discoverQuery.trim().toLocaleLowerCase()}\u0000${category}\u0000${discoverSource}`;
     // Some Android keyboards emit both Enter and the search action for one submission.
-    if (discoverQuery === discoverSubmitted && Date.now() - discoverSubmittedAt < 500) return;
-    discoverSubmitted = discoverQuery; discoverSubmittedAt = Date.now();
+    if (requestKey === discoverSubmitted && Date.now() - discoverSubmittedAt < 500) return;
+    discoverSubmitted = requestKey; discoverSubmittedAt = Date.now();
     discover();
   }
   // Discover and Explore search one type at a time; a single source only offers the types it supports.
   function currentDiscoverCategory() {
     const source = discoverSource ? window.SplitAppSources.list().find(row => row.key === discoverSource) : null;
     const allowed = source ? source.categories : config.categories.map(row => row.key);
-    const preferred = discoverCategoryChoice || (activeCategory !== "all" ? activeCategory : "series");
+    const preferred = discoverCategoryChoice || (preferredCategory !== "all" ? preferredCategory : "series");
     return allowed.includes(preferred) ? preferred : allowed.includes("series") ? "series" : allowed[0];
   }
 
@@ -1497,15 +1710,15 @@
     return true;
   }
   function discoverCatalogCard(result, index) {
-    const category = result.category || currentDiscoverCategory(), rating = Number(result.rating) || 0;
-    const saved = items.find(item => sameDiscoverTitle(item, result, category));
-    return `<article class="discover-catalog-card"><div class="discover-catalog-artwork"><button type="button" class="discover-catalog-poster" data-discover-details="${index}" aria-label="Details for ${esc(result.title)}"><img src="${esc(result.image || "")}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true"><span class="discover-catalog-type">${category === "series" ? "SHOW" : "MOVIE"}</span>${rating > 0 ? `<span class="discover-catalog-rating">★ ${rating.toFixed(1)}</span>` : ""}</button><button type="button" class="discover-catalog-add${saved ? " is-saved" : ""}" data-discover-add="${index}" aria-label="${saved ? "Already in library" : `Add ${esc(result.title)} to library`}"${saved ? " disabled" : ""}><span aria-hidden="true">${saved ? "✓" : "+"}</span></button></div><h3 title="${esc(result.title)}">${esc(result.title)}</h3><small>${esc(String(result.year || "").slice(0, 4))}</small></article>`;
+    const category = result.category || currentDiscoverCategory();
+    const saved = itemByTitleIdentity(titleIdentity({ ...result, category, metadataSource: result.metadataSource || result.source }));
+    return window.SplitAppDiscoverCards.card(result, index, { category, saved });
   }
   function refreshDiscoverSavedActions() {
     const box = $("#discover-results"), results = box?._results || [];
     box?.querySelectorAll("[data-discover-add]").forEach(button => {
       const result = results[Number(button.dataset.discoverAdd)];
-      if (!result || !items.some(item => sameDiscoverTitle(item, result, result.category || currentDiscoverCategory()))) return;
+      if (!result || !itemByTitleIdentity(titleIdentity({ ...result, category: result.category || currentDiscoverCategory(), metadataSource: result.metadataSource || result.source }))) return;
       button.disabled = true; button.classList.add("is-saved"); button.innerHTML = '<span aria-hidden="true">✓</span>'; button.setAttribute("aria-label", "Already in library");
     });
   }
@@ -1557,51 +1770,78 @@
     box._results = all;
     return all.length;
   }
-  let suggestionsCache = null, suggestionsRequest = 0;
+  let suggestionsCache = null, suggestionsRequest = 0, suggestionsPendingKey = "", suggestionsAbortController = null;
   async function loadDiscoverSuggestions() {
-    const requestId = ++suggestionsRequest, sourceKey = discoverSource, category = currentDiscoverCategory();
-    const box = $("#discover-results"), empty = $("#discover-empty"), message = $("#discover-message");
+    const sourceKey = discoverSource, category = currentDiscoverCategory();
+    const cacheKey = `${sourceKey}|${category}|${new Date().toDateString()}`;
+    const cachedSections = suggestionsCache?.key === cacheKey ? suggestionsCache.sections : null;
+    const box = $("#discover-results"), empty = $("#discover-empty");
     if (!box) return;
+    // render() can run repeatedly while the page is open. Reuse the active request
+    // so each render does not start another full set of provider requests.
+    if (prefs.metadataMode !== "offline" && !cachedSections && suggestionsPendingKey === cacheKey) {
+      box.setAttribute("aria-busy", "true");
+      if (empty) empty.hidden = true;
+      if (!box.querySelector(".discover-catalog-loading")) box.innerHTML = window.SplitAppDiscoverCards.loading({ sections: [["Latest", 3], ["Trending", 3]] });
+      return;
+    }
+    suggestionsAbortController?.abort();
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    suggestionsAbortController = controller;
+    const requestId = ++suggestionsRequest;
     box.setAttribute("aria-busy", "true");
     if (prefs.metadataMode === "offline") {
+      if (suggestionsAbortController === controller) suggestionsAbortController = null;
       box.innerHTML = "";
       box.setAttribute("aria-busy", "false");
       if (empty) empty.hidden = false;
       return;
     }
-    const cacheKey = `${sourceKey}|${category}|${new Date().toDateString()}`;
     if (empty) empty.hidden = true;
-    let sections = suggestionsCache?.key === cacheKey ? suggestionsCache.sections : null;
+    let sections = cachedSections;
     if (!sections) {
-      box.innerHTML = `<div class="discover-catalog-grid discover-catalog-loading" aria-hidden="true">${"<span></span>".repeat(6)}</div>`;
-      try { sections = await window.SplitAppDiscovery.trending(category, detailSettings(), sourceKey); }
+      suggestionsPendingKey = cacheKey;
+      box.innerHTML = window.SplitAppDiscoverCards.loading({ sections: [["Latest", 3], ["Trending", 3]] });
+      try { sections = await window.SplitAppDiscovery.trending(category, { ...detailSettings(), ...(controller ? { signal: controller.signal } : {}) }, sourceKey); }
       catch (error) {
+        if (suggestionsPendingKey === cacheKey) suggestionsPendingKey = "";
+        if (suggestionsAbortController === controller) suggestionsAbortController = null;
         if (requestId !== suggestionsRequest || page !== "discover") return;
-        box.setAttribute("aria-busy", "false");
-        box.innerHTML = ""; if (empty) empty.hidden = false;
-        if (message && navigator.onLine) message.textContent = "Could not load suggestions right now.";
+        const currentBox = $("#discover-results"), currentEmpty = $("#discover-empty"), currentMessage = $("#discover-message");
+        currentBox?.setAttribute("aria-busy", "false");
+        if (currentBox) currentBox.innerHTML = "";
+        if (currentEmpty) currentEmpty.hidden = false;
+        if (currentMessage && navigator.onLine) currentMessage.textContent = "Could not load suggestions right now.";
         return;
       }
+      if (suggestionsPendingKey === cacheKey) suggestionsPendingKey = "";
       suggestionsCache = { key: cacheKey, sections };
     }
+    if (suggestionsAbortController === controller) suggestionsAbortController = null;
     if (requestId !== suggestionsRequest || page !== "discover" || discoverQuery || $("#discover-query")?.value.trim()) return;
-    const count = renderDiscoverCatalog(sections, box);
-    box.setAttribute("aria-busy", "false");
-    if (empty) empty.hidden = count > 0;
+    const currentBox = $("#discover-results"), currentEmpty = $("#discover-empty");
+    if (!currentBox) return;
+    const count = renderDiscoverCatalog(sections, currentBox);
+    currentBox.setAttribute("aria-busy", "false");
+    if (currentEmpty) currentEmpty.hidden = count > 0;
   }
   async function discover() {
     const query = String(discoverQuery || "").trim(); const key = currentDiscoverCategory();
+    discoverAbortController?.abort(); discoverAbortController = null;
+    if (query) { suggestionsAbortController?.abort(); suggestionsAbortController = null; suggestionsPendingKey = ""; suggestionsRequest++; }
     const requestId = ++discoverRequestId; const sourceKey = discoverSource;
     const message = $("#discover-message");
     if (!query) { message.textContent = ""; const box = $("#discover-results"); if (box) box.setAttribute("aria-busy", "false"); loadDiscoverSuggestions(); return; }
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    discoverAbortController = controller;
     const initialEmpty = $("#discover-empty"); if (initialEmpty?.isConnected) initialEmpty.hidden = true;
     const initialBox = $("#discover-results");
     if (prefs.metadataMode === "offline") { message.textContent = "Online metadata is disabled in Settings."; initialBox?.setAttribute("aria-busy", "false"); return; }
     if (!navigator.onLine) { message.textContent = "You are offline. Reconnect and try again."; initialBox?.setAttribute("aria-busy", "false"); return; }
     if (message?.isConnected) message.textContent = "Searching connected sources…";
-    if (initialBox?.isConnected) { initialBox.setAttribute("aria-busy", "true"); initialBox.innerHTML = ""; }
+    if (initialBox?.isConnected) { initialBox.setAttribute("aria-busy", "true"); initialBox.innerHTML = window.SplitAppDiscoverCards.loading(); }
     try {
-      const results = sourceKey ? await exploreSourceSearch(query, sourceKey) : await discoverSearch(query, key);
+      const results = sourceKey ? await exploreSourceSearch(query, sourceKey, controller?.signal) : await discoverSearch(query, key, controller?.signal);
       if (requestId !== discoverRequestId || page !== "discover" || discoverSource !== sourceKey) return;
       const sourceName = window.SplitAppSources.list().find(source => source.key === sourceKey)?.name;
       if (!paintDiscoverResults(results, sourceKey)) return;
@@ -1614,35 +1854,30 @@
         ? `${sourceName || "The metadata source"} denied this request (HTTP 403). If the provider showed a consent prompt, review it there and retry; otherwise try another source or try again later.`
         : error?.message || "Please try again.";
       const currentMessage = $("#discover-message"); if (currentMessage) currentMessage.textContent = `Could not search${sourceName ? ` ${sourceName}` : " sources"}: ${providerMessage}`;
-      $("#discover-results")?.setAttribute("aria-busy", "false");
-      const consentLink = $("#discover-consent-link");
-      if (consentLink && sourceKey === "howlongtobeat" && status === 403) {
-        consentLink.hidden = false;
-        // Give the user an immediate, explicit path to review the provider's
-        // consent prompt after a 403. ScreenMark never accepts terms for them.
-        showPopup($("#discover-consent-dialog"));
-      }
+      const resultsBox = $("#discover-results"); resultsBox?.setAttribute("aria-busy", "false"); if (resultsBox) resultsBox.innerHTML = "";
       recordLog("warning", `Discover search failed${sourceName ? ` for ${sourceName}` : ""}: ${providerMessage}`);
+    } finally {
+      if (discoverAbortController === controller) discoverAbortController = null;
     }
   }
-  async function discoverSearch(query, key) {
+  async function discoverSearch(query, key, signal) {
     if (!window.SplitAppDiscovery) throw new Error("This app's discovery backend did not load.");
     return window.SplitAppDiscovery.search(query, key, {
       metadataSources: prefs.metadataSources, metadataSourceOrder: prefs.metadataSourceOrder, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions,
-      offlineFallback: prefs.offlineFallback, metadataRefreshInterval: prefs.metadataRefreshInterval
+      offlineFallback: prefs.offlineFallback, metadataRefreshInterval: prefs.metadataRefreshInterval, ...(signal ? { signal } : {})
     });
   }
-  async function exploreSourceSearch(query, sourceKey) {
+  async function exploreSourceSearch(query, sourceKey, signal) {
     if (!window.SplitAppDiscovery?.searchSource) throw new Error("The metadata search service did not load.");
     return window.SplitAppDiscovery.searchSource(query, currentDiscoverCategory(), {
       metadataSources: prefs.metadataSources, metadataSourceOrder: prefs.metadataSourceOrder, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions,
-      offlineFallback: prefs.offlineFallback, metadataRefreshInterval: prefs.metadataRefreshInterval
+      offlineFallback: prefs.offlineFallback, metadataRefreshInterval: prefs.metadataRefreshInterval, ...(signal ? { signal } : {})
     }, sourceKey);
   }
   function syncBackupSchedule() {
     const plugin = window.Capacitor?.Plugins?.BackupScheduler;
     if (!plugin) return;
-    if (prefs.backgroundBackups && prefs.backupSchedule === "daily") plugin.schedule?.().catch(() => toast("Could not schedule encrypted backups."));
+    if (prefs.backgroundBackups && prefs.backupSchedule === "daily") plugin.schedule?.({ retention: Number(prefs.backupRetention) || 10 }).catch(() => toast("Could not schedule encrypted backups."));
     else plugin.cancel?.().catch(() => {});
   }
   const titleIdentity = item => {
@@ -1655,12 +1890,12 @@
   }
   function addDiscoverResult(result, origin = "Discover") {
     if (!result) return null;
-    const existing = items.find(item => sameDiscoverTitle(item, result));
+    const existing = itemByTitleIdentity(titleIdentity({ ...result, metadataSource: result.metadataSource || result.source }));
     if (existing) {
       toast("That entry is already in your library."); return existing;
     }
     const item = stripLocalScores({ ...result, metadataSource: result.source, id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, createdAt: Date.now(), updatedAt: Date.now() });
-    items.unshift(item); recordLibraryChange("added", `Added ${item.title} from ${origin}.`, [item.id]); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist({ ids: [item.id] }); toast("Added to your library."); hydrateSavedItem(item); return item;
+    items.unshift(item); itemIndexItems = null; recordLibraryChange("added", `Added ${item.title} from ${origin}.`, [item.id]); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist({ ids: [item.id] }); toast("Added to your library."); hydrateSavedItem(item); return item;
   }
   // Keep the best value per fact across providers (a later source never blanks out earlier data).
   function mergeFacts(previous = {}, next = {}) {
@@ -1671,44 +1906,34 @@
     }
     return merged;
   }
-  // Looks up runtime / episode counts (OMDb, TVmaze, then AniList) for titles whose saved source has none.
-  // Saves provider details (runtime, episodes, cast, ratings, images) for titles that never opened their details page.
-  let factsRunning = false;
-  async function fetchMissingFacts(button) {
-    if (factsRunning) return; factsRunning = true; button.disabled = true;
-    const pending = items.filter(item => item.metadataSource && item.providerId && !item.facts?.fetchedAt);
-    let done = 0;
-    for (const item of pending) {
-      button.textContent = `Fetching ${done + 1} of ${pending.length}…`;
-      try {
-    const loaded = await window.SplitAppDetails.load(item, detailSettings());
-        item.cachedDetails = loaded; item.metadataFetchedAt = Number(loaded.fetchedAt || loaded.facts?.fetchedAt) || Date.now(); item.facts = mergeFacts(item.facts, loaded.facts);
-        item.description = loaded.description || item.description; item.year = loaded.year || item.year;
-        item.image = item.customCover || loaded.portraitImage || loaded.image || item.image;
-        done += 1; persist({ ids: [item.id] });
-      } catch (error) { recordLog("warning", `Could not fetch details for ${item.title}: ${error?.message || error}`); }
-      await new Promise(resolve => setTimeout(resolve, 350));
+  function applyLoadedMetadata(item, loaded, { cacheDetails = true, replaceFacts = false } = {}) {
+    if (!item || !loaded || typeof loaded !== "object") throw new Error("Metadata source returned an invalid detail record.");
+    let cachedDetails = loaded;
+    if (cacheDetails && item.cachedDetails && !replaceFacts) {
+      const sections = [...(loaded.sections || [])];
+      const sectionKey = section => `${section.kind || ""}:${String(section.title || "").replace(/\s*\(\d+\)\s*$/, "").trim().toLocaleLowerCase()}`;
+      const available = new Set(sections.filter(section => (section.items || []).length).map(sectionKey));
+      for (const section of item.cachedDetails.sections || []) {
+        if (!(section.items || []).length || !["gallery", "carousel", "people"].includes(section.kind)) continue;
+        const key = sectionKey(section);
+        if (available.has(key)) continue;
+        sections.push(section); available.add(key);
+      }
+      if (sections.length !== (loaded.sections || []).length) cachedDetails = { ...loaded, sections };
     }
-    factsRunning = false; render(); toast(`Saved details for ${done} of ${pending.length} titles.`);
-  }
-  async function findMissingHours(button) {
-    if (factsRunning) return;
-    factsRunning = true; button.disabled = true;
-    const pending = items.filter(item => !Number(item.facts?.totalMinutes) && !Number(item.facts?.runtimeMinutes) && item.metadataSource && item.providerId);
-    let found = 0;
-    for (const item of pending) {
-      try {
-        const loaded = await window.SplitAppDetails.load(item, detailSettings());
-        const facts = loaded?.facts || {};
-        if (Number(facts.totalMinutes) || Number(facts.runtimeMinutes) || Number(facts.episodeCount)) {
-          item.cachedDetails = loaded; item.facts = mergeFacts(item.facts, facts); item.updatedAt = Date.now();
-          if (!Number(item.goal)) item.goal = category(item.category)?.unit === "minutes" ? Number(facts.runtimeMinutes) || 0 : Number(facts.episodeCount) || 0;
-          found += 1; await persist({ ids: [item.id] });
-        }
-      } catch (error) { recordLog("warning", `Runtime lookup failed for ${item.title}: ${error?.message || error}`); }
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
-    factsRunning = false; render(); toast(found ? `Found runtimes for ${found} of ${pending.length} titles.` : "No runtimes found. Refresh metadata from each title's source.");
+    if (cacheDetails) item.cachedDetails = cachedDetails;
+    if (cacheDetails && page === "details" && String(detailItemId) === String(item.id)) detailData = cachedDetails;
+    item.metadataFetchedAt = Number(loaded.fetchedAt || loaded.facts?.fetchedAt) || Date.now();
+    item.facts = replaceFacts ? { ...(loaded.facts || {}) } : mergeFacts(item.facts, loaded.facts);
+    delete item.relinkFresh;
+    if (!Number(item.goal)) item.goal = category(item.category)?.unit === "minutes" ? Number(loaded.facts?.runtimeMinutes) || 0 : Number(loaded.goal) || Number(loaded.facts?.episodeCount) || 0;
+    item.description = loaded.description || item.description;
+    item.year = loaded.year || item.year;
+    item.image = item.customCover || loaded.portraitImage || loaded.image || item.image;
+    item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop;
+    item.updatedAt = Date.now();
+    reconcileEpisodes(item);
+    return item;
   }
   function readCustomSourceForm() {
     const form = $("#custom-source-form"); if (!form) return null;
@@ -1716,10 +1941,20 @@
     const group = prefix => Object.fromEntries([...form.elements].filter(el => el.name?.startsWith(prefix)).map(el => [el.name.slice(prefix.length), String(el.value || "").trim()]).filter(([, value]) => value));
     return { id: get("sourceId") || crypto.randomUUID().slice(0, 8), name: get("name"), searchUrl: get("searchUrl"), apiKey: get("apiKey"), categories: get("categories").split(",").filter(Boolean), apiKeyHeader: get("apiKeyHeader"), resultsPath: get("resultsPath"), imageTemplate: get("imageTemplate"), suggestionsUrl: get("suggestionsUrl"), detailUrl: get("detailUrl"), detailRoot: get("detailRoot"), map: group("map."), detailMap: group("dmap.") };
   }
+  function isSecureCustomEndpoint(value) {
+    try {
+      const url = new URL(String(value || ""));
+      if (url.username || url.password) return false;
+      if (url.protocol === "https:") return true;
+      return !window.Capacitor?.isNativePlatform?.() && url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    } catch { return false; }
+  }
   function validateCustomSource(config) {
     if (!config?.name) return "Give the source a name.";
-    if (!/^https?:\/\//i.test(config.searchUrl)) return "The search URL must start with http:// or https://.";
+    if (!isSecureCustomEndpoint(config.searchUrl)) return "Use an HTTPS endpoint. HTTP is allowed only for localhost during web preview.";
     if (!/\{query\}/.test(config.searchUrl)) return "The search URL needs {query} where the search text goes.";
+    if ([config.suggestionsUrl, config.detailUrl].some(value => value && !isSecureCustomEndpoint(value))) return "Suggestions and details endpoints must use HTTPS.";
+    if (config.apiKeyHeader && (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,80}$/.test(config.apiKeyHeader) || /^(host|cookie|origin|referer|content-length|connection|transfer-encoding|proxy-.*|sec-.*)$/i.test(config.apiKeyHeader))) return "Choose a valid, non-restricted API-key header name.";
     if (!config.map.title) return "Say which field holds the title.";
     return "";
   }
@@ -1732,6 +1967,29 @@
       output.dataset.state = results.length ? "ok" : "error";
       output.innerHTML = results.length ? `<strong>${results.length} result${results.length === 1 ? "" : "s"} found</strong>${results.slice(0, 4).map(row => `<div class="cs-test-row">${row.image ? `<img src="${esc(row.image)}" alt="" onerror="this.hidden=true">` : ""}<span>${esc(row.title)}<small>${esc(row.subtitle || row.year || "")}</small></span></div>`).join("")}` : "The request worked but no results matched. Check the results path and the title field.";
     } catch (error) { output.dataset.state = "error"; output.textContent = `Failed: ${error?.message || error}`; }
+  }
+  async function testMetadataSource(sourceKey, button) {
+    const source = window.SplitAppSources.list().find(row => row.key === sourceKey);
+    const output = $(`[data-source-test-output="${CSS.escape(sourceKey)}"]`);
+    if (!source || !output) return;
+    const key = prefs.apiKeys?.[sourceKey]?.trim();
+    if (source.keyRequired && !key) { output.textContent = "Add the required API key before testing this source."; output.dataset.state = "error"; $(`[data-source-api-key="${CSS.escape(sourceKey)}"]`)?.focus(); return; }
+    const category = source.categories.includes("series") ? "series" : source.categories[0] || "movie";
+    const query = ["anilist", "jikan", "kitsu"].includes(sourceKey) ? "Naruto" : category === "series" ? "Breaking Bad" : "Inception";
+    const label = button.textContent;
+    button.disabled = true; button.textContent = "Testing…";
+    output.textContent = `Searching ${source.name}…`; output.dataset.state = "";
+    try {
+      const metadataSources = { ...prefs.metadataSources, [sourceKey]: true };
+      const results = await window.SplitAppDiscovery.searchSource(query, category, { ...detailSettings(), metadataSources }, sourceKey);
+      output.dataset.state = "ok";
+      output.textContent = results.length ? `Connection successful. Found ${results.length} ${results.length === 1 ? "match" : "matches"} for “${query}”.` : `The source responded successfully, but returned no matches for “${query}”.`;
+    } catch (error) {
+      output.dataset.state = "error";
+      output.textContent = `Test failed: ${error?.message || error}`;
+    } finally {
+      button.disabled = false; button.textContent = label;
+    }
   }
   function saveCustomSource(event) {
     event.preventDefault();
@@ -1751,51 +2009,60 @@
   }
   function detailSettings() { return { metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions, offlineFallback: prefs.offlineFallback }; }
   async function loadDetails(targetId = null) {
-    const item = detailPreview || items.find(row => String(row.id) === String(targetId ?? detailItemId));
-    const requestId = ++detailRequest; detailData = item?.cachedDetails || null; detailError = "";
-    if (!item) { detailLoading = false; render(); return; }
+    detailAbortController?.abort();
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    detailAbortController = controller;
+    const item = detailPreview || itemById(String(targetId ?? detailItemId));
+    const requestId = ++detailRequest, useCached = Boolean(item?.cachedDetails && prefs.offlineFallback !== "none");
+    detailData = useCached ? item.cachedDetails : null; detailError = "";
+    if (!item) { if (detailAbortController === controller) detailAbortController = null; detailLoading = false; render(); return; }
     if (!detailPreview && window.SplitAppBackend?.loadItemImages) {
-      try {
-        const localImageData = await window.SplitAppBackend.loadItemImages(item);
-        if (requestId === detailRequest && Object.keys(localImageData).length) item.localImageData = localImageData;
-      } catch (_) {}
+      Promise.resolve().then(() => window.SplitAppBackend.loadItemImages(item)).then(localImageData => {
+        if (requestId !== detailRequest || !localImageData || !Object.keys(localImageData).length) return;
+        item.localImageData = { ...(item.localImageData || {}), ...localImageData };
+        if (page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
+      }).catch(() => {});
     }
-    if (!item.metadataSource || !item.providerId) { detailLoading = false; detailError = ""; render(); return; }
+    if (!item.metadataSource || !item.providerId) { if (detailAbortController === controller) detailAbortController = null; detailLoading = false; detailError = ""; render(); return; }
+    const source = window.SplitAppSources.list().find(row => row.key === item.metadataSource);
+    const sourceEnabled = source && window.SplitAppSources.isEnabled(source.key, prefs);
+    if (prefs.metadataMode === "offline" || !navigator.onLine || !sourceEnabled) {
+      detailLoading = false;
+      if (detailAbortController === controller) detailAbortController = null;
+      if (!useCached && prefs.offlineFallback !== "none") detailError = prefs.metadataMode === "offline" || !navigator.onLine
+        ? "No saved metadata is available for this title yet. Connect and sync it once to make details available offline."
+        : `${source?.name || "This metadata source"} is disabled and no saved details are available.`;
+      render(); return;
+    }
     detailLoading = true; render();
     try {
-      const loaded = await window.SplitAppDetails.load(item, detailSettings());
+      const loaded = await window.SplitAppDetails.load(item, { ...detailSettings(), ...(controller ? { signal: controller.signal } : {}) });
       if (requestId === detailRequest) {
         detailData = loaded;
         if (detailPreview) { detailPreview.image ||= loaded.portraitImage || loaded.image || ""; detailPreview.year ||= loaded.year || ""; detailPreview.description ||= loaded.description || ""; detailPreview.title = loaded.title || detailPreview.title; }
         if (!detailPreview) {
-          item.cachedDetails = loaded; item.metadataFetchedAt = Number(loaded.fetchedAt || loaded.facts?.fetchedAt) || Date.now();
-          item.facts = item.relinkFresh ? { ...(loaded.facts || {}) } : mergeFacts(item.facts, loaded.facts);
-          delete item.relinkFresh;
-          if (!Number(item.goal)) item.goal = category(item.category)?.unit === "minutes" ? Number(loaded.facts?.runtimeMinutes) || 0 : Number(loaded.goal) || Number(loaded.facts?.episodeCount) || 0;
-          item.description = loaded.description || item.description;
-          item.year = loaded.year || item.year;
-          item.image = item.customCover || loaded.portraitImage || loaded.image || item.image;
-          item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop;
-          item.updatedAt = Date.now();
+          applyLoadedMetadata(item, loaded, { replaceFacts: Boolean(item.relinkFresh) });
           persist({ ids: [item.id] });
-          const localImageData = await window.SplitAppBackend?.loadItemImages?.(item);
-          if (localImageData && Object.keys(localImageData).length) item.localImageData = localImageData;
         }
       }
     }
-    catch (error) { if (requestId === detailRequest) { detailError = error?.message || "Could not load source details."; recordLog("error", `${item.metadataSource} detail request failed: ${detailError}`); } }
-    finally { if (requestId === detailRequest) { detailLoading = false; render(); if (page === "details") historyPush(true); } }
+    catch (error) { if (requestId === detailRequest) { const message = error?.message || "Could not load source details."; detailError = useCached ? "" : message; recordLog(useCached ? "warning" : "error", `${item.metadataSource} detail request failed${useCached ? "; showing saved metadata" : `: ${message}`}`); } }
+    finally {
+      if (detailAbortController === controller) detailAbortController = null;
+      if (requestId === detailRequest) { detailLoading = false; render(); if (page === "details") historyPush(true); }
+    }
   }
   // In-app drill-down (cast, characters, staff, episodes, suggestions); each step keeps the page it came from for Back.
   const detailSnapshot = () => ({ detailPreview, detailItemId, detailData, detailError, detailLoading, detailEditMode, detailReturnPage, detailRef, detailRefOffset, refData, refError, scroll: window.scrollY });
-  function clearDetailStack() { detailTab = ""; detailSeason = ""; detailStack = []; detailRef = null; detailRefOffset = 0; refData = null; refError = ""; refLoading = false; refRequest++; }
+  function clearDetailStack() { detailAbortController?.abort(); refAbortController?.abort(); detailAbortController = refAbortController = null; detailRequest++; detailTab = ""; detailSeason = ""; detailStack = []; detailRef = null; detailRefOffset = 0; refData = null; refError = ""; refLoading = false; refRequest++; }
   function openDetailRef(type, id, title, extra, replace = false) {
     if (!id) return;
-    if (!replace) detailStack.push(detailSnapshot());
+    if (!replace) { detailStack.push(detailSnapshot()); if (detailStack.length > 50) detailStack.shift(); }
     if (type === "show") {
       const source = extra?.source || "tvmaze", showCategory = extra?.category || "series";
-      const existing = items.find(row => row.metadataSource === source && row.category === showCategory && String(row.providerId) === String(id));
-      detailRef = null; refData = null; detailEditMode = false; detailError = ""; detailData = null; detailRequest++;
+      const existing = itemByProvider(source, showCategory, id);
+      detailAbortController?.abort(); refAbortController?.abort(); detailAbortController = refAbortController = null;
+      detailRef = null; refData = null; detailEditMode = false; detailError = ""; detailData = null; detailRequest++; refRequest++;
       if (existing) { detailPreview = null; detailItemId = existing.id; }
       else { detailItemId = null; detailPreview = { id: `${source}:${id}`, title: title || (showCategory === "movie" ? "Movie" : "Series"), category: showCategory, source, metadataSource: source, providerId: String(id), status: defaultStatus(showCategory) }; }
       render(); scrollPageTop(); historyPush(replace); loadDetails(); return;
@@ -1804,22 +2071,51 @@
     detailRef = { type, id, title, extra }; refData = null; refError = ""; render(); scrollPageTop(); historyPush(replace); loadDetailRef();
   }
   async function loadDetailRef() {
-    const ref = detailRef, requestId = ++refRequest; if (!ref) return;
+    refAbortController?.abort();
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    refAbortController = controller;
+    const ref = detailRef, requestId = ++refRequest;
+    if (!ref) { if (refAbortController === controller) refAbortController = null; return; }
+    refData = null; refError = "";
     refLoading = true; render();
     try {
-      const parent = detailItemId ? items.find(row => String(row.id) === String(detailItemId)) : null;
-      const cachedEpisode = ref.type === "episode" && parent?.metadataSource === "omdb"
+      const parent = detailItemId ? itemById(detailItemId) : null;
+      const cachedEpisode = ref.type === "episode" && parent
         ? (parent.cachedDetails?.sections || []).filter(section => section.kind === "episodes").flatMap(section => section.items || []).find(row => String(row.id) === String(ref.id) || String(row.ref?.id) === String(ref.id))
         : null;
+      const cachedMediaSections = cachedEpisode?.mediaSections || [];
+      const referenceSourceKey = parent?.metadataSource || ({ tenrai: "anilist" }[ref.extra?.source] || ref.extra?.source) || String(ref.id || "").match(/^(tmdb|tvdb|imdb|anilist):/i)?.[1]?.toLowerCase() || "tvmaze";
+      const referenceSource = window.SplitAppSources.list().find(source => source.key === referenceSourceKey);
+      const referenceSourceUnavailable = Boolean(referenceSource && (!window.SplitAppSources.isEnabled(referenceSource.key, prefs) || (referenceSource.keyRequired && !prefs.apiKeys?.[referenceSource.key]?.trim())));
+      const localOnly = prefs.metadataMode === "offline" || !navigator.onLine || referenceSourceUnavailable;
       let loaded;
       if (cachedEpisode?.raw) {
         const raw = cachedEpisode.raw, na = value => value && value !== "N/A" ? value : "", people = (value, meta) => String(na(value) || "").split(/,\s*/).filter(Boolean).map(title => ({ title, meta, image: "" }));
         loaded = { type: "episode", source: "OMDb", title: na(raw.Title) || cachedEpisode.title, subtitle: `${parent.title} · S${cachedEpisode.season}E${cachedEpisode.number}`, image: na(raw.Poster) || cachedEpisode.image, description: na(raw.Plot) || cachedEpisode.description, url: raw.imdbID ? `https://www.imdb.com/title/${raw.imdbID}/` : "", facts: [["Aired", na(raw.Released) || cachedEpisode.airdate], ["Runtime", na(raw.Runtime) || (cachedEpisode.runtime ? `${cachedEpisode.runtime} min` : "")], ["Rating", na(raw.imdbRating) ? `★ ${raw.imdbRating}` : cachedEpisode.rating ? `★ ${cachedEpisode.rating}` : ""], ["Votes", na(raw.imdbVotes)], ["Rated", na(raw.Rated)]].filter(([, value]) => value), sections: [{ title: "Cast", kind: "people", items: people(raw.Actors, "Actor") }, { title: "Staff", kind: "people", items: [...people(raw.Director, "Director"), ...people(raw.Writer, "Writer")] }].filter(section => section.items.length), raw };
-      } else loaded = await window.SplitAppDetails.loadRef(ref, detailSettings());
+      } else if (localOnly && prefs.offlineFallback !== "none" && cachedEpisode) {
+        loaded = { type: "episode", source: parent.metadataSource || "ScreenMark", title: cachedEpisode.title || ref.title || "Episode", subtitle: `${parent.title} · S${cachedEpisode.season}E${cachedEpisode.number}`, image: cachedEpisode.image || "", description: cachedEpisode.description || "", url: cachedEpisode.url || "", facts: [["Aired", cachedEpisode.airdate], ["Runtime", cachedEpisode.runtime ? `${cachedEpisode.runtime} min` : ""], ["Rating", cachedEpisode.rating ? `★ ${cachedEpisode.rating}` : ""], ["Season", cachedEpisode.season], ["Episode", cachedEpisode.number]].filter(([, value]) => value !== undefined && value !== ""), sections: cachedMediaSections };
+      } else if (localOnly) {
+        const sourceName = referenceSource?.name || "The metadata source";
+        throw new Error(referenceSourceUnavailable ? `${sourceName} is disabled or needs its API key in Metadata Sources.` : prefs.offlineFallback === "none" ? "Offline metadata fallback is turned off." : ref.type === "person" || ref.type === "character" ? "Cast pages are only available while the metadata source is online." : "No saved details are available for this page. Open it online once to save it for offline use.");
+      } else {
+        loaded = await window.SplitAppDetails.loadRef(ref, { ...detailSettings(), ...(controller ? { signal: controller.signal } : {}) });
+        if (ref.type === "episode" && cachedEpisode && parent && requestId === refRequest) {
+          const fetchedMedia = (loaded.sections || []).filter(section => section.kind === "gallery" && (section.items || []).some(row => /^https:\/\//i.test(String(row.image || row.url || ""))));
+          if (fetchedMedia.length) {
+            cachedEpisode.mediaSections = fetchedMedia;
+            persist({ ids: [parent.id] });
+          } else if (cachedMediaSections.length) {
+            loaded.sections = [...(loaded.sections || []).filter(section => section.kind !== "gallery"), ...cachedMediaSections];
+          }
+        }
+      }
       if (requestId === refRequest) refData = loaded;
     }
     catch (error) { if (requestId === refRequest) refError = error?.message || "Could not load this page."; }
-    finally { if (requestId === refRequest) { refLoading = false; render(); scrollPageTop(); historyPush(true); } }
+    finally {
+      if (refAbortController === controller) refAbortController = null;
+      if (requestId === refRequest) { refLoading = false; render(); scrollPageTop(); historyPush(true); }
+    }
   }
   // Seasons after the first keep their episode rows inert in a <template> until opened.
   document.addEventListener("toggle", event => {
@@ -1833,98 +2129,220 @@
     if (!item?.metadataSource || !item.providerId || item.cachedDetails || hydrating.has(item.id) || prefs.metadataMode === "offline") return;
     hydrating.add(item.id);
     try {
-      const loaded = await window.SplitAppDetails.load(item, detailSettings());
-      if (!items.includes(item)) return;
-      item.cachedDetails = loaded; item.metadataFetchedAt = Number(loaded.fetchedAt || loaded.facts?.fetchedAt) || Date.now(); item.facts = mergeFacts(item.facts, loaded.facts);
-      if (!Number(item.goal)) item.goal = category(item.category)?.unit === "minutes" ? Number(loaded.facts?.runtimeMinutes) || 0 : Number(loaded.goal) || Number(loaded.facts?.episodeCount) || 0;
-      item.description = loaded.description || item.description; item.year = loaded.year || item.year;
-      item.image = item.customCover || loaded.portraitImage || loaded.image || item.image; item.backdrop = loaded.landscapeImage || item.backdrop;
-      item.updatedAt = Date.now(); persist({ ids: [item.id] }); if (page === "details" && detailItemId === item.id) render();
+      const loaded = await window.SplitAppDetails.load(item, { ...detailSettings(), background: true });
+      if (itemById(item.id) !== item) return;
+      applyLoadedMetadata(item, loaded); persist({ ids: [item.id] }); if (page === "details" && detailItemId === item.id) render();
     } catch (error) { recordLog("warning", `Could not save details for ${item.title}: ${error?.message || error}`); }
     finally { hydrating.delete(item.id); }
   }
-  document.addEventListener("click", event => {
-    const share = eventClosest(event, "[data-share-all]");
-    if (share) {
-      const collectionKind = page === "series" || page === "series-favorites" ? "series" : page === "movies" || page === "movie-favorites" ? "movie" : "";
-      let selected, label = "Collection";
-      if (collectionKind) {
-        const favoritesOnly = page === "series-favorites" || page === "movie-favorites";
-        selected = items.filter(item => item.category === collectionKind && (!favoritesOnly || item.favorite));
-        label = `${collectionKind === "series" ? "Shows" : "Movies"}${favoritesOnly ? " favorites" : ""}`;
-      } else {
-        selected = window.SplitAppLibrary.create(pageContext()).filteredItems(libraryQuery);
-        if (dashboardStatusFilter !== "all") selected = selected.filter(item => item.status === dashboardStatusFilter);
-      }
-      openShareList(label, selected);
-    }
-  }, true);
-
   let metadataSync = null;
+  let metadataSyncSaveTimer = 0, metadataSyncRenderTimer = 0;
+  let metadataSyncCountState = null, metadataSyncCounters = null;
   function saveMetadataSyncState() {
-    try { if (metadataSyncState) localStorage.setItem(`${storageKey}_metadata_sync`, JSON.stringify(metadataSyncState)); else localStorage.removeItem(`${storageKey}_metadata_sync`); } catch (_) {}
+    clearTimeout(metadataSyncSaveTimer); metadataSyncSaveTimer = 0;
+    if (!metadataSyncState) {
+      try {
+        localStorage.removeItem(metadataSyncStorageKey);
+        for (let index = 0; index < Math.max(metadataSyncPersistedChunkCount, metadataSyncChunkCount); index++) localStorage.removeItem(metadataSyncChunkKey(index));
+      } catch (error) { recordLog("warning", `Could not clear metadata refresh progress: ${error?.message || error}`); }
+      metadataSyncChunks = []; metadataSyncEntryPositions.clear(); metadataSyncDirtyChunks.clear();
+      metadataSyncChunkCount = 0; metadataSyncPersistedChunkCount = 0; metadataSyncIndexedState = null; metadataSyncNeedsCheckpoint = false;
+      return;
+    }
+    if (metadataSyncIndexedState !== metadataSyncState) {
+      indexMetadataSyncState(metadataSyncState);
+      metadataSyncChunks.forEach((_, index) => metadataSyncDirtyChunks.add(index));
+    }
+    const previousChunkCount = metadataSyncPersistedChunkCount;
+    const header = { version: 3, startedAt: Number(metadataSyncState.startedAt) || 0, finishedAt: Number(metadataSyncState.finishedAt) || 0, scope: String(metadataSyncState.scope || "needed"), chunkCount: metadataSyncChunkCount };
+    try {
+      metadataSyncDirtyChunks.forEach(index => localStorage.setItem(metadataSyncChunkKey(index), JSON.stringify(metadataSyncChunks[index] || [])));
+      localStorage.setItem(metadataSyncStorageKey, JSON.stringify(header));
+      for (let index = metadataSyncChunkCount; index < previousChunkCount; index++) localStorage.removeItem(metadataSyncChunkKey(index));
+      metadataSyncDirtyChunks.clear(); metadataSyncPersistedChunkCount = metadataSyncChunkCount; metadataSyncNeedsCheckpoint = false;
+    } catch (error) { recordLog("warning", `Could not save metadata refresh progress: ${error?.message || error}`); }
   }
+  function deferMetadataSyncUpdate() {
+    if (!metadataSyncSaveTimer) metadataSyncSaveTimer = setTimeout(saveMetadataSyncState, 500);
+    if (!document.hidden && !metadataSyncRenderTimer) metadataSyncRenderTimer = setTimeout(() => { metadataSyncRenderTimer = 0; render(); }, 300);
+  }
+  function isMetadataRefreshable(item) {
+    const source = window.SplitAppSources.list(item?.category).find(row => row.key === item?.metadataSource);
+    return Boolean(item?.providerId && source && window.SplitAppSources.isEnabled(source.key, prefs) && (!source.keyRequired || prefs.apiKeys?.[source.key]?.trim()));
+  }
+  const metadataSourceIdentity = item => [item?.metadataSource || item?.source || "", item?.category || "", String(item?.providerId || "")].join("\u0000");
+  const metadataComparison = (details, trim = Boolean(details?.trimmed)) => {
+    if (!details) return "";
+    const copy = { ...details };
+    delete copy.raw;
+    if (copy.facts) { copy.facts = { ...copy.facts }; delete copy.facts.cast; }
+    if (Array.isArray(copy.fields)) copy.fields = copy.fields.filter(field => !/^cast|^actors?$/i.test(String(field?.label || "").trim()));
+    if (Array.isArray(copy.sections)) {
+      const limits = { screenshots: 6 };
+      copy.sections = copy.sections.filter(section => section?.kind !== "people" && !/^(posters|you might also like|cast|characters|staff|crew|people|guest cast|guest crew)(?:\b|\s)/i.test(section.title || "")).map(section => {
+        const key = Object.keys(limits).find(name => new RegExp(`^${name}`, "i").test(section.title || ""));
+        if (key) return { ...section, items: (section.items || []).slice(0, limits[key]) };
+        return section;
+      });
+      if (trim) copy.trimmed = true;
+    }
+    return JSON.stringify(copy, (key, child) => key === "fetchedAt" ? undefined : child);
+  };
   const metadataStamp = item => Number(item?.metadataFetchedAt || item?.cachedDetails?.fetchedAt || item?.cachedDetails?.facts?.fetchedAt || item?.facts?.fetchedAt) || (item?.cachedDetails ? Number(item.updatedAt) || 0 : 0);
-  const syncCounts = () => ({ total: metadataSyncState?.entries?.length || 0, done: metadataSyncState?.entries?.filter(row => row.status === "done").length || 0, failed: metadataSyncState?.entries?.filter(row => row.status === "failed").length || 0, remaining: metadataSyncState?.entries?.filter(row => ["queued", "running"].includes(row.status)).length || 0 });
+  const syncCounts = () => {
+    if (metadataSyncCountState !== metadataSyncState || !metadataSyncCounters) {
+      const entries = metadataSyncState?.entries || [];
+      metadataSyncCounters = { total: entries.length, done: 0, changed: 0, unchanged: 0, failed: 0, skipped: 0, remaining: 0 };
+      entries.forEach(entry => {
+        if (entry.status === "done") { metadataSyncCounters.done++; metadataSyncCounters.changed++; }
+        else if (entry.status === "checked") { metadataSyncCounters.done++; metadataSyncCounters.unchanged++; }
+        else if (entry.status === "failed") metadataSyncCounters.failed++;
+        else if (entry.status === "skipped") metadataSyncCounters.skipped++;
+        else if (entry.status === "queued" || entry.status === "running") metadataSyncCounters.remaining++;
+      });
+      metadataSyncCountState = metadataSyncState;
+    }
+    return metadataSyncCounters;
+  };
+  function setMetadataSyncStatus(entry, status) {
+    const counters = metadataSyncCountState === metadataSyncState ? metadataSyncCounters : null;
+    const previous = entry.status;
+    if (counters && previous !== status) {
+      if (previous === "done") { counters.done--; counters.changed--; }
+      else if (previous === "checked") { counters.done--; counters.unchanged--; }
+      else if (previous === "failed") counters.failed--;
+      else if (previous === "skipped") counters.skipped--;
+      else if (previous === "queued" || previous === "running") counters.remaining--;
+      if (status === "done") { counters.done++; counters.changed++; }
+      else if (status === "checked") { counters.done++; counters.unchanged++; }
+      else if (status === "failed") counters.failed++;
+      else if (status === "skipped") counters.skipped++;
+      else if (status === "queued" || status === "running") counters.remaining++;
+    }
+    entry.status = status;
+    markMetadataSyncEntryDirty(entry);
+  }
   async function waitForSyncResume() {
-    if (navigator.onLine && prefs.metadataMode !== "offline" && !document.hidden) return;
+    if (navigator.onLine && prefs.metadataMode !== "offline") return;
     await new Promise(resolve => {
-      const done = () => { window.removeEventListener("online", done); document.removeEventListener("visibilitychange", onVisible); resolve(); };
-      const onVisible = () => { if (!document.hidden) done(); };
-      window.addEventListener("online", done, { once: true }); document.addEventListener("visibilitychange", onVisible);
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener("online", done);
+        window.removeEventListener("screenmark:sync-resume", done);
+        resolve();
+      };
+      window.addEventListener("online", done);
+      window.addEventListener("screenmark:sync-resume", done);
+      // Recheck after registering listeners so a transition between the initial
+      // state check and listener setup cannot strand a worker indefinitely.
+      if (navigator.onLine && prefs.metadataMode !== "offline") done();
     });
   }
-  async function startMetadataSync(ids = null, retry = false, scope = "all") {
+  async function startMetadataSync(ids = null, retry = false, scope = "all", quiet = false, automatic = false) {
     if (metadataSync) { toast("Metadata refresh is already running."); return metadataSync; }
     if (prefs.metadataMode === "offline" || !navigator.onLine) { toast("Connect to the internet and enable online metadata to refresh."); return; }
     const wanted = ids ? new Set(ids.map(String)) : null;
-    if (retry && metadataSyncState) metadataSyncState.entries.forEach(entry => { if ((entry.status === "failed" || entry.status === "running") && (!wanted || wanted.has(String(entry.id)))) { entry.status = "queued"; entry.error = ""; } });
+    if (retry && metadataSyncState) metadataSyncState.entries.forEach(entry => { if ((entry.status === "failed" || entry.status === "running") && (!automatic || !entry.retryAfterAt || entry.retryAfterAt <= Date.now()) && (!wanted || wanted.has(String(entry.id)))) { setMetadataSyncStatus(entry, "queued"); entry.error = ""; markMetadataSyncEntryDirty(entry); } });
     else {
       const intervalMs = { daily: 86400000, weekly: 7 * 86400000, monthly: 30 * 86400000, never: Infinity }[prefs.metadataRefreshInterval] ?? 7 * 86400000;
+      const priorById = new Map((metadataSyncState?.entries || []).map(entry => [String(entry.id), entry]));
       const entries = items.filter(item => {
-        if ((wanted && !wanted.has(String(item.id))) || !item.metadataSource || !item.providerId || !window.SplitAppSources.available(item.category, prefs).length) return false;
+        const identity = metadataSourceIdentity(item);
+        const prior = priorById.get(String(item.id));
+        const priorFailure = automatic && prior && (!prior.sourceIdentity || prior.sourceIdentity === identity) && prior.status === "failed" && Number(prior.retryAfterAt) > Date.now();
+        if (priorFailure || (wanted && !wanted.has(String(item.id))) || !isMetadataRefreshable(item)) return false;
         const stamp = metadataStamp(item);
         if (scope === "missing") return !item.cachedDetails || !stamp;
         if (scope === "needed") return !stamp || (Number.isFinite(intervalMs) && Date.now() - stamp >= intervalMs);
         return true;
-      }).map(item => ({ id: String(item.id), title: item.title, status: "queued", error: "" }));
-      metadataSyncState = { startedAt: Date.now(), scope, entries };
+      }).map(item => ({ id: String(item.id), title: item.title, source: item.metadataSource || item.source || "", category: item.category || "", providerId: String(item.providerId || ""), sourceIdentity: metadataSourceIdentity(item), status: "queued", error: "" }));
+      if (entries.length) metadataSyncState = { startedAt: Date.now(), scope, entries };
+      else if (!metadataSyncState) metadataSyncState = { startedAt: Date.now(), scope, entries: [] };
     }
     saveMetadataSyncState();
     const queue = metadataSyncState?.entries?.filter(row => row.status === "queued") || [];
-    if (!queue.length) { toast(retry ? "No failed metadata requests to retry." : scope === "needed" ? "No saved titles need a metadata refresh." : "No saved titles can be refreshed from the enabled sources."); render(); return; }
+    if (!queue.length) { if (!quiet) toast(retry ? "No failed metadata requests to retry." : scope === "needed" ? "No saved titles need a metadata refresh." : "No saved titles can be refreshed from the enabled sources."); render(); return; }
     const total = metadataSyncState.entries.length;
-    toast(`Refreshing metadata · ${syncCounts().done + syncCounts().failed} of ${total}`); render();
+    if (!quiet) toast(`Refreshing metadata · ${syncCounts().done + syncCounts().failed} of ${total}`); render();
     metadataSync = (async () => {
-      let nextStartAt = 0;
-      const workers = Array.from({ length: Math.min(3, Math.max(1, Number(prefs.metadataSyncWorkers) || 2), queue.length) }, async () => {
-        while (queue.length) {
-          if (!navigator.onLine || prefs.metadataMode === "offline" || document.hidden) { await waitForSyncResume(); continue; }
+      let nextStartAt = 0, queueIndex = 0;
+      const reportedMemory = Number(navigator.deviceMemory) || 4;
+      const reportedCores = Number(navigator.hardwareConcurrency) || 4;
+      const memoryLimit = nativeAndroid
+        ? (reportedMemory <= 2 || reportedCores <= 4 ? 1 : 2)
+        : reportedMemory <= 2 ? 1 : 3;
+      const workers = Array.from({ length: Math.min(memoryLimit, 3, Math.max(1, Number(prefs.metadataSyncWorkers) || 2), queue.length) }, async () => {
+        while (queueIndex < queue.length) {
+          if (!navigator.onLine || prefs.metadataMode === "offline") { await waitForSyncResume(); continue; }
           await yieldToUser();
           const requestDelay = Math.max(0, Number(prefs.syncRequestDelay) || 0);
           if (requestDelay) { const startAt = Math.max(Date.now(), nextStartAt); nextStartAt = startAt + requestDelay; if (startAt > Date.now()) await new Promise(resolve => setTimeout(resolve, startAt - Date.now())); }
-          if (!navigator.onLine || prefs.metadataMode === "offline" || document.hidden) continue;
-          const entry = queue.shift(), item = itemById(entry.id); if (!item || !items.includes(item)) { entry.status = "failed"; entry.error = "Title was removed."; saveMetadataSyncState(); continue; }
-          entry.status = "running"; entry.error = ""; saveMetadataSyncState(); render();
+          if (!navigator.onLine || prefs.metadataMode === "offline") continue;
+          if (queueIndex >= queue.length) return;
+          const entry = queue[queueIndex++], item = itemById(entry.id); if (!item) { setMetadataSyncStatus(entry, "failed"); entry.error = "Title was removed."; markMetadataSyncEntryDirty(entry); deferMetadataSyncUpdate(); continue; }
+          // A queued refresh may survive an app restart after its source was disabled
+          // or its provider match was removed. Finish it as skipped instead of
+          // issuing a doomed request or repeatedly resuming the same stale queue.
+          if (!isMetadataRefreshable(item)) { setMetadataSyncStatus(entry, "skipped"); entry.error = "Metadata source is disabled or unavailable."; markMetadataSyncEntryDirty(entry); deferMetadataSyncUpdate(); continue; }
+          const requestIdentity = metadataSourceIdentity(item);
+          entry.source = item.metadataSource || item.source || ""; entry.category = item.category || ""; entry.providerId = String(item.providerId || ""); entry.sourceIdentity = requestIdentity;
+          setMetadataSyncStatus(entry, "running"); entry.error = ""; deferMetadataSyncUpdate();
+          markMetadataSyncEntryDirty(entry);
           try {
             const loaded = await window.SplitAppDetails.load(item, { ...detailSettings(), forceRefresh: true, background: true });
-            if (!items.includes(item)) throw new Error("Title was removed.");
-            item.cachedDetails = loaded; item.metadataFetchedAt = Number(loaded.fetchedAt || loaded.facts?.fetchedAt) || Date.now(); item.facts = item.relinkFresh ? { ...(loaded.facts || {}) } : mergeFacts(item.facts, loaded.facts); delete item.relinkFresh;
-            item.description = loaded.description || item.description; item.year = loaded.year || item.year;
-            item.image = item.customCover || item.localThumbnailData || loaded.portraitImage || loaded.image || item.image;
-            item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop; item.updatedAt = Date.now();
-            await persist({ ids: [item.id] }); entry.status = "done"; entry.error = "";
-          } catch (error) { entry.status = "failed"; entry.error = error?.message || "Metadata refresh failed."; recordLog("warning", `Metadata refresh failed for ${item.title}: ${entry.error}`); }
-          saveMetadataSyncState(); render(); const counts = syncCounts(); toast(`Refreshing metadata · ${counts.done + counts.failed} of ${total}`);
+            if (itemById(entry.id) !== item) throw new Error("Title was removed or replaced.");
+            if (metadataSourceIdentity(item) !== requestIdentity) throw new Error("The metadata source or match changed during refresh. Retry to sync the current match.");
+            const changed = metadataComparison(item.cachedDetails, Boolean(item.cachedDetails?.trimmed)) !== metadataComparison(loaded, Boolean(item.cachedDetails?.trimmed));
+            applyLoadedMetadata(item, loaded, { cacheDetails: changed, replaceFacts: Boolean(item.relinkFresh) });
+            await persist({ ids: [item.id] }); setMetadataSyncStatus(entry, changed ? "done" : "checked"); entry.error = ""; delete entry.retryAfterAt; markMetadataSyncEntryDirty(entry);
+          } catch (error) { setMetadataSyncStatus(entry, "failed"); entry.error = String(error?.message || "Metadata refresh failed.").slice(0, 240); if (automatic) entry.retryAfterAt = Date.now() + 6 * 60 * 60 * 1000; markMetadataSyncEntryDirty(entry); recordLog("warning", `Metadata refresh failed for ${item.title}: ${entry.error}`); }
+          deferMetadataSyncUpdate(); const counts = syncCounts(); if (!quiet) toast(`Refreshing metadata · ${counts.done + counts.failed} of ${total}`);
         }
       });
       try { await Promise.all(workers); }
       finally {
-        metadataSync = null; if (!syncCounts().remaining) metadataSyncState.finishedAt = Date.now(); else delete metadataSyncState.finishedAt; saveMetadataSyncState(); render();
-        const counts = syncCounts(); toast(`Metadata refresh: ${counts.done} updated${counts.failed ? ` · ${counts.failed} failed` : ""}.`);
+        metadataSync = null; if (!syncCounts().remaining) metadataSyncState.finishedAt = Date.now(); else delete metadataSyncState.finishedAt; saveMetadataSyncState(); clearTimeout(metadataSyncRenderTimer); metadataSyncRenderTimer = 0; render();
+        const counts = syncCounts(); if (!quiet) toast(`Metadata refresh: ${counts.changed} updated · ${counts.unchanged} unchanged${counts.failed ? ` · ${counts.failed} failed` : ""}.`);
       }
     })();
     return metadataSync;
+  }
+  let automaticMetadataCheckAt = 0, automaticMetadataTimer = 0;
+  const MAX_TIMEOUT_DELAY = 2_147_000_000;
+  const metadataRefreshMs = () => ({ daily: 86400000, weekly: 7 * 86400000, monthly: 30 * 86400000, never: Infinity }[prefs.metadataRefreshInterval] ?? 7 * 86400000);
+  function scheduleAutomaticMetadataCheck() {
+    clearTimeout(automaticMetadataTimer); automaticMetadataTimer = 0;
+    const interval = metadataRefreshMs();
+    if (!Number.isFinite(interval) || !items.length) return;
+    const eligible = items.filter(isMetadataRefreshable);
+    if (!eligible.length) return;
+    const priorById = new Map((metadataSyncState?.entries || []).map(entry => [String(entry.id), entry]));
+    const retryAfter = item => {
+      const entry = priorById.get(String(item.id));
+      return entry?.status === "failed" && (!entry.sourceIdentity || entry.sourceIdentity === metadataSourceIdentity(item)) ? Number(entry.retryAfterAt) || 0 : 0;
+    };
+    const now = Date.now();
+    let nextDue = Infinity;
+    for (const item of eligible) {
+      const retryAt = retryAfter(item);
+      const dueAt = retryAt > now ? retryAt : (metadataStamp(item) || 0) + interval;
+      if (dueAt < nextDue) nextDue = dueAt;
+    }
+    const nextAllowed = automaticMetadataCheckAt ? automaticMetadataCheckAt + 15 * 60 * 1000 : 0;
+    const delay = Math.max(60000, nextDue - now, nextAllowed - now);
+    // Browser timers overflow above the signed 32-bit millisecond range. A 30-day
+    // monthly refresh must be split into safe waits and recalculated on each wake.
+    automaticMetadataTimer = setTimeout(() => maybeAutoMetadataSync(), Math.min(delay, MAX_TIMEOUT_DELAY));
+  }
+  function maybeAutoMetadataSync() {
+    if (!metadataLibraryReady || !Number.isFinite(metadataRefreshMs()) || metadataSync || !navigator.onLine || prefs.metadataMode === "offline" || document.hidden) return;
+    if (automaticMetadataCheckAt && Date.now() - automaticMetadataCheckAt < 15 * 60 * 1000) { scheduleAutomaticMetadataCheck(); return; }
+    automaticMetadataCheckAt = Date.now();
+    const pending = metadataSyncState?.entries?.some(entry => entry.status === "queued" || entry.status === "running");
+    const work = pending ? startMetadataSync(null, true, "needed", true, true) : startMetadataSync(null, false, "needed", true, true);
+    Promise.resolve(work).finally(scheduleAutomaticMetadataCheck);
   }
   async function syncMetadataNow() { return startMetadataSync(null, false, prefs.syncScope || "needed"); }
   async function runMetadataSyncAction(action) {
@@ -1954,15 +2372,23 @@
   function stepEpisodes(item, delta) {
     const info = window.SplitAppLibrary.episodeInfo(item); if (!info) return false;
     const ids = new Set((item.watchedEpisodeIds || []).map(String));
-    if (delta > 0) info.eps.filter(entry => !ids.has(String(entry.id))).slice(0, delta).forEach(entry => ids.add(String(entry.id)));
-    else [...info.eps].reverse().filter(entry => ids.has(String(entry.id))).slice(0, -delta).forEach(entry => ids.delete(String(entry.id)));
+    const previousIds = new Set(ids);
+    let skippedUpcoming = 0;
+    if (delta > 0) {
+      const added = info.eps.filter(entry => !ids.has(String(entry.id)) && !window.SplitAppLibrary.isUpcoming(entry)).slice(0, delta);
+      added.forEach(entry => ids.add(String(entry.id)));
+      skippedUpcoming = Math.max(0, delta - added.length);
+    } else if (delta < 0) [...info.eps].reverse().filter(entry => ids.has(String(entry.id))).slice(0, -delta).forEach(entry => ids.delete(String(entry.id)));
+    const changed = ids.size !== previousIds.size || [...ids].some(id => !previousIds.has(id));
+    if (!changed) { item.progress = ids.size; return { changed: false, skippedUpcoming }; }
     const currentGoal = Number(item.goal) || info.total;
     item.watchedEpisodeIds = [...ids]; item.progress = ids.size; item.goal = ids.size > currentGoal ? info.total : currentGoal;
-    return true;
+    return { changed: true, skippedUpcoming };
   }
   function scrollPageTop() { const go = () => { window.scrollTo({ top: 0, behavior: "instant" }); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; }; go(); requestAnimationFrame(go); }
   function detailBack() {
     const previous = detailStack.pop(); if (!previous) return;
+    detailAbortController?.abort(); refAbortController?.abort(); detailAbortController = refAbortController = null;
     refRequest++; detailRequest++;
     ({ detailPreview, detailItemId, detailData, detailError, detailEditMode, detailReturnPage, detailRef, detailRefOffset = 0, refData, refError } = previous);
     detailLoading = false; refLoading = false;
@@ -1970,11 +2396,16 @@
     if (!detailRef && !detailData && (detailPreview || detailItemId)) loadDetails();
   }
   function toggleSeason(itemId, ids, done) {
-    const item = items.find(entry => entry.id === itemId); if (!item) return;
+    const item = itemById(itemId); if (!item) return;
     const watched = new Set((item.watchedEpisodeIds || []).map(String));
     const previousWatched = watched.size, previousStatus = item.status;
-    ids.forEach(id => done ? watched.delete(id) : watched.add(id));
-    const info = window.SplitAppLibrary.episodeInfo(item), currentGoal = Number(item.goal) || Number(detailData?.goal) || watched.size;
+    const info = window.SplitAppLibrary.episodeInfo(item);
+    const upcomingIds = new Set((info?.eps || []).filter(window.SplitAppLibrary.isUpcoming).map(entry => String(entry.id)));
+    const idsToApply = done ? ids.map(String) : ids.map(String).filter(id => !upcomingIds.has(id));
+    const skippedUpcoming = ids.length - idsToApply.length;
+    if (!done && !idsToApply.length && skippedUpcoming) { toast("Upcoming episodes cannot be marked watched yet."); return null; }
+    idsToApply.forEach(id => done ? watched.delete(id) : watched.add(id));
+    const currentGoal = Number(item.goal) || Number(detailData?.goal) || watched.size;
     item.watchedEpisodeIds = [...watched]; item.goal = !done && info && watched.size > currentGoal ? info.total : currentGoal; item.progress = watched.size;
     if (!done && watched.size) item.lastProgressAt = Date.now();
     if (seriesProgressComplete(item, info, item.progress)) item.status = roles.done;
@@ -1983,10 +2414,11 @@
     else if (!done && item.progress) item.status = roles.active;
     item.updatedAt = Date.now();
     if (watched.size !== previousWatched || item.status !== previousStatus) {
-      const allEpisodes = info && ids.length === info.total;
+      const allEpisodes = info && idsToApply.length === info.total;
       history.unshift({ itemId: item.id, title: item.title, action: `${allEpisodes ? "All episodes" : "Season episodes"} marked ${done ? "unwatched" : "watched"}`, status: item.status, type: "episode", at: item.updatedAt });
     }
     persist({ ids: [item.id] }); render();
+    return skippedUpcoming;
   }
   function animateWatchlistCard(itemId) {
     requestAnimationFrame(() => {
@@ -2009,7 +2441,7 @@
   function animateWatchlistLayout(before) {
     if (!before?.size || motionIsReduced()) return;
     const viewport = window.innerHeight || document.documentElement.clientHeight;
-    const duration = document.documentElement.dataset.lowend === "true" ? 150 : prefs.animationSpeed === "fast" ? 185 : 240;
+      const duration = document.documentElement.dataset.lowend === "true" ? 150 : prefs.animationSpeed === "fast" ? 185 : prefs.animationSpeed === "slow" ? 360 : 240;
     requestAnimationFrame(() => $$(".watchlist-content [data-watchlist-root]").forEach(card => {
       const from = before.get(String(card.dataset.watchlistRoot));
       if (!from || !card.animate) return;
@@ -2023,21 +2455,24 @@
     }));
   }
   function toggleEpisodeWatched(itemId, episodeId, episodeTitle, watchlistCard = "") {
-    const item = items.find(entry => entry.id === itemId); if (!item) return;
+    const item = itemById(itemId); if (!item) return;
+    const info = window.SplitAppLibrary.episodeInfo(item);
     const previousStatus = item.status;
     const watched = new Set((item.watchedEpisodeIds || []).map(String));
     const id = String(episodeId);
     const markingWatched = !watched.has(id);
+    const selectedEpisode = info?.eps.find(entry => String(entry.id) === id);
+    if (markingWatched && selectedEpisode && window.SplitAppLibrary.isUpcoming(selectedEpisode)) { toast("This episode has not aired yet."); return; }
     let earlier = 0;
     if (watched.has(id)) watched.delete(id);
     else {
       // Watching an episode means you saw the ones before it: check those too.
-      const info = window.SplitAppLibrary.episodeInfo(item), index = info ? info.eps.findIndex(entry => String(entry.id) === id) : -1;
-      if (index > 0) info.eps.slice(0, index).forEach(entry => { if (!watched.has(String(entry.id))) { watched.add(String(entry.id)); earlier += 1; } });
+      const index = info ? info.eps.findIndex(entry => String(entry.id) === id) : -1;
+      if (index > 0) info.eps.slice(0, index).forEach(entry => { if (!watched.has(String(entry.id)) && !window.SplitAppLibrary.isUpcoming(entry)) { watched.add(String(entry.id)); earlier += 1; } });
       watched.add(id);
     }
     item.watchedEpisodeIds = [...watched];
-    const info = window.SplitAppLibrary.episodeInfo(item), currentGoal = Number(item.goal) || Number(detailData?.goal) || watched.size;
+    const currentGoal = Number(item.goal) || Number(detailData?.goal) || watched.size;
     item.goal = markingWatched && info && watched.size > currentGoal ? info.total : currentGoal;
     item.progress = watched.size;
     if (markingWatched) item.lastProgressAt = Date.now();
@@ -2073,15 +2508,15 @@
     syncPageNavigation();
   }
   function deleteFromDetails(id) {
-    const item = items.find(entry => entry.id === id); if (!item) return;
+    const item = itemById(id); if (!item) return;
     recordLibraryChange("removed", `Deleted ${item.title}.`, [id]);
     if (prefs.backupBeforeDestructive) exportList({ silent: true });
-    items = items.filter(entry => entry.id !== id);
+    items = items.filter(entry => entry.id !== id); itemIndexItems = null;
     detailItemId = null; detailData = null; detailPreview = null;
     persist({ removed: [id] }); goto(detailReturnPage); toast("Entry deleted.");
   }
   function requestDeleteDetails(id) {
-    if (!items.some(entry => entry.id === id)) return;
+    if (!itemById(id)) return;
     showPopup($("#detail-delete-dialog"));
   }
   function setItemStatus(item, status) {
@@ -2115,7 +2550,7 @@
         dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">CHECK THIS MATCH</p><h2>${esc(current.title)}</h2></div><button class="choice-dialog-close" type="button" data-fix-close aria-label="Close">×</button></header><div class="fix-match-body fix-match-preview"><div class="fix-match-preview-head">${preview.image ? `<img src="${esc(preview.image)}" alt="" onerror="this.hidden=true">` : `<span class="fix-match-preview-noart">No poster</span>`}<div><small>${esc(sourceName)} result</small><h3>${esc(preview.title)}</h3><dl>${fields.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl></div></div>${preview.description ? `<p class="fix-match-preview-desc">${esc(preview.description)}</p>` : `<p class="fix-match-status">Check the title, year and poster before linking.</p>`}<div class="fix-match-preview-compare"><span>Your title</span><strong>${esc(current.title)}${current.year ? ` · ${esc(current.year)}` : ""}</strong></div><div class="fix-match-preview-actions">${/^https?:\/\//i.test(preview.url || "") ? `<a class="button secondary" href="${esc(preview.url)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>` : ""}<button type="button" class="button secondary" data-fix-back>Back</button><button type="button" class="button primary" data-fix-use="${state.preview}">Use this match</button></div></div>`;
         return;
       }
-      dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">FIX MATCH</p><h2>${esc(current.title)}</h2></div><button class="choice-dialog-close" type="button" data-fix-close aria-label="Close">×</button></header><div class="fix-match-body"><div class="fix-match-search"><select data-fix-source aria-label="Source">${sources.map(source => `<option value="${esc(source.key)}"${source.key === state.key ? " selected" : ""}>${esc(source.name)}</option>`).join("")}</select><input type="search" data-fix-query value="${esc(state.query ?? current.title)}" placeholder="Search this source"><button type="button" class="button primary small" data-fix-search>Search</button></div><p class="fix-match-status" role="status">${esc(state.message)}</p><ul class="fix-match-results">${state.rows.map((row, index) => `<li><span class="fix-match-art">${row.image ? `<img src="${esc(row.image)}" alt="" loading="lazy" onerror="this.hidden=true">` : ""}</span><span class="fix-match-copy"><strong>${esc(row.title)}</strong><small>${esc([row.year, row.description].filter(Boolean).join(" · ") || row.providerId)}</small></span><button type="button" class="button secondary small" data-fix-view="${index}">View</button><button type="button" class="button primary small" data-fix-use="${index}">Use</button></li>`).join("")}</ul></div>`;
+      dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">FIX MATCH</p><h2>${esc(current.title)}</h2></div><button class="choice-dialog-close" type="button" data-fix-close aria-label="Close">×</button></header><div class="fix-match-body"><div class="fix-match-search"><select data-fix-source aria-label="Source">${sources.map(source => `<option value="${esc(source.key)}"${source.key === state.key ? " selected" : ""}>${esc(source.name)}</option>`).join("")}</select><input type="search" data-fix-query value="${esc(state.query ?? current.title)}" placeholder="Search this source"><button type="button" class="button primary small" data-fix-search>Search</button></div><p class="fix-match-status" role="status">${esc(state.message)}</p><ul class="fix-match-results">${state.rows.map((row, index) => `<li><span class="fix-match-art">${row.image ? `<img src="${esc(row.image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : ""}</span><span class="fix-match-copy"><strong>${esc(row.title)}</strong><small>${esc([row.year, row.description].filter(Boolean).join(" · ") || row.providerId)}</small></span><button type="button" class="button secondary small" data-fix-view="${index}">View</button><button type="button" class="button primary small" data-fix-use="${index}">Use</button></li>`).join("")}</ul></div>`;
     };
     const search = async () => { state.query = dialog.querySelector("[data-fix-query]")?.value.trim() || ""; state.key = dialog.querySelector("[data-fix-source]")?.value || state.key; if (!state.query) return; state.rows = []; state.preview = null; state.message = "Searching…"; paint(); try { state.rows = (await window.SplitAppDiscovery.searchSource(state.query, item.category, detailSettings(), state.key)).slice(0, 15); state.message = state.rows.length ? "Choose the correct title." : "No results from this source."; } catch (error) { state.message = error?.message || "Search failed."; } paint(); };
     dialog.onclick = event => {
@@ -2144,12 +2579,12 @@
     const item = itemById(String(id)); if (!item) return;
     let dialog = $("#cover-picker-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "cover-picker-dialog"; dialog.className = "choice-dialog cover-picker-dialog"; document.body.appendChild(dialog); }
     const urls = coverCandidates(item);
-    dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">COVER</p><h2>${esc(item.title)}</h2></div><button class="choice-dialog-close" type="button" data-cover-close aria-label="Close">×</button></header><div class="cover-picker-body"><p class="fix-match-status">${item.customCover ? "Using your chosen cover." : "Pick a cover; it stays when metadata refreshes."}</p><div class="cover-picker-grid">${urls.map(url => `<button type="button" class="cover-choice${item.customCover === url ? " is-current" : ""}" data-cover-url="${esc(url)}"><img src="${esc(url)}" alt="" loading="lazy" onerror="this.closest('button').hidden=true"></button>`).join("")}</div>${item.customCover ? '<button type="button" class="button secondary" data-cover-auto>Use automatic cover</button>' : ""}</div>`;
+    dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">COVER</p><h2>${esc(item.title)}</h2></div><button class="choice-dialog-close" type="button" data-cover-close aria-label="Close">×</button></header><div class="cover-picker-body"><p class="fix-match-status">${item.customCover ? "Using your chosen cover." : "Pick a cover; it stays when metadata refreshes."}</p><div class="cover-picker-grid">${urls.map(url => `<button type="button" class="cover-choice${item.customCover === url ? " is-current" : ""}" data-cover-url="${esc(url)}"><img src="${esc(url)}" alt="" loading="lazy" decoding="async" onerror="this.closest('button').hidden=true"></button>`).join("")}</div>${item.customCover ? '<button type="button" class="button secondary" data-cover-auto>Use automatic cover</button>' : ""}</div>`;
     dialog.onclick = event => { if (event.target === dialog || eventClosest(event, "[data-cover-close]")) { closePopup(dialog); return; } const choice = eventClosest(event, "[data-cover-url]"), automatic = eventClosest(event, "[data-cover-auto]"); if (!choice && !automatic) return; if (choice) { item.customCover = choice.dataset.coverUrl; item.image = item.customCover; } else delete item.customCover; item.updatedAt = Date.now(); persist({ ids: [item.id] }); closePopup(dialog); render(); toast(automatic ? "Automatic cover restored." : "Cover updated."); };
     showPopup(dialog);
   }
   function openItemActions(id) {
-    const item = items.find(entry => entry.id === id); if (!item) return;
+    const item = itemById(id); if (!item) return;
     let dialog = $("#item-action-dialog");
     if (!dialog) {
       dialog = document.createElement("dialog"); dialog.id = "item-action-dialog"; dialog.className = "ios-action-sheet";
@@ -2157,7 +2592,7 @@
       dialog.addEventListener("click", async event => {
         if (event.target === dialog) { closePopup(dialog); return; }
         const button = eventClosest(event, "[data-sheet-action]"); if (!button) return;
-        const target = items.find(entry => entry.id === dialog.dataset.itemId);
+        const target = itemById(dialog.dataset.itemId);
         const action = button.dataset.sheetAction;
         // Details/Edit navigate to another page; keep the sheet's history entry so closing it cannot undo that navigation.
         closePopup(dialog, { preserveHistory: action === "details" || action === "edit" });
@@ -2167,7 +2602,7 @@
         else if (action === "remove") {
           if (!(await appConfirm(`Remove “${target.title}” from your collection?`, { title: "Remove title", confirmLabel: "Remove", danger: true }))) return;
           if (prefs.backupBeforeDestructive) exportList({ silent: true });
-          recordLibraryChange("removed", `Removed ${target.title}.`, [target.id]); items = items.filter(entry => entry.id !== target.id); persist({ removed: [target.id] }); render(); toast("Entry removed.");
+          recordLibraryChange("removed", `Removed ${target.title}.`, [target.id]); items = items.filter(entry => entry.id !== target.id); itemIndexItems = null; persist({ removed: [target.id] }); render(); toast("Entry removed.");
         } else if (action !== "cancel") { setItemStatus(target, action); render(); toast(`Marked as ${action}.`); }
       });
     }
@@ -2175,64 +2610,6 @@
     dialog.innerHTML = `<div class="ios-action-group"><p>${esc(item.title)}</p><button type="button" data-sheet-action="${esc(roles.active)}" class="accent"><i data-lucide="circle-play"></i>Mark as ${esc(roles.active)}</button><button type="button" data-sheet-action="${esc(roles.done)}" class="success"><i data-lucide="check-circle"></i>Mark as ${esc(roles.done)}</button><button type="button" data-sheet-action="edit"><i data-lucide="pencil"></i>Edit entry</button><button type="button" data-sheet-action="details"><i data-lucide="info"></i>View Full Details</button><button type="button" data-sheet-action="remove" class="danger"><i data-lucide="trash-2"></i>Remove from Collection</button></div><button type="button" class="ios-action-cancel" data-sheet-action="cancel">Cancel</button>`;
     window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
     showPopup(dialog);
-  }
-  function shareEntry(item, detail = null) {
-    const progress = Math.max(0, Number(item.progress) || 0), goal = Math.max(0, Number(item.goal) || 0);
-    const unit = config.categories.find(row => row.key === item.category)?.unit || "";
-    const fields = detail?.fields || item.cachedDetails?.fields || [];
-    const field = pattern => fields.find(row => pattern.test(String(row.label || "")))?.value || "";
-    const tags = detail?.tags || item.cachedDetails?.tags || item.cachedDetails?.genres || item.facts?.genres || field(/^genres?$/i) || [];
-    const tagList = Array.isArray(tags) ? tags : typeof tags === "string" ? tags.split(/,\s*/) : [tags];
-    const info = detail ? [field(/^director|directors|created by$/i), field(/^runtime$/i), field(/^network|studio$/i), field(/^language$/i)].filter(Boolean) : [];
-    const tagText = [...tagList.map(tag => typeof tag === "string" ? tag : tag?.name || tag?.title || ""), ...info].filter(Boolean).slice(0, 8).join(" · ");
-    return { id: String(item.id), title: item.title, subtitle: [category(item.category)?.label, item.year, tagText].filter(Boolean).join(" · "), status: item.status, progressText: progress || goal ? `${progress}${goal ? ` / ${goal}` : ""}${unit ? ` ${unit}` : ""}` : "", percent: goal ? Math.min(100, Math.round(progress / goal * 100)) : null };
-  }
-  const shareCacheGet = (key, sig) => window.SplitAppIDB?.getShareCache?.(key, sig) || Promise.resolve(null);
-  const shareCachePut = (key, sig, blob) => window.SplitAppIDB?.putShareCache?.(key, sig, blob).catch(() => {});
-  async function shareLoadUrl(source, maxWidth = 720) {
-    if (!source) return null;
-    let blob = null;
-    if (/^data:image\//i.test(source)) { try { blob = await (await fetch(source)).blob(); } catch (_) {} }
-    else if (/^https?:/i.test(source)) { try { const response = await fetch(source, { mode: "cors", credentials: "omit" }); if (response.ok) blob = await response.blob(); } catch (_) {} }
-    if (!blob) return null;
-    if (window.createImageBitmap) { try { return await createImageBitmap(blob, { resizeWidth: maxWidth, resizeQuality: "medium" }); } catch (_) {} }
-    const url = URL.createObjectURL(blob);
-    return new Promise(resolve => { const image = new Image(); image.onload = () => { URL.revokeObjectURL(url); resolve(image); }; image.onerror = () => { URL.revokeObjectURL(url); resolve(null); }; image.src = url; });
-  }
-  async function shareImageFor(entry) {
-    const item = itemById(entry.id); if (!item) return null;
-    const source = item.customCover || item.localPortraitData || item.localThumbnailData || item.localImageData?.image || item.image || item.cachedDetails?.portraitImage || item.cachedDetails?.image;
-    return shareLoadUrl(source, 720);
-  }
-  function openShareList(title, selected) {
-    if (!selected.length) return;
-    const detail = selected.length === 1 && page === "details" ? detailData : null;
-    window.SplitAppShare?.open({ title, entries: selected.map(item => shareEntry(item, detail)), getImage: shareImageFor }, { showPopup, closePopup, toast, esc, cacheGet: shareCacheGet, cachePut: shareCachePut });
-  }
-  async function openShareDetail(id) {
-    const item = itemById(String(id)); if (!item) return;
-    const detail = detailData || item.cachedDetails || {};
-    const entry = shareEntry(item, detail);
-    const facts = { ...(detail.facts || {}), ...(item.facts || {}) };
-    const fields = [...(detail.fields || [])].filter(row => row?.label && String(row.value ?? "").trim());
-    const ensureField = (label, value) => { if (value && !fields.some(row => String(row.label).toLowerCase() === label.toLowerCase())) fields.push({ label, value }); };
-    ensureField("Runtime", facts.runtimeMinutes ? `${facts.runtimeMinutes} min` : "");
-    ensureField("Episodes", facts.episodeCount || ""); ensureField("Seasons", facts.seasonCount || "");
-    const sections = detail.sections || [];
-    const images = [...new Set(sections.filter(section => section.kind === "gallery").flatMap(section => (section.items || []).map(row => row.image || row.url)).filter(url => /^https?:|^data:image\//i.test(url || "")))];
-    const cast = sections.filter(section => /^(cast|characters)/i.test(section.title || "")).flatMap(section => section.items || []).slice(0, 24).map(row => `${row.title || row.name || ""}${row.meta ? ` (${row.meta})` : ""}`).filter(Boolean);
-    const episodes = sections.filter(section => section.kind === "episodes" || section.kind === "episodes-list").flatMap(section => (section.items || []).map(row => row.title || row.name || "")).filter(Boolean).slice(0, 36);
-    const overview = [String(detail.description || item.description || ""), cast.length ? `Cast\n${cast.join(" · ")}` : "", episodes.length ? `Episode guide\n${episodes.join("\n")}` : ""].filter(Boolean).join("\n\n");
-    const tags = detail.tags || facts.genres || [];
-    const languages = (detail.languages || []).map(row => typeof row === "string" ? row : row?.name).filter(Boolean);
-    const report = {
-      title: item.title, category: item.category, subtitle: [category(item.category)?.label, item.year, item.status].filter(Boolean).join(" · "),
-      status: item.status, progressText: entry.progressText, percent: entry.percent,
-      fields, description: overview, requirements: null,
-      languages, tags: Array.isArray(tags) ? tags.map(row => typeof row === "string" ? row : row?.name).filter(Boolean) : String(tags).split(/,\s*/),
-      shotUrls: images, coverPromise: shareLoadUrl(item.customCover || item.localPortraitData || item.localThumbnailData || item.localImageData?.image || detail.portraitImage || item.image || detail.image, 720)
-    };
-    window.SplitAppShareTitle?.open(report, { showPopup, closePopup, toast, esc, loadImage: url => shareLoadUrl(url, 720) });
   }
   function openDetails(id, edit = false) { clearDetailStack(); detailReturnPage = page === "details" ? detailReturnPage : page; detailPreview = null; detailEditMode = edit; detailItemId = id; detailData = null; detailError = ""; goto("details"); loadDetails(); }
   function openDiscoverDetails(result) { if (!result) return; clearDetailStack(); detailReturnPage = "discover"; detailPreview = { ...result, metadataSource: result.source }; detailEditMode = false; detailItemId = null; detailData = null; detailError = ""; goto("details"); loadDetails(); }
@@ -2256,10 +2633,10 @@
     prefs[key] = value;
     if (key === "bottomBarBackground" && value === "solid") prefs.bottomBarTransparency = 100;
     persist({ meta: true }); applyPreferences();
-    if (key === "backgroundBackups" || key === "backupSchedule") syncBackupSchedule();
-    if (key === "dashboardStatusFilter") dashboardStatusFilter = value || "all";
-    if (key === "dashboardDefaultCategory") activeCategory = value === "remember" || value === "all" ? "all" : value;
-    if (["dashboardGroupBy", "dashboardSort", "dashboardView", "dashboardStatusFilter", "dashboardDefaultCategory", "dashboardRowActions", "cardCorners", "oneHandedMode", "tabletTwoColumn", "theme"].includes(key)) render();
+    if (key === "metadataMode") { window.dispatchEvent(new Event("screenmark:sync-resume")); maybeAutoMetadataSync(); }
+    if (key === "metadataRefreshInterval") scheduleAutomaticMetadataCheck();
+    if (key === "backgroundBackups" || key === "backupSchedule" || key === "backupRetention") syncBackupSchedule();
+    if (["cardCorners", "theme"].includes(key)) render();
   }
   function openSettingPicker(trigger) {
     let options = [];
@@ -2272,34 +2649,28 @@
     if (!dialog || !list || !title) return;
     title.textContent = trigger.getAttribute("aria-label")?.split(":")[0] || "Choose an option";
     const themeInfo = {
-      system:["Match your device's light or dark appearance.","#f8fafc","#6366f1","#0f172a"],
-      light:["Clean white surfaces with indigo accents.","#f8fafc","#4f46e5","#0f172a"],
-      amoled:["Pure black surfaces with raised charcoal cards.","#000000","#a78bfa","#f8fafc"]
+      system:["Match your device's light or dark appearance.","#f8fafc",defaultAccentColor,"#0f172a"],
+      light:["Clean white surfaces with warm gold accents.","#f8fafc",defaultAccentColor,"#0f172a"],
+      dark:["Charcoal surfaces with soft neutral contrast.","#111827",defaultAccentColor,"#f3f4f6"],
+      amoled:["Pure black surfaces with raised charcoal cards.","#000000",defaultAccentColor,"#f8fafc"]
     };
     const settingPreviewIcons = {
       textSize: { small: "type", normal: "text", large: "text-cursor-input" },
-      animationSpeed: { off: "pause", fast: "zap", normal: "gauge", slow: "turtle", custom: "sliders-horizontal" },
-      dashboardView: { list: "list", grid: "layout-grid", "posters-plus": "gallery-vertical-end", "compact-grid": "grid-3x3", "large-grid": "square" },
-      dashboardDefaultCategory: { remember: "history", all: "layers", movie: "film", series: "tv" },
-      dashboardSort: { "updated-desc": "clock-3", "created-desc": "calendar-plus", "progress-desc": "trending-up", "progress-asc": "trending-down", "release-desc": "calendar-days", "alphabetical-asc": "arrow-down-a-z", "alphabetical-desc": "arrow-up-z-a" },
+      animationSpeed: { off: "pause", fast: "zap", normal: "gauge", slow: "turtle" },
       defaultStatus: { Watchlist: "bookmark", "In Progress": "play", Completed: "circle-check", "On Hold": "pause", Dropped: "circle-x" },
       dateFormat: { auto: "globe", dmy: "calendar", mdy: "calendar", iso: "calendar-days", long: "calendar-check" },
-      iconStyle: { tiles: "layout-grid", inline: "list" },
       imageStorage: { all: "images", posters: "image", online: "cloud-off" },
-      animationEasing: { smooth: "spline", spring: "activity", bouncy: "repeat", linear: "move-right" },
-      pageTransition: { slide: "move-right", fade: "cloud", zoom: "maximize-2", rise: "move-up", flip: "flip-horizontal", none: "ban" },
-      cardEntrance: { rise: "arrow-up-from-line", fade: "cloud", pop: "sparkles", slide: "move-right", none: "ban" },
-      sheetAnimation: { slide: "panel-bottom", pop: "maximize-2", fade: "cloud" },
-      pressEffect: { shrink: "pointer", soft: "hand", none: "pointer-off" },
+      pageTransition: { slide: "move-right", fade: "cloud", zoom: "zoom-in", none: "ban" },
+      sheetAnimation: { slide: "panel-bottom", fade: "cloud", scale: "maximize-2" },
+      pressEffect: { shrink: "pointer", fade: "scan-eye", none: "pointer-off" },
+      progressStyle: { smooth: "waves", snappy: "zap", spring: "activity" },
+      placeholderAnimation: { shimmer: "sparkles", pulse: "circle-dot", static: "pause" },
       bottomBarBackground: { solid: "square", glass: "panels-top-left", transparent: "panels-top-bottom" },
-      bottomBarStyle: { box: "square", "icon-color": "palette", underline: "underline" },
-      bottomBarLabels: { "icons-labels": "list", "icons-only": "layout-grid" },
-      bottomBarLayout: { spread: "align-horizontal-space-between", center: "align-horizontal-justify-center", left: "align-horizontal-justify-start" },
+      bottomBarStyle: { "icon-color": "palette", underline: "underline", pill: "pill", minimal: "minus" },
+      bottomBarLabels: { "icons-labels": "list", "icons-only": "layout-grid", "labels-only": "text" },
       cardCorners: { rounded: "circle", soft: "squircle", square: "square" },
-      dashboardGroupBy: { none: "list", status: "circle-check", category: "folders", release: "calendar-days" },
       automaticCompletion: { automatic: "refresh-cw", ask: "message-circle-question", manual: "hand" },
       defaultStatus: Object.fromEntries(config.categories[0].statuses.map(status => [status, statusIcon(status)])),
-      progressIncrement: { 1: "signal-low", 5: "signal-medium", 10: "signal-high" },
       backupSchedule: { never: "calendar-x", daily: "calendar-days" },
       backupRetention: { 3: "archive", 5: "archive-restore", 10: "boxes", 20: "warehouse" },
       folderSyncDelay: { 0: "zap", 30: "timer", 60: "alarm-clock", 300: "hourglass" },
@@ -2312,6 +2683,14 @@
       syncRequestDelay: { 0: "zap", 250: "timer", 1000: "clock-3", 2000: "hourglass" },
     };
     const settingPreviewDescriptions = {
+      bottomBarStyle: { "icon-color": "Tint the selected icon with a soft accent tile.", underline: "Mark the selected destination with an accent line.", pill: "Fill the selected destination with the accent color.", minimal: "Use the accent color without an icon tile." },
+      bottomBarLabels: { "icons-labels": "Show the icon and destination name.", "icons-only": "Show destination icons without names.", "labels-only": "Show destination names without icons." },
+      animationSpeed: { off: "Disable app motion.", fast: "Use short transitions.", normal: "Use the standard transition timing.", slow: "Use longer, more relaxed transitions." },
+      pageTransition: { slide: "Move the new page in from the navigation direction.", fade: "Fade the new page in.", zoom: "Fade and gently scale the new page in.", none: "Change pages without a transition." },
+      sheetAnimation: { slide: "Slide menus up from the bottom.", fade: "Fade menus in and out.", scale: "Fade and scale menus in and out." },
+      pressEffect: { shrink: "Scale controls down slightly while pressed.", fade: "Fade controls briefly while pressed.", none: "Keep controls still while pressed." },
+      progressStyle: { smooth: "Use a smooth ease-out movement.", snappy: "Use a short, quick movement.", spring: "Use a soft spring-like finish." },
+      placeholderAnimation: { shimmer: "Move a light band across loading shapes.", pulse: "Gently fade loading shapes in and out.", static: "Keep loading shapes still." },
       syncScope: { needed: "Refresh titles missing details or past their refresh interval.", missing: "Refresh only titles with no saved detail record.", all: "Recheck every saved title from its saved metadata source." },
       metadataSyncWorkers: { 1: "Refresh one title at a time.", 2: "Refresh two titles at once.", 3: "Refresh three titles at once; this uses more network and device resources." },
       syncRequestDelay: { 0: "Start the next title as soon as a worker is free.", 250: "Pause briefly between starting titles.", 1000: "Wait one second before starting the next title.", 2000: "Wait two seconds before starting the next title." },
@@ -2338,7 +2717,7 @@
       } else if (key === "bottomBarStyle") {
         preview = document.createElement("span"); preview.className = `setting-nav-style-preview setting-nav-style-${option.value}`;
         preview.innerHTML = `<i data-lucide="${settingPreviewIcons.bottomBarStyle[option.value]}"></i>`;
-        description = option.value === "underline" ? "Underline the selected destination." : "Color the selected icon without a tile.";
+        description = settingPreviewDescriptions.bottomBarStyle?.[option.value] || "Change the selected destination style.";
       } else {
         preview = document.createElement("span"); preview.className = "setting-option-preview";
         const icon = settingPreviewIcons[key]?.[option.value];
@@ -2406,13 +2785,14 @@
     }
     const fileName = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
     const parts = [`{"app":${JSON.stringify(config.name)},"version":1,"exportedAt":${JSON.stringify(new Date().toISOString())},"items":[`];
-    items.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify(item)));
+    items.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify(backend?.backupItem ? backend.backupItem(item) : item)));
     parts.push(`],"history":${JSON.stringify(history)},"preferences":${JSON.stringify(prefs)}}`);
     const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(parts, { type: "application/json" })); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); toast("Export ready.");
   }
   async function importList(file) {
     if (!file) return;
     try {
+      const encryptedImportIds = [];
       const text = await file.text();
       const parseCsv = value => {
         const rows = []; let row = [], cell = "", quoted = false;
@@ -2428,7 +2808,7 @@
       };
       let data, incoming;
       if (/\.txt$/i.test(file.name)) {
-        const key = activeCategory !== "all" && config.categories.some(cat => cat.key === activeCategory) ? activeCategory : config.categories[0].key;
+        const key = preferredCategory !== "all" && config.categories.some(cat => cat.key === preferredCategory) ? preferredCategory : config.categories[0].key;
         incoming = text.split(/\r?\n/).map(title => title.trim()).filter(Boolean).map(title => ({ title, category: key, status: defaultStatus(key) })); data = { items: incoming };
       } else if (/\.csv$/i.test(file.name)) {
         const rows = parseCsv(text); if (!rows.length) throw new Error("The CSV file has no title rows.");
@@ -2436,7 +2816,7 @@
         const first = rows[0].map(normalize), hasHeader = first.some(value => ["title", "name"].includes(value));
         const headers = hasHeader ? first : ["title", "category", "year", "status", "progress", "goal", "review"];
         const records = (hasHeader ? rows.slice(1) : rows).map(row => Object.fromEntries(headers.map((header, index) => [header, row[index] || ""])));
-        const fallbackCategory = activeCategory !== "all" ? activeCategory : config.categories[0].key;
+        const fallbackCategory = preferredCategory !== "all" ? preferredCategory : config.categories[0].key;
         incoming = records.map(record => {
           const title = String(record.title || record.name || Object.values(record)[0] || "").trim();
           const categoryKey = config.categories.some(cat => cat.key === record.category) ? record.category : fallbackCategory;
@@ -2444,6 +2824,14 @@
           return { ...record, title, category: categoryKey, status: cat?.statuses.includes(record.status) ? record.status : defaultStatus(categoryKey), year: record.year || "", progress: Number(record.progress) || 0, goal: Number(record.goal) || 0 };
         }).filter(item => item.title);
         data = { items: incoming };
+      } else if (/\.sqdb$/i.test(file.name)) {
+        const plugin = window.Capacitor?.Plugins?.EncryptedStore;
+        if (!plugin?.importPackedState) throw new Error("Encrypted Android backups can only be restored in the ScreenMark Android app.");
+        const restored = await plugin.importPackedState({ packed: text });
+        data = restored?.data;
+        incoming = Array.isArray(data?.items) ? data.items : null;
+        encryptedImportIds.push(...(incoming || []).filter(item => item?.id != null).map(item => String(item.id)));
+        if (!incoming) throw new Error("The encrypted backup does not contain a library.");
       } else {
         data = JSON.parse(text); incoming = Array.isArray(data) ? data : data.items;
       }
@@ -2507,19 +2895,21 @@
       const freshIds = new Set(fresh.map(item => item.id));
       let importedHistory = (Array.isArray(data.history) ? data.history : []).filter(entry => entry && idMap.has(String(entry.itemId)) && freshIds.has(idMap.get(String(entry.itemId)))).map(entry => ({ ...entry, itemId: idMap.get(String(entry.itemId)) }));
       if (!importedHistory.length) importedHistory = fresh.filter(item => trackedStatuses.includes(item.status)).map(item => ({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: item.updatedAt }));
-      items = [...fresh, ...items];
+      items = [...fresh, ...items]; itemIndexItems = null;
       for (const { item, patch } of patches) Object.assign(item, patch, { updatedAt: Date.now() });
       history = [...importedHistory, ...history].sort((a, c) => (Number(c.at) || Date.parse(c.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0));
       recordLibraryChange("imported", `Imported ${fresh.length} ${fresh.length === 1 ? "title" : "titles"}.`, fresh.map(item => item.id));
-      persist(); render(); toast(`Imported ${fresh.length} ${fresh.length === 1 ? "entry" : "entries"}${patches.length ? ` and restored details for ${patches.length} existing ${patches.length === 1 ? "title" : "titles"}` : ""}.`);
+      await persist({ ids: [...fresh, ...patches.map(row => row.item)].map(item => item.id), meta: true });
+      if (encryptedImportIds.length) {
+        const retained = new Set(items.map(item => String(item.id)));
+        const store = window.Capacitor?.Plugins?.EncryptedStore;
+        for (const id of encryptedImportIds) if (!retained.has(id)) await store?.deleteItem?.({ id });
+      }
+      render(); toast(`Imported ${fresh.length} ${fresh.length === 1 ? "entry" : "entries"}${patches.length ? ` and restored details for ${patches.length} existing ${patches.length === 1 ? "title" : "titles"}` : ""}.`);
     } catch (error) { toast(error.message || "Could not import this file."); }
   }
-  function resetDashboard() {
-    Object.assign(prefs, { dashboardView: "list", dashboardDefaultCategory: "series", dashboardStatusFilter: "all", dashboardSort: "alphabetical-asc", cardCorners: "rounded", dashboardGroupBy: "status", dashboardRowActions: "menu", oneHandedMode: "off", tabletTwoColumn: true });
-    dashboardStatusFilter = "all"; activeCategory = "series"; persist({ meta: true }); applyPreferences(); render(); toast("Dashboard preferences restored.");
-  }
   function resetAnimations() {
-    ["reduceMotion", "animationSpeed", "animationCustom", "animationEasing", "pageTransition", "cardEntrance", "animationStagger", "sheetAnimation", "pressEffect", "hoverLift", "navBounce", "progressAnimation", "skeletonShimmer"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
+    ["reduceMotion", "animationSpeed", "pageTransition", "sheetAnimation", "pressEffect", "progressAnimation", "progressStyle", "skeletonShimmer", "placeholderAnimation"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
     persist({ meta: true }); applyPreferences(); render(); toast("Animation settings restored.");
   }
   function previewAnimations() {
@@ -2557,27 +2947,9 @@
     if (discoverCategoryButton) { discoverCategoryChoice = discoverCategoryButton.dataset.discoverCategory; discoverCache = null; suggestionsCache = null; discoverQuery = ""; render(); return; }
     const addCategoryButton = eventClosest(event, "[data-add-category]");
     if (addCategoryButton) { applyAddCategory(addCategoryButton.dataset.addCategory); return; }
-    const categoryFilter = eventClosest(event, "[data-category-filter]");
-    if (categoryFilter) { activeCategory = categoryFilter.dataset.categoryFilter || "all"; render(); return; }
-    const shareTitle = eventClosest(event, '[data-action="share-title"]');
-    if (shareTitle) {
-      const item = itemById(shareTitle.dataset.id);
-      if (item) openShareDetail(item.id);
-      return;
-    }
-    const shareGroup = eventClosest(event, "[data-share-group]");
-    if (shareGroup) {
-      let ids = [];
-      try { ids = JSON.parse(shareGroup.dataset.shareIds || "[]"); } catch (_) {}
-      const selected = ids.map(itemById).filter(Boolean);
-      openShareList(shareGroup.getAttribute("aria-label")?.replace(/^Share\s+/i, "") || "Collection", selected);
-      return;
-    }
-    const quickStatus = eventClosest(event, "[data-quick-status]");
-    if (quickStatus) { prefs.favoritesOnly = false; setPreference("dashboardStatusFilter", quickStatus.dataset.quickStatus); return; }
     const detailStatus = eventClosest(event, "[data-detail-status-btn]");
     if (detailStatus) {
-      const item = items.find(row => row.id === detailItemId);
+      const item = itemById(detailItemId);
       if (item) {
         setItemStatus(item, detailStatus.dataset.detailStatusBtn);
         detailStatus.parentElement.querySelectorAll("[data-detail-status-btn]").forEach(button => button.classList.toggle("active", button === detailStatus));
@@ -2590,14 +2962,6 @@
     if (fixMatch) { event.preventDefault(); event.stopPropagation(); openFixMatch(fixMatch.dataset.fixMatch); return; }
     const changeCover = eventClosest(event, "[data-change-cover]");
     if (changeCover) { event.preventDefault(); event.stopPropagation(); openCoverPicker(changeCover.dataset.changeCover); return; }
-    const dashboardViewChoice = eventClosest(event, "button[data-dashboard-view]");
-    if (dashboardViewChoice) { setPreference("dashboardView", dashboardViewChoice.dataset.dashboardView); return; }
-    const dashboardSortChoice = eventClosest(event, "button[data-dashboard-sort]");
-    if (dashboardSortChoice) { setPreference("dashboardSort", dashboardSortChoice.dataset.dashboardSort); return; }
-    if (eventClosest(event, "[data-close-dashboard-filter]")) { closePopup($("#dashboard-filter-dialog")); return; }
-    if (eventClosest(event, "[data-reset-dashboard-filter]")) { dashboardStatusFilter = prefs.dashboardStatusFilter = "all"; activeCategory = "all"; prefs.favoritesOnly = false; libraryQuery = ""; prefs.dashboardView = "list"; prefs.dashboardSort = "alphabetical-asc"; prefs.dashboardGroupBy = "status"; persist({ meta: true }); applyPreferences(); historyPush(); closePopup($("#dashboard-filter-dialog")); render(); return; }
-    const dashboardLoader = eventClosest(event, "[data-dashboard-load-more]");
-    if (dashboardLoader) { dashboardLazyObserver?.unobserve(dashboardLoader); loadDashboardMore(dashboardLoader); if (dashboardLoader.isConnected) dashboardLazyObserver?.observe(dashboardLoader); return; }
     const detailImage = eventClosest(event, "[data-detail-image-src]");
     if (detailImage) {
       showDetailImage($$("[data-detail-image-src]", $("#page-content")).indexOf(detailImage));
@@ -2607,15 +2971,13 @@
     if (eventClosest(event, "[data-detail-image-prev]")) { showDetailImage(detailImagePosition - 1); return; }
     if (eventClosest(event, "[data-detail-image-next]")) { showDetailImage(detailImagePosition + 1); return; }
     if (event.target.id === "detail-image-modal") { closePopup(event.target); return; }
-    const statsFilter = eventClosest(event, "[data-stats-filter]");
-    if (statsFilter) { setPreference("dashboardStatusFilter", statsFilter.dataset.statsFilter); goto("dashboard"); return; }
     const backLink = eventClosest(event, "[data-back]");
     if (backLink && inAppNav) { event.preventDefault(); window.history.back(); return; }
     const internalRouteLink = eventClosest(event, 'a[href^="#"]');
     if (internalRouteLink) {
       const target = internalRouteLink.getAttribute("href") || "";
       const routeName = target.slice(1).split(/[/?#]/, 1)[0];
-      if (routeName in titles && target !== location.hash) {
+      if (hasPage(routeName) && target !== location.hash) {
         event.preventDefault();
         const nextUrl = new URL(location.href); nextUrl.search = ""; nextUrl.hash = target.slice(1);
         try { window.history.pushState({ page: routeName }, "", nextUrl); syncRouteFromHash(); }
@@ -2634,31 +2996,36 @@
     }
     const csInsert = eventClosest(event, "[data-cs-insert]");
     if (csInsert) { const input = $("#custom-source-form")?.elements.searchUrl; if (input) { const at = input.selectionStart ?? input.value.length; input.setRangeText(csInsert.dataset.csInsert, at, input.selectionEnd ?? at, "end"); input.focus(); } return; }
+    const sourceKeyToggle = eventClosest(event, "[data-toggle-source-key]");
+    if (sourceKeyToggle) {
+      const input = $(`[data-source-api-key="${CSS.escape(sourceKeyToggle.dataset.toggleSourceKey)}"]`);
+      if (input) { const reveal = input.type === "password"; input.type = reveal ? "text" : "password"; sourceKeyToggle.textContent = reveal ? "Hide" : "Show"; sourceKeyToggle.setAttribute("aria-label", `${reveal ? "Hide" : "Show"} API key`); sourceKeyToggle.setAttribute("aria-pressed", String(reveal)); }
+      return;
+    }
+    const sourceTest = eventClosest(event, "[data-test-metadata-source]");
+    if (sourceTest) { testMetadataSource(sourceTest.dataset.testMetadataSource, sourceTest); return; }
     if (eventClosest(event, "[data-custom-source-test]")) { testCustomSourceForm(); return; }
     if (eventClosest(event, "[data-custom-source-delete]")) { deleteCustomSource(); return; }
     const statsCategoryButton = eventClosest(event, "[data-stats-category]");
     if (statsCategoryButton) { statsCategory = statsCategoryButton.dataset.statsCategory === "movie" ? "movie" : "series"; render(); return; }
     const rangeButton = eventClosest(event, "[data-stats-range]");
     if (rangeButton) { statsRange = rangeButton.dataset.statsRange === "month" ? "month" : "week"; statsActivityDate = ""; render(); return; }
-    const watchtimePageButton = eventClosest(event, "[data-stats-watchtime-page]");
-    if (watchtimePageButton) { statsWatchtimePage = Math.max(0, Number(watchtimePageButton.dataset.statsWatchtimePage) || 0); render(); return; }
     const activityDay = eventClosest(event, "[data-stats-activity-date]");
     if (activityDay) { statsActivityDate = activityDay.dataset.statsActivityDate; render(); return; }
-    const findHours = eventClosest(event, "[data-stats-find-hours]");
-    if (findHours) { findMissingHours(findHours); return; }
-    const fetchFacts = eventClosest(event, "[data-stats-fetch-facts]");
-    if (fetchFacts) { fetchMissingFacts(fetchFacts); return; }
     const adjust = eventClosest(event, "[data-adjust-progress]");
     if (adjust) {
-      const item = items.find(row => row.id === detailItemId);
+      const item = itemById(detailItemId);
       if (item) {
         const amount = Number(adjust.dataset.adjustProgress);
-        if (!stepEpisodes(item, amount)) item.progress = Math.max(0, (Number(item.progress) || 0) + amount);
+        const stepped = stepEpisodes(item, amount);
+        if (!stepped) item.progress = Math.max(0, (Number(item.progress) || 0) + amount);
+        else if (!stepped.changed) { toast("No released episodes are available to mark yet."); return; }
         item.updatedAt = Date.now();
         if (item.category === "series" && amount > 0) { item.lastProgressAt = item.updatedAt; item.status = roles.active; }
         if (item.category === "series" && seriesProgressComplete(item, window.SplitAppLibrary.episodeInfo(item), item.progress)) item.status = roles.done;
         if (item.category !== "series" && item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic" && item.status !== roles.done) { item.status = roles.done; history.unshift({ itemId: item.id, title: item.title, action: roles.done, status: roles.done, at: Date.now() }); toast(`Marked as ${roles.done}.`); }
         persist({ ids: [item.id] }); render();
+        if (stepped?.skippedUpcoming) toast(`Skipped ${stepped.skippedUpcoming} upcoming ${stepped.skippedUpcoming === 1 ? "episode" : "episodes"}.`);
       }
       return;
     }
@@ -2698,8 +3065,8 @@
           else window.open(url, "_blank", "noopener,noreferrer");
           toast(`${key === "imdb" ? "IMDb" : "Rotten Tomatoes"} session ready.`);
           if (page === "discover" && discoverSource === key && discoverQuery.trim()) submitDiscover();
-          else if (page === "details" && detailRef && (detailRef.extra?.source === key || items.find(row => String(row.id) === String(detailItemId))?.metadataSource === key)) loadDetailRef();
-          else if (page === "details" && detailItemId && items.find(row => String(row.id) === String(detailItemId))?.metadataSource === key) loadDetails(detailItemId);
+          else if (page === "details" && detailRef && (detailRef.extra?.source === key || itemById(detailItemId)?.metadataSource === key)) loadDetailRef();
+          else if (page === "details" && detailItemId && itemById(detailItemId)?.metadataSource === key) loadDetails(detailItemId);
         } catch (error) { toast(error?.message || "Could not open the provider."); }
       })();
       return;
@@ -2752,7 +3119,10 @@
     const logAction = eventClosest(event, "[data-log-action]");
     if (logAction?.dataset.logAction === "clear") { clearLogcat().then(() => { render(); toast("Logs cleared."); }).catch(error => { recordLog("error", `Log clear failed: ${error?.message || error}`); toast("Could not clear logs."); }); return; }
     if (logAction?.dataset.logAction === "clear-history") {
-      clearLibraryHistory().then(() => { render(); toast("History cleared."); }).catch(error => { recordLog("error", `History clear failed: ${error?.message || error}`); toast("Could not clear history."); });
+      appConfirm("This removes saved library activity. The same events will disappear from Timeline and Statistics → Activity. Your tracked titles stay untouched.", { title: "Clear activity history", confirmLabel: "Clear history", danger: true }).then(confirmed => {
+        if (!confirmed) return;
+        clearLibraryHistory().then(() => { render(); toast("History cleared."); }).catch(error => { recordLog("error", `History clear failed: ${error?.message || error}`); toast("Could not clear history."); });
+      });
       return;
     }
     const syncAction = eventClosest(event, "[data-metadata-sync-action]");
@@ -2773,6 +3143,7 @@
       render(); syncPageNavigation(); return;
     }
     if (eventClosest(event, "[data-open-profile-menu]")) { showPopup($("#profile-options-dialog")); return; }
+    if (eventClosest(event, "[data-profile-add]")) { openItem(); return; }
     if (eventClosest(event, "[data-profile-menu-close]")) { closePopup($("#profile-options-dialog")); return; }
     if (eventClosest(event, "#profile-options-dialog a")) closePopup($("#profile-options-dialog"), { preserveHistory: true });
     if (eventClosest(event, "[data-open-timeline-filters]")) { showPopup($("#timeline-filter-dialog")); return; }
@@ -2789,10 +3160,14 @@
     const seasonButton = eventClosest(event, "[data-season-toggle]");
     if (seasonButton) {
       const ids = seasonButton.dataset.seasonToggle.split(","), undo = seasonButton.dataset.seasonDone === "true";
-      toggleSeason(detailItemId, ids, undo);
-      toast(undo ? `${ids.length} episodes marked unwatched.` : `${ids.length} episodes marked watched.`);
+      const skipped = toggleSeason(detailItemId, ids, undo);
+      if (skipped === null) return;
+      const changedCount = ids.length - skipped;
+      toast(undo ? `${changedCount} episodes marked unwatched.` : `${changedCount} episodes marked watched.${skipped ? ` ${skipped} upcoming ${skipped === 1 ? "episode" : "episodes"} skipped.` : ""}`);
       return;
     }
+    const caughtUp = eventClosest(event, "[data-watchlist-caught-up]");
+    if (caughtUp) { event.preventDefault(); event.stopPropagation(); toast("Caught up. Waiting for the next episode."); return; }
     const episode = eventClosest(event, "[data-episode-toggle]");
     if (episode) {
       const watchlistCard = episode.dataset.watchlistCard || "";
@@ -2807,20 +3182,18 @@
     }
     const movieWatched = eventClosest(event, "[data-watchlist-movie]");
     if (movieWatched) {
-      const item = items.find(entry => entry.id === movieWatched.dataset.watchlistMovie);
+      const item = itemById(movieWatched.dataset.watchlistMovie);
       if (!item || item.category !== "movie") return;
       item.status = roles.done; item.progress = Number(item.goal) || Number(item.facts?.runtimeMinutes) || 1; item.updatedAt = Date.now();
       history.unshift({ itemId: item.id, title: item.title, action: "Marked watched", status: item.status, type: "movie", at: item.updatedAt });
       persist({ ids: [item.id] }); render(); toast("Movie marked watched."); return;
     }
-    const favoritesFilter = eventClosest(event, "[data-favorites-filter]");
-    if (favoritesFilter) { prefs.dashboardStatusFilter = dashboardStatusFilter = "all"; setPreference("favoritesOnly", !prefs.favoritesOnly); render(); return; }
     const quick = eventClosest(event, "[data-action=watch-next],[data-action=mark-all-watched],[data-action=toggle-favorite]");
     if (quick) {
-      const item = items.find(entry => entry.id === quick.dataset.id), kind = quick.dataset.action; if (!item) return;
+      const item = itemById(quick.dataset.id), kind = quick.dataset.action; if (!item) return;
       const info = window.SplitAppLibrary.episodeInfo(item);
       if (kind === "watch-next") { if (info?.next) toggleEpisodeWatched(item.id, info.next.id, `${info.mark(info.next)} ${info.next.title}`); else updateProgress(item.id); }
-      else if (kind === "mark-all-watched") { if (info) { const undo = info.done === info.total; appConfirm(`${undo ? "Uncheck" : "Mark as watched"} all ${info.total} episodes of “${item.title}”?`, { title: undo ? "Uncheck all" : "Mark all watched", confirmLabel: undo ? "Uncheck" : "Mark watched" }).then(ok => { if (ok) toggleSeason(item.id, info.eps.map(entry => String(entry.id)), undo); }); } }
+      else if (kind === "mark-all-watched") { if (info) { const undo = info.done === info.total; appConfirm(`${undo ? "Uncheck" : "Mark as watched"} all ${info.total} episodes of “${item.title}”?`, { title: undo ? "Uncheck all" : "Mark all watched", confirmLabel: undo ? "Uncheck" : "Mark watched" }).then(ok => { if (ok) { const ids = info.eps.map(entry => String(entry.id)), skipped = toggleSeason(item.id, ids, undo); if (skipped !== null) toast(undo ? `${ids.length} episodes marked unwatched.` : `${ids.length - skipped} episodes marked watched.${skipped ? ` ${skipped} upcoming ${skipped === 1 ? "episode" : "episodes"} skipped.` : ""}`); } }); } }
       else { item.favorite = !item.favorite; item.updatedAt = Date.now(); persist({ ids: [item.id] }); render(); toast(item.favorite ? "Added to favorites." : "Removed from favorites."); }
       return;
     }
@@ -2829,6 +3202,7 @@
       detailTab = tabButton.dataset.detailTab; const root = tabButton.closest(".detail-page");
       root.querySelectorAll("[data-detail-tab]").forEach(button => { const on = button === tabButton; button.classList.toggle("active", on); button.setAttribute("aria-selected", String(on)); });
       root.querySelectorAll("[data-detail-panel]").forEach(panel => { panel.hidden = panel.dataset.detailPanel !== detailTab; });
+      prioritizeVisibleDetailImages(root);
       return;
     }
     const seasonPill = eventClosest(event, "[data-season-pill]");
@@ -2841,7 +3215,7 @@
     }
     const reactEpisode = eventClosest(event, "[data-episode-react]");
     if (reactEpisode) {
-      const item = items.find(entry => entry.id === reactEpisode.dataset.itemId); if (!item) return;
+      const item = itemById(reactEpisode.dataset.itemId); if (!item) return;
       item.episodeNotes = item.episodeNotes || {}; const note = { ...(item.episodeNotes[reactEpisode.dataset.episodeId] || {}) };
       if (note.reaction === reactEpisode.dataset.episodeReact) delete note.reaction; else note.reaction = reactEpisode.dataset.episodeReact;
       if (Object.keys(note).length) item.episodeNotes[reactEpisode.dataset.episodeId] = note; else delete item.episodeNotes[reactEpisode.dataset.episodeId];
@@ -2850,8 +3224,9 @@
     }
     const layoutToggle = eventClosest(event, "[data-ratings-layout]");
     if (layoutToggle) {
-      const grid = layoutToggle.closest(".ep-ratings"), next = grid.dataset.layout === "vertical" ? "horizontal" : "vertical";
-      grid.dataset.layout = next; layoutToggle.textContent = next === "vertical" ? "Horizontal" : "Vertical";
+      const grid = layoutToggle.closest(".ep-ratings"), next = layoutToggle.dataset.ratingsLayout === "horizontal" ? "horizontal" : "vertical";
+      grid.dataset.layout = next; grid.dataset.layoutMode = "manual";
+      syncRatingsLayoutControls(grid, next, false);
       try { localStorage.setItem("screenmark_ratings_layout", next); } catch (_) {}
       return;
     }
@@ -2863,7 +3238,7 @@
     const settingAction = eventClosest(event, "[data-setting-action]");
     if (settingAction && settingAction.type !== "file") {
       const key = settingAction.dataset.settingAction;
-      if (key === "export") exportList(); else if (key === "export-txt") exportNames("txt"); else if (key === "export-csv") exportNames("csv"); else if (key === "sync-metadata") syncMetadataNow(); else if (key === "resetDashboard") resetDashboard(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
+      if (key === "export") exportList(); else if (key === "export-txt") exportNames("txt"); else if (key === "export-csv") exportNames("csv"); else if (key === "sync-metadata") syncMetadataNow(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
       else if (key.startsWith("clear-")) {
         clearAppCaches(key === "clear-images" ? "images" : key === "clear-metadata" ? "metadata" : "temporary");
         toast("Temporary cache cleared.");
@@ -2932,7 +3307,7 @@
     if (input.matches("[data-profile-sort]")) { profileCollectionSort = input.value; render(); const dialog = $("#profile-filter-dialog"); if (dialog) showPopup(dialog, { silent: true }); syncPageNavigation(); return; }
     if (input.matches("[data-profile-status]")) { profileStatusFilter = input.value; render(); const dialog = $("#profile-filter-dialog"); if (dialog) showPopup(dialog, { silent: true }); syncPageNavigation(); return; }
     if (input.matches("[data-detail-status]")) {
-      const item = items.find(row => row.id === detailItemId);
+      const item = itemById(detailItemId);
       if (!item || item.status === input.value) return;
       item.status = input.value;
       item.updatedAt = Date.now();
@@ -2969,7 +3344,7 @@
       const key = input.dataset.sourceApiKey, value = input.value.trim();
       prefs.apiKeys[key] = value;
       // Pasting a key into a source that is switched off turns it on, so the key is not silently ignored.
-      if (value && !window.SplitAppSources.isEnabled(key, prefs)) { window.SplitAppSources.setEnabled(prefs, key, true); toast(`${window.SplitAppSources.list().find(row => row.key === key)?.name || "Source"} turned on.`); persist(); render(); return; }
+      if (value && !window.SplitAppSources.isEnabled(key, prefs)) { window.SplitAppSources.setEnabled(prefs, key, true); toast(`${window.SplitAppSources.list().find(row => row.key === key)?.name || "Source"} turned on.`); persist({ meta: true }); render(); return; }
       persist({ meta: true });
     }
     if (input.matches("[data-setting-action=import]")) { const file = input.files?.[0]; input.value = ""; importList(file); }
@@ -3018,14 +3393,11 @@
     prefs.metadataSourceOrder = [...list.querySelectorAll("[data-source-row]")].map(entry => entry.dataset.sourceRow);
     persist({ meta: true }); render();
   });
-  document.addEventListener("keydown", event => {
-    if (event.target.id === "discover-query" && (event.key === "Enter" || event.keyCode === 13)) { event.preventDefault(); submitDiscover(); return; }
-  });
   document.addEventListener("input", event => {
     if (event.target.id === "discover-query") { discoverQuery = event.target.value; const clearButton = $("[data-discover-clear]"); if (clearButton) clearButton.hidden = !discoverQuery.trim(); syncDiscoverTypeTabs(); return; }
     if (event.target.matches("[data-log-search]")) { if (settingsGroup === "history") historyQuery = event.target.value; else logQuery = event.target.value; const list = $(".logcat-list"); if (list) { const query = (settingsGroup === "history" ? historyQuery : logQuery).toLowerCase(); list.querySelectorAll(".logcat-entry").forEach(row => { row.hidden = !row.textContent.toLowerCase().includes(query); }); } return; }
     if (event.target.matches("[data-detail-notes]")) {
-      const item = items.find(row => row.id === detailItemId);
+      const item = itemById(detailItemId);
       if (item) { item.notes = event.target.value; item.updatedAt = Date.now(); persist({ ids: [item.id] }); }
       return;
     }
@@ -3062,29 +3434,9 @@
       if (globalResults) globalResults.hidden = !hasGlobalMatch;
       return;
     }
-    if (event.target.id === "global-search") {
-      libraryQuery = event.target.value;
-      const clearButton = $("[data-clear-collection-search]");
-      if (clearButton) clearButton.hidden = !libraryQuery;
-      clearTimeout(searchRenderTimer);
-      searchRenderTimer = setTimeout(() => refreshSearchResults("dashboard", "#collection-results"), 120);
-      return;
-    }
-    if (event.target.id === "library-search") {
-      libraryQuery = event.target.value;
-      clearTimeout(searchRenderTimer);
-      searchRenderTimer = setTimeout(() => refreshSearchResults("search", "#search-results"), 120);
-    }
   });
   document.addEventListener("submit", event => {
-    if (event.target.id === "custom-source-form") { saveCustomSource(event); return; }
-    if (event.target.id !== "dashboard-filter-form") return;
-    event.preventDefault();
-    prefs.dashboardView = event.target.elements.view?.value || prefs.dashboardView;
-    persist({ meta: true });
-    applyPreferences();
-    closePopup($("#dashboard-filter-dialog"));
-    render();
+    if (event.target.id === "custom-source-form") saveCustomSource(event);
   });
   document.addEventListener("submit", event => {
     if (!event.target.matches("#timeline-filter-dialog form")) return;
@@ -3108,7 +3460,6 @@
     settingsGroup = null;
     goto(button.dataset.sidebarPage);
   });
-  $("#header-filter").addEventListener("click", () => showPopup($("#dashboard-filter-dialog")));
   // ---- Pull to refresh on details, watchlists, and Discover ----
   setPullToRefreshEnabled = (() => {
     const THRESHOLD = 72, MAX = 130; let ptr = null, startY = 0, candidate = false, pulling = false, distance = 0, busy = false;
@@ -3206,15 +3557,27 @@
     };
   })();
   $("#header-type").addEventListener("click", event => {
-    const discoverButton = eventClosest(event, "[data-discover-category]");
-    if (discoverButton && page === "discover") { discoverCategoryChoice = discoverButton.dataset.discoverCategory; discoverCache = null; suggestionsCache = null; discoverQuery = ""; render(); return; }
-    const button = eventClosest(event, "[data-category-filter]"); if (!button) return; activeCategory = button.dataset.categoryFilter || "series"; prefs.dashboardDefaultCategory = activeCategory; persist({ meta: true }); render();
+    const button = eventClosest(event, "[data-discover-category]");
+    if (!button || page !== "discover") return;
+    discoverCategoryChoice = button.dataset.discoverCategory;
+    discoverAbortController?.abort(); discoverAbortController = null;
+    suggestionsAbortController?.abort(); suggestionsAbortController = null; suggestionsPendingKey = ""; suggestionsRequest++;
+    discoverCache = null;
+    suggestionsCache = null;
+    discoverQuery = "";
+    render();
+  });
+  $("#discover-top-search").addEventListener("submit", event => {
+    event.preventDefault();
+    submitDiscover();
+    event.currentTarget.querySelector("#discover-query")?.blur();
   });
   $("#discover-top-search").addEventListener("click", event => {
-    if (eventClosest(event, "[data-discover-submit]")) { event.preventDefault(); submitDiscover(); return; }
     if (!eventClosest(event, "[data-discover-clear]")) return;
     event.preventDefault();
     discoverQuery = ""; discoverSubmitted = ""; discoverSubmittedAt = 0;
+    discoverAbortController?.abort(); discoverAbortController = null;
+    suggestionsAbortController?.abort(); suggestionsAbortController = null; suggestionsPendingKey = "";
     discoverRequestId++; suggestionsRequest++;
     discoverCache = null;
     const input = $("#discover-query"); if (input) input.value = "";
@@ -3245,7 +3608,6 @@
   });
   $("[data-close-setting-picker]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#setting-picker-dialog")); });
   $("#setting-picker-dialog")?.addEventListener("cancel", event => { event.preventDefault(); closePopup(event.currentTarget); });
-  $("#floating-add").addEventListener("click", () => openItem());
   function syncRouteFromHash() {
     rememberScroll();
     const [hashPath, hashQuery = ""] = location.hash.slice(1).split("?");
@@ -3254,9 +3616,9 @@
     if (next === "dashboard" || next === "search") { goto("discover", false); historyPush(true); return; }
     if (next === "settings" && route[1] === "dashboard") { goto("settings", false); historyPush(true); return; }
     if (next === "settings" && route[1] === "nav-layout") { goto("settings", false); historyPush(true); return; }
-    if (!(next in titles)) return;
+    if (!hasPage(next)) return;
     if (next === "series-watchlist" || next === "movie-watchlist") watchlistTab = "watchlist";
-    if (next !== "discover") { discoverQuery = ""; discoverRequestId++; }
+    if (next !== "discover") { discoverQuery = ""; discoverAbortController?.abort(); discoverAbortController = null; discoverRequestId++; }
     if (next !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
     else if (page !== "add") { entryDraftId = null; addMetadataQuery = ""; } // opening Add from a link/back is a new entry
     if (next === "details" && detailStack.length) { detailBack(); return; }
@@ -3296,14 +3658,24 @@
   window.Capacitor?.Plugins?.App?.addListener?.("backButton", () => {
     const openDialog = document.querySelector("dialog[open]");
     if (openDialog) { closePopup(openDialog); return; }
-    if (page !== "dashboard" || settingsGroup) { if (window.history.length > 1) window.history.back(); else goto("dashboard"); return; }
+    if (page !== "series-watchlist" || settingsGroup) { if (window.history.length > 1) window.history.back(); else goto("series-watchlist"); return; }
     window.Capacitor.Plugins.App.exitApp?.();
   });
   window.addEventListener("hashchange", syncRouteFromHash);
   window.addEventListener("storage", event => { if (event.key === storageKey) toast("Library changed in another tab."); });
-  window.addEventListener("beforeunload", () => { flushPersist(); window.SplitAppBackend?.flushJournals?.(); });
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { flushPersist(); window.SplitAppBackend?.flushJournals?.(); if (metadataSync) recordLog("info", "Metadata refresh pauses while the app is hidden and resumes when visible."); } else if (!metadataSync && metadataSyncState?.entries?.some(entry => ["queued", "running"].includes(entry.status))) startMetadataSync(null, true); });
-  window.addEventListener("online", () => { if (!metadataSync && metadataSyncState?.entries?.some(entry => ["queued", "running"].includes(entry.status))) startMetadataSync(null, true); });
+  window.addEventListener("beforeunload", () => { flushPersist(); saveMetadataSyncState(); window.SplitAppBackend?.flushJournals?.(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      flushPersist(); saveMetadataSyncState(); window.SplitAppBackend?.flushJournals?.();
+      clearTimeout(metadataSyncRenderTimer); metadataSyncRenderTimer = 0;
+      if (metadataSync) recordLog("info", "Metadata refresh continues while the app runtime is active; unfinished titles resume when the app reopens.");
+    } else {
+      if (metadataSyncState) render();
+      maybeAutoMetadataSync();
+    }
+  });
+  window.addEventListener("offline", () => { if (page === "details") { render(); if (detailRef && ["person", "character"].includes(detailRef.type)) loadDetailRef(); } });
+  window.addEventListener("online", () => { maybeAutoMetadataSync(); if (page === "details") { render(); if (detailRef) loadDetailRef(); else loadDetails(); } });
   document.addEventListener("input", event => {
     if (!event.target.matches("[data-log-search]")) return;
     logQuery = event.target.value; clearTimeout(searchRenderTimer); searchRenderTimer = setTimeout(render, 120);
@@ -3317,20 +3689,21 @@
   async function restoreNativeData({ fast = false } = {}) {
     if (!window.SplitAppBackend?.load) return;
     const initialRevision = localMutationRevision;
-    const initialItems = new Map(items.map(item => [String(item.id), JSON.stringify(item)]));
-    const initialPreferences = JSON.parse(JSON.stringify(prefs));
+    // Keep only IDs for conflict resolution. Serializing every record here
+    // duplicated the full library as large strings on the UI thread at launch.
+    const initialIds = new Set(items.map(item => String(item.id)));
     try {
       const restored = await window.SplitAppBackend.load({ fast });
       if (!restored) return null; // nothing stored locally yet: the caller runs the full restore
-      const nativeItems = Array.isArray(restored.items) ? restored.items.filter(item => config.categories.some(category => category.key === item.category)) : items;
-      const nativeHistory = Array.isArray(restored.history) ? restored.history : history;
-      const nativePreferences = restored.preferences && typeof restored.preferences === "object" ? restored.preferences : {};
+      const nativeItems = Array.isArray(restored.items) ? restored.items.filter(item => isRecord(item) && item.id != null && String(item.id) !== "" && config.categories.some(category => category.key === item.category)) : items;
+      const nativeHistory = Array.isArray(restored.history) ? restored.history.filter(isRecord) : history;
+      const nativePreferences = isRecord(restored.preferences) ? restored.preferences : {};
       const migrateNativeAccentDefault = Number(nativePreferences.accentColorDefaultVersion) < 2;
       const nativeHasLegacyScores = nativeItems.some(item => Object.prototype.hasOwnProperty.call(item, "rating") || Object.values(item.episodeNotes || {}).some(note => Object.prototype.hasOwnProperty.call(note || {}, "rating")));
-      const nativeHasLegacyPreferences = ["showRatings", "ratingFormat", "dashboardDensity", "font", "categoryColors", "showThumbnails", "showProgress"].some(key => Object.prototype.hasOwnProperty.call(nativePreferences, key)) || ["rating", "rating-desc", "highest-rated"].includes(nativePreferences.dashboardSort) || Boolean(nativePreferences.theme && !["system", "light", "amoled"].includes(nativePreferences.theme));
+      const nativeHasLegacyPreferences = ["showRatings", "ratingFormat", "dashboardDensity", "font", "categoryColors", "showThumbnails", "showProgress", ...removedPreferenceKeys].some(key => Object.prototype.hasOwnProperty.call(nativePreferences, key)) || ["rating", "rating-desc", "highest-rated"].includes(nativePreferences.dashboardSort) || Boolean(nativePreferences.theme && !["system", "light", "dark", "amoled"].includes(nativePreferences.theme));
       // Changes made while the folder was loading win over the loaded copy (they used to be overwritten).
       if (localMutationRevision === initialRevision) {
-        items = nativeItems;
+        items = nativeItems; itemIndexItems = null;
         history = nativeHistory;
         if (restored.loadedFromFolder) {
           Object.keys(prefs).forEach(key => delete prefs[key]);
@@ -3339,15 +3712,21 @@
       } else {
         const currentItems = new Map(items.map(item => [String(item.id), item]));
         const mergedItems = new Map(nativeItems.map(item => [String(item.id), item]));
-        for (const id of initialItems.keys()) if (!currentItems.has(id)) mergedItems.delete(id);
-        for (const [id, item] of currentItems) {
-          if (!initialItems.has(id) || initialItems.get(id) !== JSON.stringify(item)) mergedItems.set(id, item);
+        if (fullMutationRevision > initialRevision) {
+          for (const id of initialIds) if (!currentItems.has(id)) mergedItems.delete(id);
+          currentItems.forEach((item, id) => mergedItems.set(id, item));
+        } else {
+          for (const [id, revision] of itemMutationRevisions) {
+            if (revision <= initialRevision) continue;
+            const item = currentItems.get(id);
+            if (item) mergedItems.set(id, item);
+            else mergedItems.delete(id);
+          }
         }
-        items = [...mergedItems.values()];
-        history = [...new Map([...history, ...nativeHistory].map(entry => [JSON.stringify(entry), entry])).values()];
-        for (const [key, value] of Object.entries(prefs)) {
-          if (JSON.stringify(value) !== JSON.stringify(initialPreferences[key])) nativePreferences[key] = value;
-        }
+        items = [...mergedItems.values()]; itemIndexItems = null;
+        if (historyReplaceRevision > initialRevision || fullMutationRevision > initialRevision) history = [...history];
+        else history = [...new Map([...history, ...nativeHistory].map(entry => [JSON.stringify(entry), entry])).values()];
+        if (metadataMutationRevision > initialRevision || fullMutationRevision > initialRevision) Object.assign(nativePreferences, prefs);
         Object.assign(prefs, nativePreferences);
       }
       if (migrateNativeAccentDefault) {
@@ -3356,15 +3735,16 @@
       }
       items.forEach(stripLocalScores);
       const migratedMixItems = migratedStoredMixItems || migrateLegacyMixItems();
-      delete prefs.showRatings; delete prefs.ratingFormat; delete prefs.dashboardDensity; delete prefs.font; delete prefs.categoryColors; delete prefs.showThumbnails; delete prefs.showProgress;
-      prefs.theme = "amoled";
+      delete prefs.showRatings; delete prefs.ratingFormat; delete prefs.dashboardDensity; delete prefs.font; delete prefs.categoryColors; delete prefs.showThumbnails; delete prefs.showProgress; removedPreferenceKeys.forEach(key => delete prefs[key]);
+      if (!["system", "light", "dark", "amoled"].includes(prefs.theme)) prefs.theme = prefsDefaults.theme;
       if (["rating", "rating-desc", "highest-rated"].includes(prefs.dashboardSort)) prefs.dashboardSort = "alphabetical-asc";
       delete prefs.defaultCategory;
       delete prefs.appLook;
       delete prefs.appDisplayName;
       refreshSourceRegistry();
       normalizeNavigationPrefs();
-      if (!restored.fast || nativeHasLegacyScores || nativeHasLegacyPreferences || migratedMixItems || migrateNativeAccentDefault) await window.SplitAppBackend.save({ items, history, preferences: prefs });
+      normalizeMotionPreferences();
+      if (!restored.fast || pendingStartupMigration || nativeHasLegacyScores || nativeHasLegacyPreferences || migratedMixItems || migrateNativeAccentDefault) await window.SplitAppBackend.save({ items, history, preferences: prefs });
       return true;
     } catch (error) {
       recordLog("error", `App data restore failed: ${error.message || error}`);
@@ -3410,24 +3790,47 @@
   }
   if (page === "details" && (detailItemId || detailPreview)) {
     const [refType, refId, refSlug] = (new URLSearchParams(initialHashQuery).get("ref") || "").split("/");
-    if (refType && refId) { detailStack.push(detailSnapshot()); detailRef = { type: refType, id: refId, title: (refSlug || "").replace(/-/g, " ") }; loadDetailRef(); }
+    if (refType && refId) { detailStack.push(detailSnapshot()); if (detailStack.length > 50) detailStack.shift(); detailRef = { type: refType, id: refId, title: (refSlug || "").replace(/-/g, " ") }; loadDetailRef(); }
     else loadDetails();
   }
-  requestAnimationFrame(() => requestAnimationFrame(() => window.ScreenMarkSplash?.ready?.()));
   const finishStartup = success => {
+    libraryRestoreComplete = true;
     if (!success) {
       if (nativeFolderStorage && storageFolderGate) storageFolderGate.hidden = false;
+      window.ScreenMarkSplash?.ready?.();
       return;
     }
     if (storageFolderGate) storageFolderGate.hidden = true;
     applySeriesInactivityTransitions();
     applyPreferences(); render(); syncBackupSchedule();
-    if (metadataSyncState?.entries?.some(entry => ["queued", "running"].includes(entry.status))) startMetadataSync(null, true);
     if (page === "details" && detailItemId && !detailPreview) loadDetails();
+    window.ScreenMarkSplash?.ready?.();
   };
-  const refreshSeriesInactivity = () => { if (applySeriesInactivityTransitions()) render(); };
-  setInterval(refreshSeriesInactivity, 60 * 60 * 1000);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshSeriesInactivity(); });
+  let seriesInactivityTimer = 0;
+  function scheduleSeriesInactivityCheck(latestActivity = latestEpisodeActivityByItem()) {
+    clearTimeout(seriesInactivityTimer); seriesInactivityTimer = 0;
+    if (document.hidden) return;
+    const now = Date.now(); let nextAt = Infinity;
+    for (const item of items) {
+      if (item.category !== "series" || ![roles.active, roles.hold].includes(item.status)) continue;
+      const progress = Math.max(Number(item.progress) || 0, (item.watchedEpisodeIds || []).length);
+      if (!progress) continue;
+      const lastProgressAt = Number(item.lastProgressAt) || latestActivity.get(String(item.id)) || Number(item.updatedAt) || Number(item.createdAt) || now;
+      const idleLimit = item.status === roles.active ? 7 * 86400000 : 30 * 86400000;
+      nextAt = Math.min(nextAt, lastProgressAt + idleLimit);
+    }
+    if (Number.isFinite(nextAt)) {
+      const delay = Math.max(1000, nextAt - now);
+      seriesInactivityTimer = setTimeout(() => {
+        seriesInactivityTimer = 0;
+        if (!document.hidden && applySeriesInactivityTransitions()) render();
+      }, Math.min(delay, MAX_TIMEOUT_DELAY));
+    }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { clearTimeout(seriesInactivityTimer); seriesInactivityTimer = 0; }
+    else applySeriesInactivityTransitions();
+  });
   // Phase 1: paint the library straight from IndexedDB (instant). Phase 2: reconcile with the saved folder /
   // encrypted store in the background, then fill the device artwork cache.
   restoreNativeData({ fast: true }).then(async fastResult => {
@@ -3439,13 +3842,13 @@
       const full = await restoreNativeData();
       if (full === false) finishStartup(false);
       else if (full) { applySeriesInactivityTransitions(); if (libraryStamp() !== before) { applyPreferences(); render(); } } // keep scroll position when nothing changed
-      if (full) checkLibraryDrift();
+      if (full) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); }
       setTimeout(fillThumbCache, 1500);
       return;
     }
     const full = await restoreNativeData();
     finishStartup(full);
-    if (full) checkLibraryDrift();
+    if (full) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); }
     setTimeout(fillThumbCache, 3000);
   });
 })();

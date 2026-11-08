@@ -3,6 +3,8 @@
   const providers = [
     {"key":"tvmaze","name":"TVmaze","categories":["series"],"keyRequired":false,"domain":"api.tvmaze.com","altNames":["enterprise-api.tvmaze.com","static.tvmaze.com","tvmaze.com","www.tvmaze.com"]},
     {"key":"anilist","name":"AniList","categories":["series","movie"],"keyRequired":false,"domain":"graphql.anilist.co"},
+    {"key":"jikan","name":"MyAnimeList (Jikan)","categories":["series","movie"],"keyRequired":false,"domain":"api.jikan.moe","note":"Anime catalogue, episode, staff and character data from MyAnimeList via Jikan."},
+    {"key":"kitsu","name":"Kitsu","categories":["series","movie"],"keyRequired":false,"domain":"kitsu.io","accept":"application/vnd.api+json","altNames":["www.kitsu.io","media.kitsu.io","media.kitsu.app"],"note":"Anime catalogue and episode data from Kitsu."},
     {"key":"tmdb","name":"The Movie Database","categories":["movie","series"],"keyRequired":true,"keyUrl":"https://www.themoviedb.org/settings/api","domain":"api.themoviedb.org","altNames":["themoviedb.org","www.themoviedb.org","api.tmdb.org"],"note":"Paste the v3 API key or the v4 read access token."},
     {"key":"tvdb","name":"TheTVDB","categories":["series","movie"],"keyRequired":true,"keyUrl":"https://thetvdb.com/api-information","domain":"api4.thetvdb.com","note":"Paste your TheTVDB v4 API key."},
     {"key":"imdb","name":"IMDb","categories":["movie","series"],"keyRequired":false,"domain":"v3.sg.media-imdb.com","altNames":["us.dd.imdb.com","secure.imdb.com","www.imdb.to","imdb.com","origin-www.imdb.com","imdb-webservice.amazon.com","www.imdb.com","origin.www.geo.imdb.com","addpro.imdb.com","s.media-imdb.com"],"note":"Search when you submit a title query. IMDb may require an in-app session or block requests; review the provider in Source options if needed."},
@@ -43,8 +45,9 @@
     const options = preferences.sourceOptions?.[sourceKey] || {}, provider = providers.find(source => source.key === sourceKey), headers = {};
     let target = String(url);
     const domain = cleanDomain(options.domain);
-    if (domain && /^[a-z0-9.-]+(:\d+)?$/.test(domain) && provider?.domain) {
-      try { const parsed = new URL(target); if (parsed.hostname === provider.domain) { parsed.host = domain; target = parsed.href; } } catch (_) {}
+    const approvedDomains = provider ? new Set([provider.domain, ...(provider.altNames || [])].filter(Boolean)) : new Set();
+    if (domain && approvedDomains.has(domain) && provider?.domain) {
+      try { const parsed = new URL(target); if (parsed.protocol === "https:" && parsed.hostname === provider.domain) { parsed.hostname = domain; target = parsed.href; } } catch (_) {}
     }
     if (String(options.userAgent || "").trim()) headers["User-Agent"] = String(options.userAgent).trim();
     if (String(options.cookies || "").trim()) headers.Cookie = String(options.cookies).trim();

@@ -42,7 +42,20 @@ public class EncryptedStorePlugin extends Plugin {
     private static final String LEGACY_WRAPPED_KEY = "legacy_wrapped_key";
 
     public static String readPackedState(Context context) {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(VALUE, null);
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        JSONObject records = new JSONObject();
+        try {
+            for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
+                if (entry.getValue() instanceof String) records.put(entry.getKey(), entry.getValue());
+            }
+            if (records.length() == 0) return null;
+            JSONObject backup = new JSONObject();
+            backup.put("format", "screenmark-encrypted-store-v2");
+            backup.put("records", records);
+            return backup.toString();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     @PluginMethod
@@ -176,11 +189,50 @@ public class EncryptedStorePlugin extends Plugin {
             return;
         }
         try {
-            // Decrypt first to reject corrupted or foreign files before replacing state.
-            decrypt(packed);
-            getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putString(VALUE, packed).apply();
-            call.resolve(new JSObject().put("success", true));
+            SharedPreferences prefs = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            JSONObject backup = new JSONObject(packed);
+            JSONObject restoredState = null;
+            if ("screenmark-encrypted-store-v2".equals(backup.optString("format"))) {
+                JSONObject records = backup.getJSONObject("records");
+                JSONArray items = new JSONArray();
+                JSONObject meta = new JSONObject();
+                JSONObject verifiedRecords = new JSONObject();
+                boolean metaFound = false;
+                for (java.util.Iterator<String> it = records.keys(); it.hasNext();) {
+                    String key = it.next();
+                    if (!(key.equals(VALUE) || key.equals(META_VALUE) || key.startsWith(ITEM_PREFIX) || key.equals(LEGACY_WRAPPED_KEY))) continue;
+                    String value = records.getString(key);
+                    if (key.equals(LEGACY_WRAPPED_KEY)) verifiedRecords.put(key, value);
+                    else {
+                        String clear = decrypt(value);
+                        verifiedRecords.put(key, value);
+                        if (key.startsWith(ITEM_PREFIX)) items.put(new JSONObject(clear));
+                        else if (key.equals(META_VALUE)) { meta = new JSONObject(clear); metaFound = true; }
+                        else if (key.equals(VALUE)) restoredState = new JSONObject(clear);
+                    }
+                }
+                if (items.length() > 0 || metaFound) {
+                    restoredState = new JSONObject();
+                    restoredState.put("items", items);
+                    restoredState.put("history", meta.optJSONArray("history") != null ? meta.optJSONArray("history") : new JSONArray());
+                    restoredState.put("preferences", meta.optJSONObject("preferences") != null ? meta.optJSONObject("preferences") : new JSONObject());
+                }
+                if (restoredState == null) throw new IllegalArgumentException("Backup contains no restorable library records");
+                // Replace the encrypted snapshot as a whole. Keeping keys that are
+                // absent from the backup would resurrect titles deleted earlier.
+                SharedPreferences.Editor editor = prefs.edit().clear();
+                for (java.util.Iterator<String> it = verifiedRecords.keys(); it.hasNext();) {
+                    String key = it.next();
+                    editor.putString(key, verifiedRecords.getString(key));
+                }
+                if (!editor.commit()) throw new IllegalStateException("Could not write encrypted backup records");
+            } else {
+                // Backward compatibility with the original single-blob .sqdb format.
+                restoredState = new JSONObject(decrypt(packed));
+                if (!prefs.edit().putString(VALUE, packed).commit()) throw new IllegalStateException("Could not write encrypted backup state");
+            }
+            if (restoredState == null) throw new IllegalArgumentException("Backup contains no restorable library records");
+            call.resolve(new JSObject().put("success", true).put("data", restoredState));
         } catch (Exception e) {
             call.reject("Could not restore encrypted local database", e);
         }

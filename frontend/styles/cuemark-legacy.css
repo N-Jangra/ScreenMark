@@ -10,8 +10,8 @@
   --legacy-muted: #64748b;
   --legacy-accent: #6366f1;
   --legacy-glow: rgba(99, 102, 241, .15);
-  --font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-heading: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-heading: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --radius: 20px;
   --shadow: 0 12px 30px rgba(0, 0, 0, .22);
   color-scheme: dark;
@@ -23,7 +23,7 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   background:
-    radial-gradient(circle at top, rgba(99, 102, 241, .18), transparent 36%),
+    radial-gradient(circle at top, color-mix(in srgb, var(--accent) 18%, transparent), transparent 36%),
     radial-gradient(circle at bottom right, rgba(14, 165, 233, .12), transparent 24%),
     #030712;
   color: var(--legacy-text);
@@ -37,7 +37,7 @@ body[data-theme="dark"] {
   --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
   --shadow: 0 12px 30px rgba(0, 0, 0, .24);
   background:
-    radial-gradient(circle at top, rgba(99, 102, 241, .18), transparent 36%),
+    radial-gradient(circle at top, color-mix(in srgb, var(--accent) 18%, transparent), transparent 36%),
     radial-gradient(circle at bottom right, rgba(14, 165, 233, .12), transparent 24%),
     #030712;
   color: var(--legacy-text);
@@ -90,14 +90,14 @@ body[data-theme="light"] .app-shell { background: #f8fafc; }
 }
 .topbar h1, .section-heading h2, .section-heading h3, .settings-group > h2,
 .topbar h1 {
-  background: linear-gradient(135deg, var(--accent), #a855f7);
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 72%, white));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 .eyebrow { color: var(--muted); }
-.icon-button { border-color: var(--line); background: var(--surface); color: var(--legacy-text); }
-body[data-theme="light"] .icon-button { color: #20242b; }
+
+
 
 .item-card, .discover-card, .stat-card, .settings-list, .empty-state, .detail-card {
   border-color: var(--line);
@@ -106,17 +106,11 @@ body[data-theme="light"] .icon-button { color: #20242b; }
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
-.item-card { border-radius: 18px; }
+
 .discover-card, .detail-card { border-radius: 20px; }
-.item-art { background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); }
-.item-copy h3, .section-heading h2, .section-heading h3, .settings-group > h2,
-.detail-heading h2, .stat-card strong { color: var(--legacy-text); }
-body[data-theme="light"] .item-copy h3,
-body[data-theme="light"] .section-heading h2,
-body[data-theme="light"] .section-heading h3,
-body[data-theme="light"] .settings-group > h2,
-body[data-theme="light"] .detail-heading h2,
-body[data-theme="light"] .stat-card strong { color: #20242b; }
+
+
+
 .muted, .item-copy p, .section-heading p { color: var(--muted); }
 .status-pill, .tag, .chip, .setting-control {
   border-color: var(--line);
@@ -126,7 +120,7 @@ body[data-theme="light"] .stat-card strong { color: #20242b; }
 .chip.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text,var(--accent)); }
 .button { border-radius: 13px; font-weight: 650; }
 .button.primary {
-  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 78%, white));
   box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 22%, transparent);
   color: #fff;
 }
