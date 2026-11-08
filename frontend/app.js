@@ -20,7 +20,7 @@
     automaticCompletion: "automatic", defaultStatus: "",
     metadataSyncWorkers: 2, syncRequestDelay: 0, syncScope: "needed",
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30,
-    metadataMode: "online", metadataSources: { tvmaze: true, anilist: true, omdb: false, imdb: true, rottentomatoes: true }, metadataRefreshInterval: "weekly", offlineFallback: "cached", thumbnailSize: "medium",
+    metadataMode: "online", metadataSources: { tvmaze: true, anilist: true, jikan: true, kitsu: true, omdb: false, imdb: true, rottentomatoes: true }, metadataRefreshInterval: "weekly", offlineFallback: "cached", thumbnailSize: "medium",
     backgroundBackups: false,
     apiKeys: {}, sourceOptions: {}
   };
@@ -1892,7 +1892,7 @@
     const key = prefs.apiKeys?.[sourceKey]?.trim();
     if (source.keyRequired && !key) { output.textContent = "Add the required API key before testing this source."; output.dataset.state = "error"; $(`[data-source-api-key="${CSS.escape(sourceKey)}"]`)?.focus(); return; }
     const category = source.categories.includes("series") ? "series" : source.categories[0] || "movie";
-    const query = category === "series" ? "Breaking Bad" : "Inception";
+    const query = ["anilist", "jikan", "kitsu"].includes(sourceKey) ? "Naruto" : category === "series" ? "Breaking Bad" : "Inception";
     const label = button.textContent;
     button.disabled = true; button.textContent = "Testing…";
     output.textContent = `Searching ${source.name}…`; output.dataset.state = "";

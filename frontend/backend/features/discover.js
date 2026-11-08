@@ -159,7 +159,9 @@
     let host = ""; try { host = new URL(url).hostname; } catch (_) { return { url, options }; }
     const provider = metadata.providers.find(source => source.domain === host); if (!provider) return { url, options };
     const resolved = metadata.resolve(provider.key, url, options);
-    return { url: resolved.url, options: { ...options, headers: { ...(options.headers || {}), ...resolved.headers } } };
+    const headers = { ...(options.headers || {}), ...resolved.headers };
+    if (provider.accept && !Object.keys(headers).some(name => name.toLowerCase() === "accept")) headers.Accept = provider.accept;
+    return { url: resolved.url, options: { ...options, headers } };
   }
   async function requestJson(url, options = {}) {
     ({ url, options } = applySource(url, options));
@@ -193,7 +195,7 @@
     }
   }
   const requestText = (url, options = {}) => { ({ url, options } = applySource(url, options)); return wireRequest(secureEndpoint(url), options, "text"); };
-  const imageHosts = new Set(["static.tvmaze.com", "s4.anilist.co", "m.media-amazon.com", "image.tmdb.org", "is1-ssl.mzstatic.com", "img.youtube.com"]);
+  const imageHosts = new Set(["static.tvmaze.com", "s4.anilist.co", "cdn.myanimelist.net", "media.kitsu.io", "media.kitsu.app", "m.media-amazon.com", "image.tmdb.org", "is1-ssl.mzstatic.com", "img.youtube.com"]);
   const imageUrl = value => {
     const url = String(value || "");
     if (!/^https?:\/\//i.test(url)) return url;
@@ -295,6 +297,25 @@
       const gql = `query($q:String){Page(perPage:15){media(search:$q,type:ANIME,format_in:${anilistFormats(category)},sort:SEARCH_MATCH){${ANILIST_FIELDS}}}}`;
       const data = await requestJson("https://graphql.anilist.co", { ...settings, method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ query: gql, variables: { q: query } }) });
       return anilistRows(anilistData(data).Page?.media, category);
+    },
+    jikan: async (query, category, settings) => {
+      const type = category === "movie" ? "movie" : "tv";
+      const data = await sourceJson("jikan", `https://api.jikan.moe/v4/anime?q=${encode(query)}&type=${type}&limit=15&sfw=true`, settings);
+      return (data.data || []).map(row => result("jikan", category, row.mal_id, row.title_english || row.title || row.title_japanese, {
+        year: row.year || String(row.aired?.from || row.year || "").slice(0, 4), image: row.images?.webp?.large_image_url || row.images?.jpg?.large_image_url || row.images?.webp?.image_url || "",
+        description: textFromHtml(row.synopsis), rating: row.score || 0, genres: (row.genres || []).map(genre => genre.name).filter(Boolean), goal: category === "series" ? Number(row.episodes) || 0 : 0,
+        url: row.url || `https://myanimelist.net/anime/${row.mal_id}`, subtitle: [row.year || String(row.aired?.from || "").slice(0, 4), row.type, row.score ? `★ ${Number(row.score).toFixed(1)}` : ""].filter(Boolean).join(" · ")
+      }));
+    },
+    kitsu: async (query, category, settings) => {
+      const subtype = category === "movie" ? "movie" : "TV";
+      const url = `https://kitsu.io/api/edge/anime?filter[text]=${encode(query)}&filter[subtype]=${encode(subtype)}&page[limit]=15&sort=-userCount`;
+      const response = await sourceJson("kitsu", url, settings);
+      return (response.data || []).map(row => {
+        const attributes = row.attributes || {}, poster = attributes.posterImage || {};
+        const title = attributes.titles?.en || attributes.titles?.en_jp || attributes.canonicalTitle || "Untitled";
+        return result("kitsu", category, row.id, title, { year: String(attributes.startDate || "").slice(0, 4), image: poster.large || poster.medium || poster.small || "", description: textFromHtml(attributes.synopsis || attributes.description), rating: Number(attributes.averageRating) / 10 || 0, goal: category === "series" ? Number(attributes.episodeCount) || 0 : 0, genres: [], url: `https://kitsu.io/anime/${attributes.slug || row.id}`, subtitle: [attributes.startDate?.slice(0, 4), attributes.subtype, attributes.averageRating ? `★ ${(Number(attributes.averageRating) / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") });
+      });
     },
     omdb: async (query, category, settings) => {
       const key = settings.apiKeys?.omdb?.trim(); if (!key) throw new Error("Add an OMDb API key in Settings → Metadata Sources.");

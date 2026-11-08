@@ -65,7 +65,7 @@ function safeJoin(base, target) {
   return relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) ? null : resolved;
 }
 
-const ALLOWED_SOURCE_HOSTS = new Set(['api.tvmaze.com', 'static.tvmaze.com', 'graphql.anilist.co', 'api.tenrai.org', 's4.anilist.co', 'www.omdbapi.com', 'm.media-amazon.com', 'itunes.apple.com', 'is1-ssl.mzstatic.com', 'api.themoviedb.org', 'image.tmdb.org', 'img.youtube.com', 'api4.thetvdb.com', 'v3.sg.media-imdb.com', 'www.imdb.com', 'www.rottentomatoes.com']);
+const ALLOWED_SOURCE_HOSTS = new Set(['api.tvmaze.com', 'static.tvmaze.com', 'graphql.anilist.co', 'api.tenrai.org', 'api.jikan.moe', 'kitsu.io', 'cdn.myanimelist.net', 'media.kitsu.io', 'media.kitsu.app', 's4.anilist.co', 'www.omdbapi.com', 'm.media-amazon.com', 'itunes.apple.com', 'is1-ssl.mzstatic.com', 'api.themoviedb.org', 'image.tmdb.org', 'img.youtube.com', 'api4.thetvdb.com', 'v3.sg.media-imdb.com', 'www.imdb.com', 'www.rottentomatoes.com']);
 
 function createServer({ root = ROOT, startPort = START_PORT, fetchImpl = globalThis.fetch, logger = console } = {}) {
 const initialPort = Number(startPort) || 3000;

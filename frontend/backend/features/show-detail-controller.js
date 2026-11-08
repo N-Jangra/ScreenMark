@@ -71,6 +71,23 @@
     episodeApiTail = request.catch(() => {});
     return request;
   };
+  let jikanTail = Promise.resolve(), jikanLastRequestAt = 0;
+  const jikanGet = (url, settings = {}) => {
+    const request = jikanTail.then(async () => {
+      const wait = Math.max(0, 360 - (Date.now() - jikanLastRequestAt));
+      if (wait) await new Promise(resolve => setTimeout(resolve, wait));
+      jikanLastRequestAt = Date.now();
+      try { return await get(url, settings); }
+      catch (error) {
+        if (Number(error?.status) !== 429) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        jikanLastRequestAt = Date.now();
+        return get(url, settings);
+      }
+    });
+    jikanTail = request.catch(() => {});
+    return request;
+  };
   const animeEpisodeGuide = async (media, title, settings) => {
     const malId = Number(media?.idMal);
     if (!Number.isSafeInteger(malId) || malId <= 0) return [];
@@ -321,6 +338,71 @@
       });
     },
 
+    // ---- MyAnimeList through Jikan ----
+    jikan: async (item, s) => {
+      const id = encode(item.providerId), response = await jikanGet(`https://api.jikan.moe/v4/anime/${id}/full`, s), anime = response.data;
+      if (!anime) throw new Error("Jikan could not load this anime.");
+      const title = anime.title_english || anime.title || item.title || "Anime";
+      const [characterResponse, episodeResponse] = s.background ? [{ data: [] }, { data: [] }] : await Promise.all([
+        jikanGet(`https://api.jikan.moe/v4/anime/${id}/characters`, s).catch(() => ({ data: [] })),
+        item.category === "series" ? jikanGet(`https://api.jikan.moe/v4/anime/${id}/episodes?page=1`, s).catch(() => ({ data: [] })) : Promise.resolve({ data: [] })
+      ]);
+      const characters = (characterResponse.data || []).slice(0, 60);
+      const characterItems = characters.map(row => ({ title: row.character?.name || "Character", meta: row.role || "", image: row.character?.images?.webp?.image_url || row.character?.images?.jpg?.image_url || "", url: row.character?.url, ref: row.character?.mal_id ? { type: "character", id: `jikan-character:${row.character.mal_id}`, title: row.character.name, extra: { source: "jikan" } } : null }));
+      const voiceActors = unique(characters.flatMap(row => (row.voice_actors || []).map(actor => ({ actor, character: row.character?.name }))), row => row.actor.person?.mal_id).slice(0, 60).map(({ actor, character }) => ({ title: actor.person?.name || "Voice actor", meta: [actor.language, character ? `as ${character}` : ""].filter(Boolean).join(" · "), image: actor.person?.images?.jpg?.image_url || actor.person?.images?.webp?.image_url || "", url: actor.person?.url, ref: actor.person?.mal_id ? { type: "person", id: `jikan-person:${actor.person.mal_id}`, title: actor.person.name, extra: { source: "jikan" } } : null }));
+      const episodes = (episodeResponse.data || []).map((ep, index) => {
+        const number = Number(ep.mal_id) || index + 1, name = ep.title || ep.title_romanji || ep.title_japanese || `Episode ${index + 1}`;
+        return { id: `jikan-episode:${id}:${number}`, season: 1, number: index + 1, title: name, airdate: ep.aired?.from || "", rating: Number(ep.score) || 0, description: clean(ep.synopsis), image: anime.images?.webp?.large_image_url || "", ref: { type: "episode", id: number, title: name, extra: { source: "jikan", animeId: id, number: index + 1, series: title, category: item.category } } };
+      });
+      const genres = [...(anime.genres || []), ...(anime.themes || [])].map(row => row.name).filter(Boolean);
+      const image = anime.images?.webp?.large_image_url || anime.images?.jpg?.large_image_url || "";
+      const episodeCount = Number(anime.episodes) || episodes.length;
+      const fields = [["Format", anime.type], ["Genres", (anime.genres || []).map(row => row.name)], ["Themes", (anime.themes || []).map(row => row.name)], ["Status", anime.status], ["Aired", anime.aired?.string], ["Season", anime.season], ["Year", anime.year], ["Source", anime.source], ["Studios", (anime.studios || []).map(row => row.name)], ["Producers", (anime.producers || []).map(row => row.name)], ["Episodes", anime.episodes], ["Duration", anime.duration], ["Rating", anime.rating], ["Rank", anime.rank], ["Popularity", anime.popularity], ["Members", anime.members]].map(([label, value]) => ({ label, value }));
+      return details("jikan", item, { title, description: anime.synopsis, image, year: anime.year || String(anime.aired?.from || "").slice(0, 4), rating: Number(anime.score) || 0, goal: item.category === "series" ? episodeCount : 0, url: anime.url, tags: genres, links: [{ label: "MyAnimeList", url: anime.url }], watch: { episodeCount: item.category === "series" ? episodeCount : 0, seasonCount: item.category === "series" && episodeCount ? 1 : 0 }, fields,
+        sections: [
+          { title: "Cast", kind: "carousel", items: voiceActors },
+          { title: "Characters", kind: "carousel", items: characterItems },
+          { title: `Episode guide (${episodeCount || episodes.length})`, kind: "episodes", seasons: { 1: { name: "Episodes" } }, items: episodes }
+        ] });
+    },
+
+    // ---- Kitsu anime catalogue ----
+    kitsu: async (item, s) => {
+      const id = encode(item.providerId), include = s.background ? "" : "?include=characters,staff.person", response = await get(`https://kitsu.io/api/edge/anime/${id}${include}`, s), anime = response.data;
+      if (!anime) throw new Error("Kitsu could not load this anime.");
+      const attributes = anime.attributes || {}, poster = attributes.posterImage || {}, title = attributes.titles?.en || attributes.titles?.en_jp || attributes.canonicalTitle || item.title || "Anime";
+      let episodeRows = [];
+      if (item.category === "series" && !s.background) {
+        try {
+          let next = `https://kitsu.io/api/edge/anime/${id}/episodes?page[limit]=20&page[offset]=0&sort=number`;
+          for (let pageIndex = 0; next && pageIndex < 10 && episodeRows.length < 200; pageIndex++) {
+            const page = await get(next, s);
+            episodeRows.push(...(page.data || []));
+            const nextUrl = page.links?.next ? new URL(page.links.next, next) : null;
+            next = nextUrl?.hostname === "kitsu.io" ? nextUrl.href : "";
+          }
+        } catch (_) { /* Keep the episodes already loaded from earlier pages. */ }
+      }
+      const episodes = episodeRows.map((row, index) => {
+        const ep = row.attributes || {}, number = Number(ep.number) || index + 1, name = ep.canonicalTitle || ep.titles?.en || `Episode ${number}`;
+        return { id: `kitsu-episode:${row.id}`, season: 1, number, title: name, airdate: ep.airDate || "", image: ep.thumbnail?.original || ep.thumbnail?.large || poster.large || "", description: clean(ep.synopsis || ep.description), ref: { type: "episode", id: row.id, title: name, extra: { source: "kitsu", animeId: id, number, series: title, category: item.category } } };
+      });
+      let genreRows = [];
+      if (!s.background) try { const genres = await get(`https://kitsu.io/api/edge/anime/${id}/genres?page[limit]=20`, s); genreRows = (genres.data || []).map(row => row.attributes?.name).filter(Boolean); } catch (_) {}
+      const included = response.included || [];
+      const characterItems = included.filter(row => row.type === "characters").slice(0, 60).map(row => ({ title: row.attributes?.name || "Character", image: row.attributes?.image?.original || row.attributes?.image?.large || "", ref: { type: "character", id: `kitsu-character:${row.id}`, title: row.attributes?.name || "Character", extra: { source: "kitsu" } } }));
+      const staffItems = included.filter(row => row.type === "people").slice(0, 60).map(row => ({ title: row.attributes?.name || "Staff", image: row.attributes?.image?.original || row.attributes?.image?.large || "", ref: { type: "person", id: `kitsu-person:${row.id}`, title: row.attributes?.name || "Staff", extra: { source: "kitsu" } } }));
+      const rating = Number(attributes.averageRating) / 10 || 0, image = poster.large || poster.medium || poster.small || "";
+      const episodeCount = Number(attributes.episodeCount) || episodes.length;
+      const fields = [["Format", attributes.subtype], ["Genres", genreRows], ["Status", attributes.status], ["Aired", [attributes.startDate, attributes.endDate].filter(Boolean).join(" – ")], ["Season", attributes.season], ["Episodes", attributes.episodeCount], ["Episode length", attributes.episodeLength ? `${attributes.episodeLength} min` : ""], ["Age rating", attributes.ageRating], ["Age guide", attributes.ageRatingGuide], ["Popularity", attributes.userCount], ["Favorites", attributes.favoritesCount]].map(([label, value]) => ({ label, value }));
+      return details("kitsu", item, { title, description: attributes.synopsis || attributes.description, image, year: String(attributes.startDate || "").slice(0, 4), rating, goal: item.category === "series" ? episodeCount : 0, url: `https://kitsu.io/anime/${attributes.slug || id}`, tags: genreRows, links: [{ label: "Kitsu", url: `https://kitsu.io/anime/${attributes.slug || id}` }], watch: { episodeCount: item.category === "series" ? episodeCount : 0, seasonCount: item.category === "series" && episodeCount ? 1 : 0 }, fields,
+        sections: [
+          { title: "Cast & crew", kind: "carousel", items: staffItems },
+          { title: "Characters", kind: "carousel", items: characterItems },
+          { title: `Episode guide (${episodeCount || episodes.length})`, kind: "episodes", seasons: { 1: { name: "Episodes" } }, items: episodes }
+        ] });
+    },
+
     // ---- TMDB: movies and series (needs a key) ----
     tmdb: async (item, s) => {
       const kind = item.category === "movie" ? "movie" : "tv";
@@ -334,14 +416,19 @@
       const imageRows = rows => rows.map((row, index) => ({ title: `Image ${index + 1}`, image: img(row.file_path, "w780"), imageType: row.iso_639_1 ? "localized" : "original", language: row.iso_639_1 || "" }));
       const shots = imageRows(d.images?.backdrops || []), posters = imageRows(d.images?.posters || []), logos = imageRows(d.images?.logos || []);
       const characters = unique((d.credits?.cast || []).filter(row => row.character), row => `${row.character}:${row.id}`).map(row => ({ title: row.character, meta: row.name ? `played by ${row.name}` : "", image: img(row.profile_path, "w185"), ref: { type: "person", id: `tmdb:${row.id}`, title: row.name } }));
-      const seasonRows = (d.seasons || []).filter(row => Number.isFinite(Number(row.season_number)));
+      // Season 0 is TMDB's optional specials bucket. Its season endpoint commonly
+      // returns 404 even while the parent series is valid, so leave it out here.
+      const seasonRows = (d.seasons || []).filter(row => Number(row.season_number) > 0);
       const seasonData = kind === "tv" ? await mapLimit(seasonRows, 4, async row => {
         try { return [row.season_number, await controller.tmdbGet(`/tv/${encode(item.providerId)}/season/${encode(row.season_number)}`, s)]; }
-        catch (error) { return [row.season_number, { _fetchError: String(error?.message || error) }]; }
+        catch (error) {
+          if (Number(error?.status) === 404) return [row.season_number, null];
+          return [row.season_number, { _fetchError: String(error?.message || error) }];
+        }
       }) : [];
       const failedSeason = seasonData.find(([, season]) => season?._fetchError);
       if (failedSeason) throw new Error(`TMDB could not load season ${failedSeason[0]}: ${failedSeason[1]._fetchError}`);
-      const seasonDetails = Object.fromEntries(seasonData);
+      const seasonDetails = Object.fromEntries(seasonData.filter(([, season]) => season));
       const recommendationPages = s.background ? 0 : Number(d.recommendations?.total_pages) || 1;
       // The detail UI only needs a short suggestions shelf. Fetching every page can fan out
       // hundreds of requests and block a title refresh without adding useful detail data.
@@ -567,9 +654,16 @@
       const seasonResults = isSeries && seasons ? await mapLimit(Array.from({ length: seasons }, (_, index) => index + 1), 4, async season => {
         try {
           const response = await get(`https://www.omdbapi.com/?apikey=${encode(key)}&i=${encode(item.providerId)}&Season=${season}`, s);
-          if (response.Response === "False") throw new Error(response.Error || `Season ${season} was not returned.`);
+          if (response.Response === "False") {
+            const message = String(response.Error || "");
+            if (/series or season not found|season not found|invalid season/i.test(message)) return { Season: String(season), _missing: true };
+            throw new Error(message || `Season ${season} was not returned.`);
+          }
           return response;
-        } catch (error) { return { Season: String(season), _fetchError: String(error?.message || error) }; }
+        } catch (error) {
+          if (/series or season not found|season not found|invalid season/i.test(String(error?.message || error))) return { Season: String(season), _missing: true };
+          return { Season: String(season), _fetchError: String(error?.message || error) };
+        }
       }) : [];
       const failedSeason = seasonResults.find(row => row?._fetchError);
       if (failedSeason) throw new Error(`OMDb could not load season ${failedSeason.Season}: ${failedSeason._fetchError}`);
@@ -626,6 +720,19 @@
       return { type: ref.type || "person", source: preview.source || "ScreenMark", title: ref.title || preview.name || "Details", image: preview.image || "", subtitle: preview.role || "", url: preview.url || "", facts: preview.role ? [[ref.type === "season" ? "Season details" : "Role", preview.role]] : [], sections: [] };
     }
     if (ref.type === "person") {
+      const jikanPerson = String(ref.id).match(/^jikan-person:(\d+)$/), kitsuPerson = String(ref.id).match(/^kitsu-person:([^:]+)$/);
+      if (jikanPerson) {
+        const personId = jikanPerson[1], person = (await jikanGet(`https://api.jikan.moe/v4/people/${personId}/full`, settings)).data;
+        if (!person) throw new Error("Jikan could not load this profile.");
+        const media = (person.anime || []).slice(0, 40).map(row => ({ title: row.anime?.title || "Anime", meta: row.position || "", image: row.anime?.images?.jpg?.image_url || "", ref: row.anime?.mal_id ? { type: "show", id: row.anime.mal_id, title: row.anime.title, extra: { source: "jikan", category: "series" } } : null }));
+        const roles = (person.voices || []).slice(0, 50).map(row => ({ title: row.character?.name || "Character", meta: [row.role, row.anime?.title].filter(Boolean).join(" · "), image: row.character?.images?.jpg?.image_url || "", ref: row.character?.mal_id ? { type: "character", id: `jikan-character:${row.character.mal_id}`, title: row.character.name, extra: { source: "jikan" } } : null }));
+        return { type: "person", source: "MyAnimeList (Jikan)", title: person.name || ref.title, image: person.images?.jpg?.image_url || "", url: person.url, description: clean(person.about || ""), facts: [["Birthday", person.birthday], ["Website", person.website_url], ["Favorites", person.favorites]].filter(([, value]) => value), sections: [{ title: "Anime credits", kind: "shows", items: media }, { title: "Voice roles", kind: "carousel", items: roles }].filter(section => section.items.length) };
+      }
+      if (kitsuPerson) {
+        const personId = kitsuPerson[1], person = (await get(`https://kitsu.io/api/edge/people/${encode(personId)}`, settings)).data, attrs = person?.attributes || {};
+        if (!person) throw new Error("Kitsu could not load this profile.");
+        return { type: "person", source: "Kitsu", title: attrs.name || ref.title, image: attrs.image?.original || attrs.image?.large || "", url: `https://kitsu.io/people/${personId}`, description: clean(attrs.description || ""), facts: [], sections: [] };
+      }
       const anilistPerson = String(ref.id).match(/^anilist-(staff|character):(\d+)$/);
       if (anilistPerson) {
         const [, entity, personId] = anilistPerson;
@@ -704,6 +811,19 @@
       ].filter(section => section.items.length) };
     }
     if (ref.type === "character") {
+      const jikanCharacter = String(ref.id).match(/^jikan-character:(\d+)$/), kitsuCharacter = String(ref.id).match(/^kitsu-character:([^:]+)$/);
+      if (jikanCharacter) {
+        const characterId = jikanCharacter[1], character = (await jikanGet(`https://api.jikan.moe/v4/characters/${characterId}/full`, settings)).data;
+        if (!character) throw new Error("Jikan could not load this character.");
+        const media = (character.anime || []).slice(0, 40).map(row => ({ title: row.anime?.title || "Anime", meta: row.role || "", image: row.anime?.images?.jpg?.image_url || "", ref: row.anime?.mal_id ? { type: "show", id: row.anime.mal_id, title: row.anime.title, extra: { source: "jikan", category: "series" } } : null }));
+        const actors = (character.voices || []).slice(0, 30).map(row => ({ title: row.person?.name || "Voice actor", meta: row.language || "", image: row.person?.images?.jpg?.image_url || "", ref: row.person?.mal_id ? { type: "person", id: `jikan-person:${row.person.mal_id}`, title: row.person.name, extra: { source: "jikan" } } : null }));
+        return { type: "character", source: "MyAnimeList (Jikan)", title: character.name || ref.title, image: character.images?.jpg?.image_url || "", url: character.url, description: clean(character.about || ""), facts: character.name_kanji ? [["Name", character.name_kanji]] : [], sections: [{ title: "Voice actors", kind: "people", items: actors }, { title: "Appears in", kind: "shows", items: media }].filter(section => section.items.length) };
+      }
+      if (kitsuCharacter) {
+        const characterId = kitsuCharacter[1], character = (await get(`https://kitsu.io/api/edge/characters/${encode(characterId)}`, settings)).data, attrs = character?.attributes || {};
+        if (!character) throw new Error("Kitsu could not load this character.");
+        return { type: "character", source: "Kitsu", title: attrs.name || ref.title, image: attrs.image?.original || attrs.image?.large || "", url: `https://kitsu.io/characters/${characterId}`, description: clean(attrs.description || ""), facts: [], sections: [] };
+      }
       const anilistCharacter = String(ref.id).match(/^anilist-character:(\d+)$/);
       if (anilistCharacter) {
         const characterId = Number(anilistCharacter[1]);
@@ -723,6 +843,22 @@
       return { type: "character", title: character.name, image: character.image?.original || character.image?.medium || "", url: character.url, facts: [], sections: [{ title: "Played by", kind: "people", items: actors }, { title: "Appears in", kind: "shows", items: shows }].filter(section => section.items.length) };
     }
     if (ref.type === "episode") {
+      if (ref.extra?.source === "jikan") {
+        const animeId = Number(ref.extra.animeId), episodeNumber = Number(ref.extra.number || ref.id);
+        if (!Number.isSafeInteger(animeId) || animeId <= 0 || !Number.isSafeInteger(episodeNumber) || episodeNumber <= 0) throw new Error("Jikan did not provide a valid episode reference.");
+        const episode = (await jikanGet(`https://api.jikan.moe/v4/anime/${animeId}/episodes/${episodeNumber}`, settings)).data;
+        if (!episode) throw new Error("Jikan could not load this episode.");
+        const row = episode.episode || episode, seriesTitle = ref.extra.series || "Anime";
+        const series = [{ title: seriesTitle, meta: "Series", ref: { type: "show", id: animeId, title: seriesTitle, extra: { source: "jikan", category: ref.extra.category || "series" } } }];
+        return { type: "episode", source: "MyAnimeList (Jikan)", title: row.title || ref.title || `Episode ${episodeNumber}`, subtitle: `${seriesTitle} · Episode ${episodeNumber}`, image: row.images?.jpg?.image_url || "", url: row.url, description: clean(row.synopsis || ""), facts: [["Aired", row.aired?.from || row.aired], ["Rating", row.score ? `★ ${row.score}` : ""], ["Episode", episodeNumber], ["Filler", row.filler ? "Yes" : ""], ["Recap", row.recap ? "Yes" : ""]].filter(([, value]) => value), sections: [{ title: "Series", kind: "shows", items: series }], raw: row };
+      }
+      if (ref.extra?.source === "kitsu") {
+        const episodeId = String(ref.id), response = await get(`https://kitsu.io/api/edge/episodes/${encode(episodeId)}?include=media`, settings), row = response.data, attrs = row?.attributes || {};
+        if (!row) throw new Error("Kitsu could not load this episode.");
+        const media = (response.included || []).find(entry => entry.type === "anime"), mediaAttrs = media?.attributes || {}, seriesTitle = ref.extra.series || mediaAttrs.titles?.en || mediaAttrs.canonicalTitle || "Anime";
+        const series = [{ title: seriesTitle, meta: "Series", image: mediaAttrs.posterImage?.small || "", ref: { type: "show", id: media?.id || ref.extra.animeId, title: seriesTitle, extra: { source: "kitsu", category: ref.extra.category || "series" } } }];
+        return { type: "episode", source: "Kitsu", title: attrs.canonicalTitle || attrs.titles?.en || ref.title || `Episode ${attrs.number || ""}`, subtitle: `${seriesTitle} · Episode ${attrs.number || ref.extra.number || ""}`, image: attrs.thumbnail?.original || attrs.thumbnail?.large || "", url: `https://kitsu.io/episodes/${episodeId}`, description: clean(attrs.synopsis || attrs.description || ""), facts: [["Aired", attrs.airDate], ["Number", attrs.number], ["Length", attrs.length ? `${attrs.length} min` : ""]].filter(([, value]) => value), sections: [{ title: "Series", kind: "shows", items: series }], raw: row };
+      }
       if (ref.extra?.source === "tenrai") {
         const malId = Number(ref.extra.malId), episodeId = Number(ref.id);
         if (!Number.isSafeInteger(malId) || malId <= 0 || !Number.isSafeInteger(episodeId) || episodeId <= 0) throw new Error("AniList did not provide a valid episode reference.");
