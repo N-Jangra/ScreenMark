@@ -1,6 +1,18 @@
 // Source-rich detail screen shared by the split apps.
 (() => {
   window.SplitAppPages = window.SplitAppPages || {};
+  const ratingsLayoutIcon = direction => direction === "horizontal"
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M7 4v4m5-4v4m5-4v4"/></svg>`
+    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 4v16m6-16v16m6-16v16"/><path d="M4 7h4m-4 5h4m-4 5h4"/></svg>`;
+  const autoRatingsLayout = (width, seasonCount, longest) => {
+    const maxColumns = Math.max(2, Math.floor((Math.max(0, Number(width) || 0) - 36) / 38));
+    if (seasonCount <= 3 && longest > 3) return "vertical";
+    if (longest <= maxColumns) return "horizontal";
+    if (seasonCount <= maxColumns) return "vertical";
+    return seasonCount <= longest ? "vertical" : "horizontal";
+  };
+  window.SplitAppPages.ratingsLayoutIcon = ratingsLayoutIcon;
+  window.SplitAppPages.autoRatingsLayout = autoRatingsLayout;
   window.SplitAppPages.details = context => {
     const {
       detailPreview, items, detailItemId, detailReturnPage, detailData,
@@ -20,7 +32,36 @@
         return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
       } catch { return ""; }
     };
+    const anilistOverview = value => {
+      // AniList staff biographies use Markdown (including their ~!- spoiler delimiters).
+      // Tokenize the small subset they use and escape every text fragment before adding markup.
+      const source = String(value || "").replace(/~!-|!~/g, "").replace(/\r\n?/g, "\n");
+      const tokens = source.split(/(\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\*\*[^*]+\*\*|__[^_]+__|\n+)/g).filter(Boolean);
+      return tokens.map(token => {
+        if (/^\n+$/.test(token)) return "<br>";
+        const link = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/.exec(token);
+        if (link) {
+          let characterId = "";
+          try {
+            const url = new URL(link[2]);
+            if (["anilist.co", "www.anilist.co"].includes(url.hostname.toLowerCase())) characterId = url.pathname.match(/^\/character\/(\d+)(?:\/|$)/)?.[1] || "";
+          } catch (_) {}
+          if (characterId) return refButton({ type: "character", id: `anilist-character:${characterId}`, title: link[1], extra: { source: "anilist" } }, "anilist-character-link", esc(link[1]));
+          const href = safeUrl(link[2]);
+          return href ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(link[1])}</a>` : esc(link[1]);
+        }
+        const bold = /^(?:\*\*([^*]+)\*\*|__([^_]+)__)$/.exec(token);
+        if (bold) return `<strong>${esc(bold[1] || bold[2])}</strong>`;
+        return esc(token);
+      }).join("").replace(/\s+-\s+/g, " · ");
+    };
     const safeImage = value => /^data:image\/[a-z0-9.+-]+;base64,/i.test(String(value || "")) ? String(value) : safeUrl(value);
+    const episodeCountdown = episode => {
+      const airtime = Number(window.SplitAppLibrary.episodeAirTime?.(episode)) || 0;
+      if (!airtime) return "Date unknown";
+      const days = Math.max(0, Math.ceil((airtime - Date.now()) / 86400000));
+      return days === 0 ? "Today" : `${days} day${days === 1 ? "" : "s"}`;
+    };
 
     const heading = title => { const m = /^(.*?)\s*\((\d+)\)\s*$/.exec(String(title || "")); return m ? `${esc(m[1])} <b>${m[2]}</b>` : esc(title || ""); };
     const refButton = (ref, className, inner, replace = false) => `<button type="button" class="${className}" data-detail-ref="${esc(ref.type)}:${esc(ref.id)}" data-detail-ref-title="${esc(ref.title || "")}"${ref.extra ? ` data-detail-ref-extra="${esc(JSON.stringify(ref.extra))}"` : ""}${replace ? ` data-ref-replace="true"` : ""}>${inner}</button>`;
@@ -46,13 +87,15 @@
       });
       const longest = seasons.reduce((max, season) => Math.max(max, seasonCounts.get(season) || 0), 0);
       let saved = ""; try { saved = localStorage.getItem("screenmark_ratings_layout") || ""; } catch (_) {}
-      const layout = saved === "horizontal" || saved === "vertical" ? saved : longest > 12 ? "vertical" : "horizontal";
+      const manualLayout = saved === "horizontal" || saved === "vertical";
+      const layout = manualLayout ? saved : autoRatingsLayout(window.innerWidth - 36, seasons.length, longest);
       const numbers = Array.from({ length: longest }, (_, index) => index + 1);
       const horizontal = seasons.map(season => `<div class="ep-ratings-row"><span class="ep-ratings-label">S${esc(season)}</span>${(episodesBySeason.get(season) || []).map(cell).join("")}</div>`).join("");
       const verticalCells = number => `<span class="ep-ratings-label">E${number}</span>${seasons.map(season => { const row = episodeByPosition.get(`${season}:${number}`); return row ? cell(row) : `<span class="ep-rate-empty"></span>`; }).join("")}`;
       const chunkSize = 24, initialNumbers = numbers.slice(0, chunkSize), remainingNumbers = numbers.slice(chunkSize);
       const vertical = `<div class="ep-ratings-v"${remainingNumbers.length ? " data-ratings-lazy" : ""}><div class="ep-ratings-cols" style="--seasons:${seasons.length}"><span class="ep-ratings-label"></span>${seasons.map(season => `<span class="ep-ratings-label ep-ratings-head">S${esc(season)}</span>`).join("")}${initialNumbers.map(verticalCells).join("")}</div>${Array.from({ length: Math.ceil(remainingNumbers.length / chunkSize) }, (_, index) => remainingNumbers.slice(index * chunkSize, (index + 1) * chunkSize)).map(chunk => `<template data-ratings-chunk>${chunk.map(verticalCells).join("")}</template>`).join("")}${remainingNumbers.length ? `<span class="ep-ratings-sentinel" data-ratings-sentinel aria-hidden="true"></span>` : ""}</div>`;
-      return `<div class="ep-ratings" data-layout="${layout}"><div class="ep-ratings-bar"><p class="ep-ratings-note">Average ★ ${average.toFixed(1)} across ${rated.length} rated episodes</p><button type="button" class="ep-layout-toggle" data-ratings-layout aria-label="Switch grid direction">${layout === "vertical" ? "Horizontal" : "Vertical"}</button></div><div class="ep-ratings-scroll ep-ratings-h">${horizontal}</div><div class="ep-ratings-scroll ep-ratings-v">${vertical}</div></div>`;
+      const layoutControls = ["horizontal", "vertical"].map(direction => `<button type="button" class="ep-layout-option${layout === direction ? " is-active" : ""}" data-ratings-layout="${direction}" aria-pressed="${layout === direction}" aria-label="${direction} ratings layout" title="${direction[0].toUpperCase()}${direction.slice(1)} layout${manualLayout ? "" : " · automatic"}">${ratingsLayoutIcon(direction)}<span>${direction[0].toUpperCase()}${direction.slice(1)}</span></button>`).join("");
+      return `<div class="ep-ratings" data-layout="${layout}" data-layout-mode="${manualLayout ? "manual" : "auto"}" data-season-count="${seasons.length}" data-longest="${longest}"><div class="ep-ratings-bar"><p class="ep-ratings-note">Average ★ ${average.toFixed(1)} across ${rated.length} rated episodes</p><div class="ep-layout-toggle" role="group" aria-label="Episode rating layout">${layoutControls}</div></div><div class="ep-ratings-scroll ep-ratings-h">${horizontal}</div><div class="ep-ratings-scroll ep-ratings-v">${vertical}</div></div>`;
     };
     const episodeGuide = (section, rows, watchedIds, canToggle, item, sectionIndex, imageButton, fallbackImage = "") => {
       const seasons = [...new Set(rows.map(row => row.season))].sort((a, b) => a - b);
@@ -72,7 +115,7 @@
         const rowsHtml = `<ul class="episode-list">${list.map(row => {
           const watched = watchedIds.has(String(row.id)), thumb = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${rows.indexOf(row)}.image`] || row.image) || fallbackImage;
           const upcoming = Boolean(window.SplitAppLibrary.isUpcoming?.(row)) && !watched;
-          const check = canToggle ? `<button type="button" class="episode-check ${watched ? "is-watched" : ""}" data-episode-toggle data-episode-id="${esc(row.id)}" data-episode-title="${esc(`S${row.season}E${row.number} ${row.title}`)}" role="checkbox" aria-checked="${watched}" aria-label="${upcoming ? `${esc(row.title)} has not aired yet` : `Mark ${esc(row.title)} ${watched ? "unwatched" : "watched"}`}"${upcoming ? ' disabled title="Not available until after it airs"' : ""}>${watched ? "✓" : ""}</button>` : "";
+          const check = canToggle ? upcoming ? `<span class="episode-countdown" aria-label="Airs in ${esc(episodeCountdown(row))}">${esc(episodeCountdown(row))}</span>` : `<button type="button" class="episode-check ${watched ? "is-watched" : ""}" data-episode-toggle data-episode-id="${esc(row.id)}" data-episode-title="${esc(`S${row.season}E${row.number} ${row.title}`)}" role="checkbox" aria-checked="${watched}" aria-label="Mark ${esc(row.title)} ${watched ? "unwatched" : "watched"}">${watched ? "✓" : ""}</button>` : "";
           const meta = [window.SplitAppDates.text(row.airdate), row.runtime ? `${row.runtime}m` : ""].filter(Boolean).join("  ");
           return `<li class="episode-row${watched ? " is-watched" : ""}">${refButton(row.ref || { type: "episode", id: row.id }, "episode-main", `<span class="episode-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : ""}</span><span class="episode-text"><strong>S${esc(row.season)}·E${esc(row.number)} — ${esc(row.title)}</strong><small>${esc(meta)}${row.rating ? ` <b class="episode-rating ${ratingTone(row.rating)}">★ ${Number(row.rating).toFixed(1)}</b>` : ""}</small>${row.description ? `<em>${esc(row.description)}</em>` : ""}</span>`)}${check}</li>`;
         }).join("")}</ul>`;
@@ -91,7 +134,7 @@
       const epId = String(refEpisode?.id ?? context.detailRef?.id ?? ""), epIndex = refEpisode && epInfo ? epInfo.eps.indexOf(refEpisode) : -1;
       const epWatched = epIndex >= 0 && epInfo.watched.has(epId);
       const refUpcoming = epIndex >= 0 && Boolean(window.SplitAppLibrary.isUpcoming?.(refEpisode)) && !epWatched;
-      const watchedButton = epIndex >= 0 ? `<button type="button" class="ep-watch-button${epWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(savedItem.id)}" data-episode-id="${esc(epId)}" data-episode-title="${esc(data?.title || "Episode")}" aria-pressed="${epWatched}"${refUpcoming ? ' disabled title="Not available until after it airs"' : ""}>${refUpcoming ? "Not aired yet" : epWatched ? "✓ Watched" : "Mark watched"}</button>` : "<span></span>";
+      const watchedButton = epIndex >= 0 ? refUpcoming ? `<span class="ep-upcoming-countdown">${esc(episodeCountdown(refEpisode))}</span>` : `<button type="button" class="ep-watch-button${epWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(savedItem.id)}" data-episode-id="${esc(epId)}" data-episode-title="${esc(data?.title || "Episode")}" aria-pressed="${epWatched}">${epWatched ? "✓ Watched" : "Mark watched"}</button>` : "<span></span>";
       const back = `<header class="detail-page-heading demo-detail-heading"><button type="button" class="detail-back" data-detail-back><span aria-hidden="true">‹</span> Back</button></header>`;
       const refClass = `detail-page demo-cinema-page demo-ref-page demo-${esc(kind || "detail")}-page`;
       if (context.refLoading && !data) {
@@ -120,10 +163,15 @@
       const epKicker = epCode ? `${epCode[1]} · Season ${epCode[2]} · Episode ${epCode[3]}` : data.subtitle || "Episode";
       const epFacts = (data.facts || []).map(([label, value]) => { const text = window.SplitAppDates.text(value); return /rating/i.test(label) ? `<span class="is-rating">${esc(String(text).replace(/^★?\s*/, "★ "))}</span>` : /aired|date/i.test(label) ? `<span>Aired ${esc(text)}</span>` : /runtime/i.test(label) ? `<span>${esc(String(text).replace(/\s*min.*/i, ""))} min</span>` : `<span>${esc(label)}: ${esc(text)}</span>`; }).join("");
       const epHero = kind === "episode" ? `<article class="ep-hero"><div class="ep-still">${episodeImage ? `<button type="button" class="detail-image-trigger" data-detail-image-src="${esc(episodeImage)}" data-detail-image-label="${esc(data.title)}"><img src="${esc(episodeImage)}" alt="" onerror="this.hidden=true"></button>` : ""}<div class="ep-still-copy"><span class="ep-kicker">${esc(epKicker)}</span><h1>${esc(data.title)}</h1><div class="demo-episode-facts ep-pills">${epFacts}</div></div></div></article>` : "";
-      const epNavCard = kind === "episode" && epIndex >= 0 ? `<section class="ep-checkin-card"><span class="db-label">Episode navigation &amp; check-in</span><div class="ep-nav-row">${navButton(epInfo.eps[epIndex - 1], "‹ Prev")}<button type="button" class="ep-nav-button ep-center-check${epWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(savedItem.id)}" data-episode-id="${esc(epId)}" data-episode-title="${esc(data.title)}" aria-pressed="${epWatched}"${refUpcoming ? ' disabled title="Not available until after it airs"' : ""}>${refUpcoming ? "Not aired yet" : epWatched ? "✓ Watched" : "＋ Mark watched"}</button>${navButton(epInfo.eps[epIndex + 1], "Next ›")}</div></section>` : "";
+      const epNavCard = kind === "episode" && epIndex >= 0 ? `<section class="ep-checkin-card"><span class="db-label">Episode navigation &amp; check-in</span><div class="ep-nav-row">${navButton(epInfo.eps[epIndex - 1], "‹ Prev")}${refUpcoming ? `<span class="ep-nav-button ep-upcoming-countdown">${esc(episodeCountdown(refEpisode))}</span>` : `<button type="button" class="ep-nav-button ep-center-check${epWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(savedItem.id)}" data-episode-id="${esc(epId)}" data-episode-title="${esc(data.title)}" aria-pressed="${epWatched}">${epWatched ? "✓ Watched" : "＋ Mark watched"}</button>`}${navButton(epInfo.eps[epIndex + 1], "Next ›")}</div></section>` : "";
       const seriesGuide = kind === "episode" && savedItem ? (() => { const art = safeImage(savedItem.customCover || savedItem.localThumbnailData || savedItem.image); return `<button type="button" class="detail-section detail-card series-guide-card" data-detail-back><span class="sg-art">${art ? `<img src="${esc(art)}" alt="" onerror="this.hidden=true">` : ""}</span><span class="sg-copy"><small>Series guide</small><strong>${esc(savedItem.title)}</strong><em>${epInfo ? `${epInfo.done}/${epInfo.total} episodes watched · ` : ""}Return to full season list ›</em></span></button>`; })() : "";
       const reactionCard = "";
-      const personSections = data.sections || [], refPageSize = 20;
+      const personSections = (data.sections || []).filter(section => {
+        const rows = Array.isArray(section.items) ? section.items : [];
+        if (!rows.length) return false;
+        if (section.kind === "gallery") return rows.some(row => safeImage(row.image || row.url));
+        return true;
+      }), refPageSize = 20;
       const personCredits = kind === "person" ? personSections.reduce((sum, section) => sum + (section.items || []).length, 0) : 0;
       const refPages = Math.max(1, Math.ceil(personCredits / refPageSize)), refPage = Math.min(refPages - 1, Math.floor((Number(context.detailRefOffset) || 0) / refPageSize));
       let creditCursor = 0;
@@ -144,7 +192,9 @@
       const creditsPager = kind === "person" && refPages > 1 ? `<nav class="detail-ref-pager" aria-label="Cast credits pages"><button type="button" data-detail-ref-page="${Math.max(0, (refPage - 1) * refPageSize)}" ${refPage === 0 ? "disabled" : ""} aria-label="Previous page">‹</button><span>${refPage * refPageSize + 1}–${Math.min(personCredits, (refPage + 1) * refPageSize)} of ${personCredits} · page ${refPage + 1}/${refPages}</span><button type="button" data-detail-ref-page="${Math.min((refPages - 1) * refPageSize, (refPage + 1) * refPageSize)}" ${refPage >= refPages - 1 ? "disabled" : ""} aria-label="Next page">›</button></nav>` : "";
       const refHero = kind === "episode" ? epHero : kind === "person" || kind === "character" ? actorHero : hero;
       const refLinks = safeUrl(data.url) ? `<section class="detail-section detail-links-section"><h3>Links</h3><div class="detail-link-list"><a href="${esc(safeUrl(data.url))}" target="_blank" rel="noopener noreferrer">${esc(refSource)} ↗</a></div></section>` : "";
-      return `<div class="${refClass}">${back}${refHero}${epNavCard}${reactionCard}${data.description ? `<section class="detail-section detail-card"><h3>${kind === "episode" ? "Synopsis" : "Overview"}</h3><p class="detail-description">${esc(data.description)}</p></section>` : ""}${seriesGuide}${sections}${creditsPager}${refLinks}<dialog class="detail-image-modal" id="detail-image-modal" aria-label="Image viewer"><button type="button" class="detail-image-modal-close" data-detail-image-close aria-label="Close image">×</button><button type="button" class="detail-image-modal-nav detail-image-modal-prev" data-detail-image-prev aria-label="Previous image">‹</button><figure><img data-detail-modal-img alt=""><figcaption data-detail-modal-caption></figcaption></figure><button type="button" class="detail-image-modal-nav detail-image-modal-next" data-detail-image-next aria-label="Next image">›</button></dialog></div>`;
+      const isAniListProfile = data.source === "AniList" && ["person", "character"].includes(kind);
+      const overview = isAniListProfile ? anilistOverview(data.description) : esc(data.description || "");
+      return `<div class="${refClass}">${back}${refHero}${epNavCard}${reactionCard}${data.description ? `<section class="detail-section detail-card"><h3>${kind === "episode" ? "Synopsis" : "Overview"}</h3><p class="detail-description${isAniListProfile ? " anilist-overview" : ""}">${overview}</p></section>` : ""}${seriesGuide}${sections}${creditsPager}${refLinks}<dialog class="detail-image-modal" id="detail-image-modal" aria-label="Image viewer"><button type="button" class="detail-image-modal-close" data-detail-image-close aria-label="Close image">×</button><button type="button" class="detail-image-modal-nav detail-image-modal-prev" data-detail-image-prev aria-label="Previous image">‹</button><figure><img data-detail-modal-img alt=""><figcaption data-detail-modal-caption></figcaption></figure><button type="button" class="detail-image-modal-nav detail-image-modal-next" data-detail-image-next aria-label="Next image">›</button></dialog></div>`;
     };
 
     const renderSection = (section, watchedIds = new Set(), canToggleEpisodes = false, item = null, sectionIndex = 0, imageButton = () => "", fallbackEpisodeImage = "") => {
@@ -180,7 +230,7 @@
             const content = `<div class="detail-source-item">${thumbnail}<div><strong>${title}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}${entry.description ? `<p>${esc(entry.description)}</p>` : ""}${href && section.kind !== "episodes" ? `<a class="detail-entry-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>` : ""}${toggle}</div></div>`;
             return content;
           }).join("")}</div>`;
-      const demoSectionClass = /^(cast|characters|staff|guest cast|guest crew)/i.test(section.title || "") ? "demo-cast-section" : section.kind === "episodes" || section.kind === "episodes-list" ? "demo-episode-section" : section.kind === "ratings" ? "demo-rating-section" : /^(related|you might also like|same series)/i.test(section.title || "") ? "demo-related-section" : "";
+      const demoSectionClass = /^(cast|characters|staff|guest cast|guest crew)/i.test(section.title || "") ? "demo-cast-section" : section.kind === "episodes" || section.kind === "episodes-list" ? "demo-episode-section" : section.kind === "ratings" ? "demo-rating-section" : /^(related|you might also like|same series)/i.test(section.title || "") ? "demo-related-section" : section.kind === "gallery" ? `demo-gallery-section${/^posters\b/i.test(section.title || "") ? " demo-poster-gallery-section" : /^(screenshots|images)\b/i.test(section.title || "") ? " demo-screenshot-gallery-section" : /^logos\b/i.test(section.title || "") ? " demo-logo-gallery-section" : ""}` : "";
       return section.collapsed && !/^posters/i.test(section.title || "")
         ? `<details class="detail-section detail-collapsible ${demoSectionClass}"><summary><h3>${heading(section.title || "More details")}</h3><span aria-hidden="true">›</span></summary>${body}</details>`
         : `<section class="detail-section ${demoSectionClass}"><h3>${/^(cast|characters|staff)/i.test(section.title || "") && items.length > 8 && section.kind === "carousel" ? `<span class="detail-section-head">${heading(section.title)}<button type="button" class="detail-full-list" data-carousel-expand>Full list</button></span>` : heading(section.title || "More details")}</h3>${body}</section>`;
@@ -232,7 +282,7 @@
         ? (seriesProgress > 0 ? [roles.active, roles.hold, roles.dropped, roles.done] : [roles.queued, roles.done])
         : item.category === "movie" ? [roles.queued, roles.dropped, roles.done] : (category(item.category)?.statuses || []);
       const watchedSet = new Set((item.watchedEpisodeIds || []).map(String));
-      const indexedSections = sections.map((section, index) => ({ section, index })), taken = new Set();
+      const indexedSections = sections.map((section, index) => ({ section, index })).filter(({ section }) => Array.isArray(section.items) && section.items.length > 0), taken = new Set();
       const takeSlot = pattern => indexedSections.filter(({ section, index }) => !taken.has(index) && pattern.test(section.title || "") && taken.add(index));
       const castSection = section => section.kind === "people" || /^(cast|characters|staff|guest cast|guest crew)(?:\b|\s)/i.test(section.title || "");
       if (context.detailCastOnline === false) indexedSections.filter(({ section }) => castSection(section)).forEach(({ index }) => taken.add(index));
@@ -247,7 +297,7 @@
       const detailPlaceholders = detailLoading ? {
         synopsis: !hasSummary ? `<section class="detail-section detail-skeleton-block" aria-hidden="true"><h3>Synopsis</h3><div class="detail-skeleton-lines">${loadingLines(3)}</div></section>` : "",
         facts: !(facts.length || fields.length) ? `<section class="detail-section detail-skeleton-block" aria-hidden="true"><h3>Production details</h3><div class="detail-skeleton-facts">${loadingLines(3, ["38%", "54%", "32%"])}<span>${loadingLines(3, ["58%", "76%", "48%"])}</span></div></section>` : "",
-        media: !slots.media.length ? `<section class="detail-section detail-skeleton-block" aria-hidden="true"><h3>Images</h3><div class="detail-skeleton-art">${loadingLines(3, ["100%", "100%", "100%"])} </div></section>` : "",
+        media: !slots.media.some(({ section }) => section.kind !== "gallery" || (section.items || []).some(entry => safeImage(entry.image || entry.url))) ? `<section class="detail-section detail-skeleton-block" aria-hidden="true"><h3>Images</h3><div class="detail-skeleton-art">${loadingLines(3, ["100%", "100%", "100%"])} </div></section>` : "",
         episodes: item.category === "series" && !slots.episodes.length ? `<section class="detail-section detail-skeleton-block" aria-hidden="true"><h3>Episodes</h3><div class="detail-skeleton-episodes">${loadingLines(3, ["100%", "100%", "100%"])} </div></section>` : ""
       } : { synopsis: "", facts: "", media: "", episodes: "" };
       const part = {
@@ -262,7 +312,7 @@
           return `<section class="detail-progress-card progress-console"><div class="pc-top-row"><div class="pc-big-ratio"><b>${progress}</b>${goal ? `/${goal}` : ""} <small>${esc(short === "m" ? "min" : "ep")}</small> <span>${goal ? `${percent}%` : ""}</span></div><span class="pc-remaining">${goal ? (leftUnits ? `${fmtLeft || `${leftUnits} ${esc(unit)}`} left` : "Completed") : ""}</span></div><div class="progress-line pc-bar-track"><span style="width:${percent}%"></span></div>${goal ? "" : `<small class="pc-note">Edit the entry to set a total and track completion.</small>`}<div class="detail-quick-adjust pc-steppers"><span class="pc-step-label">${cat.unit === "minutes" ? "Runtime scrub" : "Quick adjust"}</span><div class="ios-stepper pc-step-group">${quick.map((amount, index) => `<button type="button"${index === 1 ? ' class="accent"' : ""} data-adjust-progress="${amount}">${amount < 0 ? "−" : "+"}${Math.abs(amount)}${short}</button>`).join("")}</div></div></section>`;
         })() : "",
         tracking: canProgress ? `<section class="detail-section detail-tracking-section"><h3>Tracking status</h3><div class="ios-pills detail-status-pills">${statuses.map(status => `<button type="button" class="ios-pill${status === item.status ? " active" : ""}" data-detail-status-btn="${esc(status)}">${esc(status)}</button>`).join("")}</div></section><dialog class="choice-dialog detail-delete-dialog" id="detail-delete-dialog"><form method="dialog"><div class="choice-dialog-grabber"></div><h2>Delete ${esc(item.title)}?</h2><p>This removes the title from your collection.</p><footer class="choice-dialog-actions"><button type="button" class="button secondary" data-detail-delete-cancel>Cancel</button><button type="button" class="button primary" data-detail-delete-confirm>Delete</button></footer></form></dialog>` : "",
-        media: renderRows(slots.media) + detailPlaceholders.media,
+        media: renderRows(slots.media.filter(({ section }) => section.kind !== "gallery" || (section.items || []).some(entry => safeImage(entry.image || entry.url)))) + detailPlaceholders.media,
         trailer: useSynopsisLayout ? "" : loaded.trailer && safeUrl(loaded.trailer.url) ? `<section class="detail-section"><h3>Official trailer</h3><a class="detail-trailer" href="${esc(safeUrl(loaded.trailer.url))}" target="_blank" rel="noopener noreferrer">${safeImage(loaded.trailer.image) ? `<img src="${esc(safeImage(loaded.trailer.image))}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : ""}<span class="detail-trailer-play" aria-hidden="true">▶</span><strong>${esc(loaded.trailer.title || "Watch trailer")}</strong></a></section>` : (loaded.title || item.title) ? `<section class="detail-section"><h3>Trailer</h3><a class="detail-trailer-search" href="${esc(`https://www.youtube.com/results?search_query=${encodeURIComponent(`${loaded.title || item.title} ${loaded.year || item.year || ""} official trailer`.trim())}`)}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▶</span><span>Find the trailer on YouTube</span><small>This source has no trailer link</small></a></section>` : "",
         ratings: renderRows(slots.ratings),
         episodes: renderRows(slots.episodes) + detailPlaceholders.episodes,
@@ -300,7 +350,8 @@
           const media = image ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : `<span class="tracking-episode-placeholder" aria-hidden="true">▶</span>`;
           const open = refButton(episode.ref || { type: "episode", id: episode.id }, "tracking-episode-open", `<span class="tracking-episode-art">${media}</span><span class="tracking-episode-copy"><strong>S${String(episode.season).padStart(2, "0")} | E${String(episode.number).padStart(2, "0")}</strong><small>${esc(episodeTitle)}</small></span>`);
           const upcoming = Boolean(window.SplitAppLibrary.isUpcoming?.(episode)) && !watched;
-          return `<article class="tracking-episode-card${watched ? " is-watched" : ""}"${index === focusIndex ? ' data-current-episode="true"' : ""}>${open}<button type="button" class="tracking-episode-check${watched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(item.id)}" data-episode-id="${esc(episode.id)}" data-episode-title="${esc(`S${episode.season}E${episode.number} ${episodeTitle}`)}" aria-pressed="${watched}" aria-label="${upcoming ? `Not aired yet · ${epInfo.mark(episode)}` : `${watched ? "Mark unwatched" : "Mark watched"} · ${epInfo.mark(episode)}`}"${upcoming ? ' disabled title="Not available until after it airs"' : ""}>✓</button></article>`;
+          const tracking = upcoming ? `<span class="tracking-episode-countdown">${esc(episodeCountdown(episode))}</span>` : `<button type="button" class="tracking-episode-check${watched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(item.id)}" data-episode-id="${esc(episode.id)}" data-episode-title="${esc(`S${episode.season}E${episode.number} ${episodeTitle}`)}" aria-pressed="${watched}" aria-label="${watched ? "Mark unwatched" : "Mark watched"} · ${epInfo.mark(episode)}">✓</button>`;
+          return `<article class="tracking-episode-card${watched ? " is-watched" : ""}"${index === focusIndex ? ' data-current-episode="true"' : ""}>${open}${tracking}</article>`;
         }).join("");
         return `<section class="continue-tracking"><h2>Continue tracking</h2><div class="tracking-episode-rail" data-tracking-episode-rail aria-label="Episodes">${cards}</div></section>`;
       })() : part.legacyProgress;
@@ -320,18 +371,18 @@
           + (slots.cast.length ? panel("cast", part.cast) : "");
       } else if (hasTabs) {
         const hasEpisodeGuide = slots.episodes.length > 0 || Boolean(detailPlaceholders.episodes);
-        const tabs = [hasEpisodeGuide && ["episodes", "Episodes"], ["overview", "Overview"], hasRatingTab && ["ratings", "Ratings"], slots.cast.length && ["cast", "Cast & Crew"]].filter(Boolean);
-        const activeTab = tabs.some(([key]) => key === context.detailTab) ? context.detailTab : tabs.find(([key]) => key === "episodes")?.[0] || tabs.find(([key]) => key === "overview")?.[0] || tabs[0][0];
+        const tabs = [["overview", "Overview"], hasEpisodeGuide && ["episodes", "Episodes"], hasRatingTab && ["ratings", "Ratings"], slots.cast.length && ["cast", "Cast & Crew"]].filter(Boolean);
+        const activeTab = tabs.some(([key]) => key === context.detailTab) ? context.detailTab : canProgress && hasEpisodeGuide ? "episodes" : "overview";
         const panel = (key, html) => `<div class="detail-tab-panel" data-detail-panel="${key}"${activeTab === key ? "" : " hidden"}>${html}</div>`;
         detailBody = `<div class="detail-tabs" role="tablist">${tabs.map(([key, label]) => `<button type="button" role="tab" class="${activeTab === key ? "active" : ""}" aria-selected="${activeTab === key}" data-detail-tab="${key}">${label}</button>`).join("")}</div>`
-          + (hasEpisodeGuide ? panel("episodes", part.episodes) : "")
           + panel("overview", [part.overview, part.trailer, part.tracking, part.facts, item.category === "series" ? "" : part.tags, part.media, part.stores, part.requirements, part.languages, part.other, part.related, part.links].join(""))
+          + (hasEpisodeGuide ? panel("episodes", part.episodes) : "")
           + (hasRatingTab ? panel("ratings", [part.ratings, part.communityRating, part.breakdown].join("")) : "")
           + (slots.cast.length ? panel("cast", part.cast) : "");
       } else {
         detailBody = [part.overview, part.tracking, part.facts, part.media, part.trailer, part.ratings, part.episodes, part.stores, item.category === "series" ? "" : part.tags, part.breakdown, part.requirements, part.cast, part.languages, part.related, part.other, part.links].join("");
       }
-      const detailHeading = `<header class="detail-page-heading demo-detail-heading"><button type="button" class="detail-back" ${context.detailStackSize ? "data-detail-back" : `data-go="${esc(detailReturnPage)}"`}><span aria-hidden="true">‹</span> Back</button>${detailPreview ? alreadyInLibrary ? `<button type="button" class="button primary detail-heading-add is-saved" data-action="open-library-item" data-id="${esc(savedLibraryItem.id)}">✓ Already in library</button>` : `<button type="button" class="button primary detail-heading-add" data-action="save-detail-item">＋ Add to library</button>` : detailEditMode ? `<span class="detail-heading-actions detail-edit-actions"><button type="button" class="button secondary small" data-action="cancel-detail-edit">Cancel</button><button type="button" class="button primary small" data-detail-save>Save</button></span>` : `<span class="detail-heading-actions"><button type="button" class="detail-icon-button" data-action="share-title" data-id="${esc(item.id)}" aria-label="Share title" title="Share title"><i data-lucide="share-2"></i></button><button type="button" class="detail-icon-button" data-action="edit" data-id="${esc(item.id)}" aria-label="Edit entry" title="Edit entry"><i data-lucide="pencil"></i></button><button type="button" class="detail-icon-button${item.favorite ? " active" : ""}" data-action="toggle-favorite" data-id="${esc(item.id)}" aria-pressed="${Boolean(item.favorite)}" aria-label="Favorite" title="Favorite"><i data-lucide="heart"></i></button><button type="button" class="detail-delete-button" data-action="delete-detail" data-id="${esc(item.id)}" aria-label="Delete from collection" title="Delete from collection"><i data-lucide="trash2"></i></button></span>`}</header>`;
+      const detailHeading = `<header class="detail-page-heading demo-detail-heading"><button type="button" class="detail-back" ${context.detailStackSize ? "data-detail-back" : `data-go="${esc(detailReturnPage)}"`}><span aria-hidden="true">‹</span> Back</button>${detailPreview ? alreadyInLibrary ? `<button type="button" class="button primary detail-heading-add is-saved" data-action="open-library-item" data-id="${esc(savedLibraryItem.id)}">✓ Already in library</button>` : `<button type="button" class="button primary detail-heading-add" data-action="save-detail-item">＋ Add to library</button>` : detailEditMode ? `<span class="detail-heading-actions detail-edit-actions"><button type="button" class="button secondary small" data-action="cancel-detail-edit">Cancel</button><button type="button" class="button primary small" data-detail-save>Save</button></span>` : `<span class="detail-heading-actions"><button type="button" class="detail-icon-button" data-action="edit" data-id="${esc(item.id)}" aria-label="Edit entry" title="Edit entry"><i data-lucide="pencil"></i></button><button type="button" class="detail-icon-button${item.favorite ? " active" : ""}" data-action="toggle-favorite" data-id="${esc(item.id)}" aria-pressed="${Boolean(item.favorite)}" aria-label="Favorite" title="Favorite"><i data-lucide="heart"></i></button><button type="button" class="detail-delete-button" data-action="delete-detail" data-id="${esc(item.id)}" aria-label="Delete from collection" title="Delete from collection"><i data-lucide="trash2"></i></button></span>`}</header>`;
       return `<div class="detail-page demo-cinema-page demo-title-page ${item.category === "series" ? "demo-show-page" : "demo-movie-page"}">
         <article class="detail-hero ios-hero">
           ${detailHeading}

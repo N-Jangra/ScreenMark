@@ -114,7 +114,7 @@
       ? `<footer class="profile-filter-bar"><button type="button" class="profile-filter-icon" data-open-profile-filters aria-label="Open filters"><i data-lucide="sliders-horizontal" aria-hidden="true"></i></button><button type="button" class="profile-sort-pill" data-open-profile-filters aria-label="Sort by ${esc(selectedSortLabel)}">${esc(selectedSortLabel)} <i data-lucide="chevron-down" aria-hidden="true"></i></button></footer>`
       : `<button type="button" class="profile-filter-pill" data-open-profile-filters><i data-lucide="sliders-horizontal" aria-hidden="true"></i><span>Filters</span></button>`;
     const more = filtered.length > visibleCount ? `<button type="button" class="watchlist-browse" data-collection-more="${esc(queryKey)}">Show more · ${Math.min(visibleCount, filtered.length)} of ${filtered.length}</button>` : "";
-    return `<section class="profile-page profile-list-page"><header class="profile-list-header"><button type="button" data-go="profile" aria-label="Back to profile"><i data-lucide="chevron-left" aria-hidden="true"></i></button><h2>${title}</h2><div class="profile-list-header-actions"><button class="profile-visibility-toggle${profileStatusGroups ? " is-active" : ""}" type="button" data-profile-groups aria-label="${profileStatusGroups ? "Show all titles in one grid" : "Group titles by status"}" aria-pressed="${profileStatusGroups}"><i data-lucide="eye" aria-hidden="true"></i></button><button type="button" data-share-all aria-label="Share ${title}"><i data-lucide="share-2" aria-hidden="true"></i></button></div></header>${content}${more}${filterControl}${filterDialog}</section>`;
+    return `<section class="profile-page profile-list-page"><header class="profile-list-header"><button type="button" data-go="profile" aria-label="Back to profile"><i data-lucide="chevron-left" aria-hidden="true"></i></button><h2>${title}</h2><div class="profile-list-header-actions"><button class="profile-visibility-toggle${profileStatusGroups ? " is-active" : ""}" type="button" data-profile-groups aria-label="${profileStatusGroups ? "Show all titles in one grid" : "Group titles by status"}" aria-pressed="${profileStatusGroups}"><i data-lucide="eye" aria-hidden="true"></i></button></div></header>${content}${more}${filterControl}${filterDialog}</section>`;
   }
 
   const watchlistStatus = (item, roles) => item.status === roles.queued || ["watchlist", "backlog", "queued", "to watch", "to play"].includes(String(item.status || "").toLowerCase());
@@ -126,7 +126,7 @@
     const timestamp = Date.parse(value || "");
     if (!timestamp) return "Date unknown";
     const days = Math.max(0, Math.ceil((timestamp - Date.now()) / 86400000));
-    return days === 0 ? "Today" : days === 1 ? "In 1 day" : `In ${days} days`;
+    return days === 0 ? "Today" : days === 1 ? "1 day" : `${days} days`;
   };
   function watchlistCard({ item, episode, esc, roles, imageMarkup = window.SplitAppImageMarkup, watched = false, upcoming = false, view = "list" }) {
     const isMovie = item.category === "movie";
@@ -139,10 +139,11 @@
     const watchedIds = new Set((item.watchedEpisodeIds || []).map(String));
     const markId = episode?.id || "";
     const isWatched = watched || watchedIds.has(String(markId));
-    const cardOpen = isMovie ? "" : `data-watchlist-open="${esc(item.id)}" role="link" tabindex="0" aria-label="Open details for ${esc(item.title)}${item.year ? ` (${esc(String(item.year).slice(0, 4))})` : ""}"`;
+    const caughtUp = !upcoming && !isMovie && Boolean(episode && window.SplitAppLibrary.isUpcoming?.(episode));
+    const cardOpen = `data-watchlist-open="${esc(item.id)}" role="link" tabindex="0" aria-label="Open details for ${esc(item.title)}${item.year ? ` (${esc(String(item.year).slice(0, 4))})` : ""}"`;
     const tag = `<button type="button" class="watchlist-series-tag" data-open-details data-id="${esc(item.id)}">${esc(item.title)}${item.year ? ` (${esc(String(item.year).slice(0, 4))})` : ""} ›</button>`;
     const airdate = episode?.airdate || item.releaseDate || "";
-    const check = upcoming ? `<span class="watchlist-airdate">${esc(daysUntil(airdate))}</span>` : isMovie ? `<button type="button" class="watchlist-check" data-watchlist-movie="${esc(item.id)}" aria-label="Mark ${esc(item.title)} watched">✓</button>` : `<button type="button" class="watchlist-check${isWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(item.id)}" data-episode-id="${esc(markId)}" data-episode-title="${esc(`${code} ${title}`)}" data-watchlist-card="${esc(item.id)}" aria-label="${isWatched ? "Watched" : "Mark watched"}" aria-pressed="${isWatched}">✓</button>`;
+    const check = upcoming ? `<span class="watchlist-airdate">${esc(daysUntil(airdate))}</span>` : caughtUp ? `<button type="button" class="watchlist-caught-up" data-watchlist-caught-up aria-label="Caught up. This episode has not aired yet.">Caught up</button>` : isMovie ? `<button type="button" class="watchlist-check" data-watchlist-movie="${esc(item.id)}" aria-label="Mark ${esc(item.title)} watched">✓</button>` : `<button type="button" class="watchlist-check${isWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(item.id)}" data-episode-id="${esc(markId)}" data-episode-title="${esc(`${code} ${title}`)}" data-watchlist-card="${esc(item.id)}" aria-label="${isWatched ? "Watched" : "Mark watched"}" aria-pressed="${isWatched}">✓</button>`;
     const episodeProgress = !isMovie ? window.SplitAppLibrary.episodeInfo(item) : null;
     const remaining = isMovie ? "" : ` +${Math.max(0, (episodeProgress?.total || 0) - (episodeProgress?.done || 0))}`;
     const fallback = `<span class="watchlist-art-fallback"><i data-lucide="${isMovie ? "clapperboard" : "tv"}" aria-hidden="true"></i></span>`;

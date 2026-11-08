@@ -264,7 +264,12 @@ button.detail-carousel-card { all: unset; box-sizing: border-box; display: grid;
 .source-alt-name.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent-text,var(--accent)); font-weight: 650; }
 .ep-ratings-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .ep-ratings-bar .ep-ratings-note { margin: 0; }
-.ep-layout-toggle { padding: 4px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--accent-text,var(--accent)); font-size: .72rem; font-weight: 650; cursor: pointer; }
+.ep-ratings-note { flex: 1; min-width: 0; line-height: 1.4; }
+.ep-layout-toggle { display: inline-flex; flex: none; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-2); color: var(--muted); }
+.ep-layout-option { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 68px; min-height: 30px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; box-shadow: none; color: var(--muted); font: 650 .7rem/1 var(--font-family); cursor: pointer; }
+.ep-layout-option svg { display: block; flex: none; width: 15px; height: 15px; }
+.ep-layout-option.is-active { background: var(--surface); color: var(--accent-text,var(--accent)); box-shadow: 0 1px 3px rgba(15,23,42,.12); }
+.ep-layout-option:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ep-ratings[data-layout=vertical] .ep-ratings-h, .ep-ratings[data-layout=horizontal] .ep-ratings-v { display: none; }
 .ep-ratings-v { max-height: 420px; overflow: auto; }
 .ep-ratings-cols { display: grid; grid-template-columns: 32px repeat(var(--seasons), minmax(40px, 1fr)); gap: 4px; align-items: center; width: max-content; min-width: 100%; }

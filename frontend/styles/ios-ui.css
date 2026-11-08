@@ -783,6 +783,7 @@ button.ios-pill.active em{background:color-mix(in srgb,var(--accent) 16%,transpa
 /* ===== Icon style: Inside boxes (default) or inline ===== */
 body[data-icon-style=inline] :is(.setting-icon,.settings-subpage-icon,.settings-category-icon,.storage-action-icon,.storage-total-icon,.manage-nav-row-icon,.app-info-row-icon,.app-info-feature-icon,.setting-search-result-icon,.setting-option-preview,.logcat-summary-icon,.cs-hero-icon){background:transparent!important;border-color:transparent!important;box-shadow:none!important;width:auto!important;height:auto!important;min-width:26px;padding:0!important}
 body[data-icon-style=inline] :is(.setting-icon,.storage-action-icon,.manage-nav-row-icon,.setting-option-preview){color:var(--accent-text,var(--accent))}
+body[data-page="settings"] :is(.settings-back,.settings-overline,.setting-icon,.settings-category-icon,.settings-subpage-icon,.setting-option-preview,.manage-nav-row-icon,.setting-search-result-icon){color:var(--accent)!important}
 body[data-icon-style=inline] :is(.setting-icon svg,.storage-action-icon svg,.setting-option-preview svg){width:22px;height:22px}
 body[data-icon-style=inline] .settings-subpage-icon{justify-self:end}
 

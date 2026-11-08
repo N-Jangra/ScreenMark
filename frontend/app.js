@@ -838,6 +838,16 @@
   const deferredQueue = [];
   let deferredTimer = 0, deferredDrain = null, deferredObserver = null;
   const contentObservers = new Map();
+  function syncRatingsLayoutControls(rating, layout, automatic) {
+    rating.querySelectorAll("[data-ratings-layout]").forEach(button => {
+      const selected = button.dataset.ratingsLayout === layout;
+      button.classList.toggle("is-active", selected);
+      button.setAttribute("aria-pressed", String(selected));
+      const label = button.dataset.ratingsLayout === "horizontal" ? "Horizontal" : "Vertical";
+      button.setAttribute("aria-label", `${label} ratings layout${selected && automatic ? ", selected automatically" : ""}`);
+      button.title = `${label} layout${selected && automatic ? " · automatic" : ""}`;
+    });
+  }
   function disposeContentResources(root) {
     const images = [];
     if (root?.matches?.("img[data-deferred-image]")) images.push(root);
@@ -1050,6 +1060,21 @@
       episodeRail.addEventListener("scroll", queueSettle, { passive: true });
       settle();
     }
+    content.querySelectorAll('.ep-ratings[data-layout-mode="auto"]').forEach(rating => {
+      const resize = () => {
+        if (!rating.isConnected || rating.dataset.layoutMode !== "auto") return;
+        const next = window.SplitAppPages.autoRatingsLayout?.(rating.clientWidth, Number(rating.dataset.seasonCount) || 0, Number(rating.dataset.longest) || 0);
+        if (!next || next === rating.dataset.layout) return;
+        rating.dataset.layout = next;
+        syncRatingsLayoutControls(rating, next, true);
+      };
+      resize();
+      if (window.ResizeObserver) {
+        const observer = new ResizeObserver(resize);
+        contentObservers.set(observer, rating);
+        observer.observe(rating);
+      }
+    });
     content.querySelectorAll(".ep-ratings-v[data-ratings-lazy]").forEach(rating => {
       const grid = rating.querySelector(".ep-ratings-cols"), sentinel = rating.querySelector("[data-ratings-sentinel]");
       if (!grid || !sentinel) return;
@@ -1800,8 +1825,21 @@
   }
   function applyLoadedMetadata(item, loaded, { cacheDetails = true, replaceFacts = false } = {}) {
     if (!item || !loaded || typeof loaded !== "object") throw new Error("Metadata source returned an invalid detail record.");
-    if (cacheDetails) item.cachedDetails = loaded;
-    if (cacheDetails && page === "details" && String(detailItemId) === String(item.id)) detailData = loaded;
+    let cachedDetails = loaded;
+    if (cacheDetails && item.cachedDetails && !replaceFacts) {
+      const sections = [...(loaded.sections || [])];
+      const sectionKey = section => `${section.kind || ""}:${String(section.title || "").replace(/\s*\(\d+\)\s*$/, "").trim().toLocaleLowerCase()}`;
+      const available = new Set(sections.filter(section => (section.items || []).length).map(sectionKey));
+      for (const section of item.cachedDetails.sections || []) {
+        if (!(section.items || []).length || !["gallery", "carousel", "people"].includes(section.kind)) continue;
+        const key = sectionKey(section);
+        if (available.has(key)) continue;
+        sections.push(section); available.add(key);
+      }
+      if (sections.length !== (loaded.sections || []).length) cachedDetails = { ...loaded, sections };
+    }
+    if (cacheDetails) item.cachedDetails = cachedDetails;
+    if (cacheDetails && page === "details" && String(detailItemId) === String(item.id)) detailData = cachedDetails;
     item.metadataFetchedAt = Number(loaded.fetchedAt || loaded.facts?.fetchedAt) || Date.now();
     item.facts = replaceFacts ? { ...(loaded.facts || {}) } : mergeFacts(item.facts, loaded.facts);
     delete item.relinkFresh;
@@ -1846,6 +1884,29 @@
       output.dataset.state = results.length ? "ok" : "error";
       output.innerHTML = results.length ? `<strong>${results.length} result${results.length === 1 ? "" : "s"} found</strong>${results.slice(0, 4).map(row => `<div class="cs-test-row">${row.image ? `<img src="${esc(row.image)}" alt="" onerror="this.hidden=true">` : ""}<span>${esc(row.title)}<small>${esc(row.subtitle || row.year || "")}</small></span></div>`).join("")}` : "The request worked but no results matched. Check the results path and the title field.";
     } catch (error) { output.dataset.state = "error"; output.textContent = `Failed: ${error?.message || error}`; }
+  }
+  async function testMetadataSource(sourceKey, button) {
+    const source = window.SplitAppSources.list().find(row => row.key === sourceKey);
+    const output = $(`[data-source-test-output="${CSS.escape(sourceKey)}"]`);
+    if (!source || !output) return;
+    const key = prefs.apiKeys?.[sourceKey]?.trim();
+    if (source.keyRequired && !key) { output.textContent = "Add the required API key before testing this source."; output.dataset.state = "error"; $(`[data-source-api-key="${CSS.escape(sourceKey)}"]`)?.focus(); return; }
+    const category = source.categories.includes("series") ? "series" : source.categories[0] || "movie";
+    const query = category === "series" ? "Breaking Bad" : "Inception";
+    const label = button.textContent;
+    button.disabled = true; button.textContent = "Testing…";
+    output.textContent = `Searching ${source.name}…`; output.dataset.state = "";
+    try {
+      const metadataSources = { ...prefs.metadataSources, [sourceKey]: true };
+      const results = await window.SplitAppDiscovery.searchSource(query, category, { ...detailSettings(), metadataSources }, sourceKey);
+      output.dataset.state = "ok";
+      output.textContent = results.length ? `Connection successful. Found ${results.length} ${results.length === 1 ? "match" : "matches"} for “${query}”.` : `The source responded successfully, but returned no matches for “${query}”.`;
+    } catch (error) {
+      output.dataset.state = "error";
+      output.textContent = `Test failed: ${error?.message || error}`;
+    } finally {
+      button.disabled = false; button.textContent = label;
+    }
   }
   function saveCustomSource(event) {
     event.preventDefault();
@@ -1939,6 +2000,7 @@
       const cachedEpisode = ref.type === "episode" && parent
         ? (parent.cachedDetails?.sections || []).filter(section => section.kind === "episodes").flatMap(section => section.items || []).find(row => String(row.id) === String(ref.id) || String(row.ref?.id) === String(ref.id))
         : null;
+      const cachedMediaSections = cachedEpisode?.mediaSections || [];
       const referenceSourceKey = parent?.metadataSource || ({ tenrai: "anilist" }[ref.extra?.source] || ref.extra?.source) || String(ref.id || "").match(/^(tmdb|tvdb|imdb|anilist):/i)?.[1]?.toLowerCase() || "tvmaze";
       const referenceSource = window.SplitAppSources.list().find(source => source.key === referenceSourceKey);
       const referenceSourceUnavailable = Boolean(referenceSource && (!window.SplitAppSources.isEnabled(referenceSource.key, prefs) || (referenceSource.keyRequired && !prefs.apiKeys?.[referenceSource.key]?.trim())));
@@ -1948,11 +2010,22 @@
         const raw = cachedEpisode.raw, na = value => value && value !== "N/A" ? value : "", people = (value, meta) => String(na(value) || "").split(/,\s*/).filter(Boolean).map(title => ({ title, meta, image: "" }));
         loaded = { type: "episode", source: "OMDb", title: na(raw.Title) || cachedEpisode.title, subtitle: `${parent.title} · S${cachedEpisode.season}E${cachedEpisode.number}`, image: na(raw.Poster) || cachedEpisode.image, description: na(raw.Plot) || cachedEpisode.description, url: raw.imdbID ? `https://www.imdb.com/title/${raw.imdbID}/` : "", facts: [["Aired", na(raw.Released) || cachedEpisode.airdate], ["Runtime", na(raw.Runtime) || (cachedEpisode.runtime ? `${cachedEpisode.runtime} min` : "")], ["Rating", na(raw.imdbRating) ? `★ ${raw.imdbRating}` : cachedEpisode.rating ? `★ ${cachedEpisode.rating}` : ""], ["Votes", na(raw.imdbVotes)], ["Rated", na(raw.Rated)]].filter(([, value]) => value), sections: [{ title: "Cast", kind: "people", items: people(raw.Actors, "Actor") }, { title: "Staff", kind: "people", items: [...people(raw.Director, "Director"), ...people(raw.Writer, "Writer")] }].filter(section => section.items.length), raw };
       } else if (localOnly && prefs.offlineFallback !== "none" && cachedEpisode) {
-        loaded = { type: "episode", source: parent.metadataSource || "ScreenMark", title: cachedEpisode.title || ref.title || "Episode", subtitle: `${parent.title} · S${cachedEpisode.season}E${cachedEpisode.number}`, image: cachedEpisode.image || "", description: cachedEpisode.description || "", url: cachedEpisode.url || "", facts: [["Aired", cachedEpisode.airdate], ["Runtime", cachedEpisode.runtime ? `${cachedEpisode.runtime} min` : ""], ["Rating", cachedEpisode.rating ? `★ ${cachedEpisode.rating}` : ""], ["Season", cachedEpisode.season], ["Episode", cachedEpisode.number]].filter(([, value]) => value !== undefined && value !== ""), sections: [] };
+        loaded = { type: "episode", source: parent.metadataSource || "ScreenMark", title: cachedEpisode.title || ref.title || "Episode", subtitle: `${parent.title} · S${cachedEpisode.season}E${cachedEpisode.number}`, image: cachedEpisode.image || "", description: cachedEpisode.description || "", url: cachedEpisode.url || "", facts: [["Aired", cachedEpisode.airdate], ["Runtime", cachedEpisode.runtime ? `${cachedEpisode.runtime} min` : ""], ["Rating", cachedEpisode.rating ? `★ ${cachedEpisode.rating}` : ""], ["Season", cachedEpisode.season], ["Episode", cachedEpisode.number]].filter(([, value]) => value !== undefined && value !== ""), sections: cachedMediaSections };
       } else if (localOnly) {
         const sourceName = referenceSource?.name || "The metadata source";
         throw new Error(referenceSourceUnavailable ? `${sourceName} is disabled or needs its API key in Metadata Sources.` : prefs.offlineFallback === "none" ? "Offline metadata fallback is turned off." : ref.type === "person" || ref.type === "character" ? "Cast pages are only available while the metadata source is online." : "No saved details are available for this page. Open it online once to save it for offline use.");
-      } else loaded = await window.SplitAppDetails.loadRef(ref, { ...detailSettings(), ...(controller ? { signal: controller.signal } : {}) });
+      } else {
+        loaded = await window.SplitAppDetails.loadRef(ref, { ...detailSettings(), ...(controller ? { signal: controller.signal } : {}) });
+        if (ref.type === "episode" && cachedEpisode && parent && requestId === refRequest) {
+          const fetchedMedia = (loaded.sections || []).filter(section => section.kind === "gallery" && (section.items || []).some(row => /^https:\/\//i.test(String(row.image || row.url || ""))));
+          if (fetchedMedia.length) {
+            cachedEpisode.mediaSections = fetchedMedia;
+            persist({ ids: [parent.id] });
+          } else if (cachedMediaSections.length) {
+            loaded.sections = [...(loaded.sections || []).filter(section => section.kind !== "gallery"), ...cachedMediaSections];
+          }
+        }
+      }
       if (requestId === refRequest) refData = loaded;
     }
     catch (error) { if (requestId === refRequest) refError = error?.message || "Could not load this page."; }
@@ -1979,22 +2052,6 @@
     } catch (error) { recordLog("warning", `Could not save details for ${item.title}: ${error?.message || error}`); }
     finally { hydrating.delete(item.id); }
   }
-  document.addEventListener("click", event => {
-    const share = eventClosest(event, "[data-share-all]");
-    if (share) {
-      const collectionKind = page === "series" || page === "series-favorites" ? "series" : page === "movies" || page === "movie-favorites" ? "movie" : "";
-      let selected, label = "Collection";
-      if (collectionKind) {
-        const favoritesOnly = page === "series-favorites" || page === "movie-favorites";
-        selected = items.filter(item => item.category === collectionKind && (!favoritesOnly || item.favorite));
-        label = `${collectionKind === "series" ? "Shows" : "Movies"}${favoritesOnly ? " favorites" : ""}`;
-      } else {
-        selected = items;
-      }
-      openShareList(label, selected);
-    }
-  }, true);
-
   let metadataSync = null;
   let metadataSyncSaveTimer = 0, metadataSyncRenderTimer = 0;
   let metadataSyncCountState = null, metadataSyncCounters = null;
@@ -2471,96 +2528,6 @@
     window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
     showPopup(dialog);
   }
-  function shareEntry(item, detail = null) {
-    const progress = Math.max(0, Number(item.progress) || 0), goal = Math.max(0, Number(item.goal) || 0);
-    const unit = config.categories.find(row => row.key === item.category)?.unit || "";
-    const fields = detail?.fields || item.cachedDetails?.fields || [];
-    const field = pattern => fields.find(row => pattern.test(String(row.label || "")))?.value || "";
-    const tags = detail?.tags || item.cachedDetails?.tags || item.cachedDetails?.genres || item.facts?.genres || field(/^genres?$/i) || [];
-    const tagList = Array.isArray(tags) ? tags : typeof tags === "string" ? tags.split(/,\s*/) : [tags];
-    const info = detail ? [field(/^director|directors|created by$/i), field(/^runtime$/i), field(/^network|studio$/i), field(/^language$/i)].filter(Boolean) : [];
-    const tagText = [...tagList.map(tag => typeof tag === "string" ? tag : tag?.name || tag?.title || ""), ...info].filter(Boolean).slice(0, 8).join(" · ");
-    return { id: String(item.id), title: item.title, subtitle: [category(item.category)?.label, item.year, tagText].filter(Boolean).join(" · "), status: item.status, progressText: progress || goal ? `${progress}${goal ? ` / ${goal}` : ""}${unit ? ` ${unit}` : ""}` : "", percent: goal ? Math.min(100, Math.round(progress / goal * 100)) : null };
-  }
-  async function readShareImageBlob(response, maxBytes = 16 * 1024 * 1024) {
-    const declaredSize = Number(response.headers.get("content-length")) || 0;
-    const type = String(response.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
-    if (declaredSize > maxBytes || (type && !type.startsWith("image/"))) return null;
-    if (!response.body?.getReader) {
-      const blob = await response.blob();
-      return blob.size <= maxBytes ? blob : null;
-    }
-    const reader = response.body.getReader(), chunks = [];
-    let size = 0;
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        size += value.byteLength;
-        if (size > maxBytes) { await reader.cancel(); return null; }
-        chunks.push(value);
-      }
-    } finally { reader.releaseLock(); }
-    return new Blob(chunks, { type: type || "application/octet-stream" });
-  }
-  async function shareLoadUrl(source, maxWidth = 720) {
-    if (!source) return null;
-    let blob = null, timer = 0;
-    const controller = typeof AbortController === "function" ? new AbortController() : null;
-    if (controller) timer = setTimeout(() => controller.abort(), 15000);
-    try {
-      const options = controller ? { signal: controller.signal, credentials: "omit", redirect: "error" } : { credentials: "omit", redirect: "error" };
-      if (/^data:image\//i.test(source)) {
-        try { const response = await fetch(source, options); if (response.ok) blob = await readShareImageBlob(response); } catch (_) {}
-      } else if (/^https:\/\//i.test(source)) {
-        try { const response = await fetch(source, { ...options, mode: "cors" }); if (response.ok && new URL(response.url).protocol === "https:") blob = await readShareImageBlob(response); } catch (_) {}
-      }
-    } finally { if (timer) clearTimeout(timer); }
-    if (!blob) return null;
-    if (window.createImageBitmap) { try { return await createImageBitmap(blob, { resizeWidth: maxWidth, resizeQuality: "medium" }); } catch (_) {} }
-    const url = URL.createObjectURL(blob);
-    return new Promise(resolve => {
-      const image = new Image();
-      const finish = value => { clearTimeout(image._shareTimer); image.onload = image.onerror = null; URL.revokeObjectURL(url); resolve(value); };
-      image._shareTimer = setTimeout(() => finish(null), 15000);
-      image.onload = () => finish(image); image.onerror = () => finish(null); image.src = url;
-    });
-  }
-  async function shareImageFor(entry) {
-    const item = itemById(entry.id); if (!item) return null;
-    const source = item.customCover || item.localPortraitData || item.localThumbnailData || item.localImageData?.image || item.image || item.cachedDetails?.portraitImage || item.cachedDetails?.image;
-    return shareLoadUrl(source, 720);
-  }
-  function openShareList(title, selected) {
-    if (!selected.length) return;
-    const detail = selected.length === 1 && page === "details" ? detailData : null;
-    window.SplitAppShare?.open({ title, entries: selected.map(item => shareEntry(item, detail)), getImage: shareImageFor }, { showPopup, closePopup, toast, esc });
-  }
-  async function openShareDetail(id) {
-    const item = itemById(String(id)); if (!item) return;
-    const detail = detailData || item.cachedDetails || {};
-    const entry = shareEntry(item, detail);
-    const facts = { ...(detail.facts || {}), ...(item.facts || {}) };
-    const fields = [...(detail.fields || [])].filter(row => row?.label && String(row.value ?? "").trim());
-    const ensureField = (label, value) => { if (value && !fields.some(row => String(row.label).toLowerCase() === label.toLowerCase())) fields.push({ label, value }); };
-    ensureField("Runtime", facts.runtimeMinutes ? `${facts.runtimeMinutes} min` : "");
-    ensureField("Episodes", facts.episodeCount || ""); ensureField("Seasons", facts.seasonCount || "");
-    const sections = detail.sections || [];
-    const images = [...new Set(sections.filter(section => section.kind === "gallery").flatMap(section => (section.items || []).map(row => row.image || row.url)).filter(url => /^https?:|^data:image\//i.test(url || "")))];
-    const cast = sections.filter(section => /^(cast|characters)/i.test(section.title || "")).flatMap(section => section.items || []).slice(0, 24).map(row => `${row.title || row.name || ""}${row.meta ? ` (${row.meta})` : ""}`).filter(Boolean);
-    const episodes = sections.filter(section => section.kind === "episodes" || section.kind === "episodes-list").flatMap(section => (section.items || []).map(row => row.title || row.name || "")).filter(Boolean).slice(0, 36);
-    const overview = [String(detail.description || item.description || ""), cast.length ? `Cast\n${cast.join(" · ")}` : "", episodes.length ? `Episode guide\n${episodes.join("\n")}` : ""].filter(Boolean).join("\n\n");
-    const tags = detail.tags || facts.genres || [];
-    const languages = (detail.languages || []).map(row => typeof row === "string" ? row : row?.name).filter(Boolean);
-    const report = {
-      title: item.title, category: item.category, subtitle: [category(item.category)?.label, item.year, item.status].filter(Boolean).join(" · "),
-      status: item.status, progressText: entry.progressText, percent: entry.percent,
-      fields, description: overview, requirements: null,
-      languages, tags: Array.isArray(tags) ? tags.map(row => typeof row === "string" ? row : row?.name).filter(Boolean) : String(tags).split(/,\s*/),
-      shotUrls: images, coverPromise: shareLoadUrl(item.customCover || item.localPortraitData || item.localThumbnailData || item.localImageData?.image || detail.portraitImage || item.image || detail.image, 720)
-    };
-    window.SplitAppShareTitle?.open(report, { showPopup, closePopup, toast, esc, loadImage: url => shareLoadUrl(url, 720) });
-  }
   function openDetails(id, edit = false) { clearDetailStack(); detailReturnPage = page === "details" ? detailReturnPage : page; detailPreview = null; detailEditMode = edit; detailItemId = id; detailData = null; detailError = ""; goto("details"); loadDetails(); }
   function openDiscoverDetails(result) { if (!result) return; clearDetailStack(); detailReturnPage = "discover"; detailPreview = { ...result, metadataSource: result.source }; detailEditMode = false; detailItemId = null; detailData = null; detailError = ""; goto("details"); loadDetails(); }
   function showDetailImage(position) {
@@ -2897,20 +2864,6 @@
     if (discoverCategoryButton) { discoverCategoryChoice = discoverCategoryButton.dataset.discoverCategory; discoverCache = null; suggestionsCache = null; discoverQuery = ""; render(); return; }
     const addCategoryButton = eventClosest(event, "[data-add-category]");
     if (addCategoryButton) { applyAddCategory(addCategoryButton.dataset.addCategory); return; }
-    const shareTitle = eventClosest(event, '[data-action="share-title"]');
-    if (shareTitle) {
-      const item = itemById(shareTitle.dataset.id);
-      if (item) openShareDetail(item.id);
-      return;
-    }
-    const shareGroup = eventClosest(event, "[data-share-group]");
-    if (shareGroup) {
-      let ids = [];
-      try { ids = JSON.parse(shareGroup.dataset.shareIds || "[]"); } catch (_) {}
-      const selected = ids.map(itemById).filter(Boolean);
-      openShareList(shareGroup.getAttribute("aria-label")?.replace(/^Share\s+/i, "") || "Collection", selected);
-      return;
-    }
     const detailStatus = eventClosest(event, "[data-detail-status-btn]");
     if (detailStatus) {
       const item = itemById(detailItemId);
@@ -2960,6 +2913,14 @@
     }
     const csInsert = eventClosest(event, "[data-cs-insert]");
     if (csInsert) { const input = $("#custom-source-form")?.elements.searchUrl; if (input) { const at = input.selectionStart ?? input.value.length; input.setRangeText(csInsert.dataset.csInsert, at, input.selectionEnd ?? at, "end"); input.focus(); } return; }
+    const sourceKeyToggle = eventClosest(event, "[data-toggle-source-key]");
+    if (sourceKeyToggle) {
+      const input = $(`[data-source-api-key="${CSS.escape(sourceKeyToggle.dataset.toggleSourceKey)}"]`);
+      if (input) { const reveal = input.type === "password"; input.type = reveal ? "text" : "password"; sourceKeyToggle.textContent = reveal ? "Hide" : "Show"; sourceKeyToggle.setAttribute("aria-label", `${reveal ? "Hide" : "Show"} API key`); sourceKeyToggle.setAttribute("aria-pressed", String(reveal)); }
+      return;
+    }
+    const sourceTest = eventClosest(event, "[data-test-metadata-source]");
+    if (sourceTest) { testMetadataSource(sourceTest.dataset.testMetadataSource, sourceTest); return; }
     if (eventClosest(event, "[data-custom-source-test]")) { testCustomSourceForm(); return; }
     if (eventClosest(event, "[data-custom-source-delete]")) { deleteCustomSource(); return; }
     const statsCategoryButton = eventClosest(event, "[data-stats-category]");
@@ -3122,6 +3083,8 @@
       toast(undo ? `${changedCount} episodes marked unwatched.` : `${changedCount} episodes marked watched.${skipped ? ` ${skipped} upcoming ${skipped === 1 ? "episode" : "episodes"} skipped.` : ""}`);
       return;
     }
+    const caughtUp = eventClosest(event, "[data-watchlist-caught-up]");
+    if (caughtUp) { event.preventDefault(); event.stopPropagation(); toast("Caught up. Waiting for the next episode."); return; }
     const episode = eventClosest(event, "[data-episode-toggle]");
     if (episode) {
       const watchlistCard = episode.dataset.watchlistCard || "";
@@ -3178,8 +3141,9 @@
     }
     const layoutToggle = eventClosest(event, "[data-ratings-layout]");
     if (layoutToggle) {
-      const grid = layoutToggle.closest(".ep-ratings"), next = grid.dataset.layout === "vertical" ? "horizontal" : "vertical";
-      grid.dataset.layout = next; layoutToggle.textContent = next === "vertical" ? "Horizontal" : "Vertical";
+      const grid = layoutToggle.closest(".ep-ratings"), next = layoutToggle.dataset.ratingsLayout === "horizontal" ? "horizontal" : "vertical";
+      grid.dataset.layout = next; grid.dataset.layoutMode = "manual";
+      syncRatingsLayoutControls(grid, next, false);
       try { localStorage.setItem("screenmark_ratings_layout", next); } catch (_) {}
       return;
     }

@@ -356,7 +356,12 @@ body[data-theme=light] .settings-detail-page .settings-search { background:var(-
 .backup-folder-manager { margin:0 0 22px; }
 .backup-folder-manager h2 { margin:0 0 8px; font-size:.95rem; }
 .backup-folder-location { overflow-wrap:anywhere; }
-.backup-folder-actions { display:flex; flex-wrap:wrap; gap:9px; margin-top:14px; }
+.backup-folder-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:16px; }
+.backup-folder-actions .button { display:inline-flex; align-items:center; justify-content:center; gap:8px; width:100%; min-width:0; min-height:44px; padding:0 11px; border-radius:13px; font-size:.8rem; font-weight:700; white-space:nowrap; }
+.backup-folder-actions .button svg { flex:none; width:17px; height:17px; }
+.backup-folder-actions .backup-folder-choose { background:var(--accent); color:var(--accent-foreground,#fff); box-shadow:0 3px 9px color-mix(in srgb,var(--accent) 20%,transparent); }
+.backup-folder-actions .backup-folder-check { border:1px solid var(--line); background:var(--surface-2); color:var(--legacy-text,#111827); }
+.backup-folder-actions .button:disabled { opacity:.5; box-shadow:none; }
 .storage-folder-gate[hidden] { display:none; }
 .storage-folder-gate { position:fixed; inset:0; z-index:10000; display:grid; place-items:center; padding:20px; background:rgba(2,6,23,.88); backdrop-filter:blur(12px); }
 .storage-folder-gate-card { width:min(100%,420px); padding:26px; border:1px solid var(--line); border-radius:22px; background:var(--surface); color:inherit; text-align:center; box-shadow:0 24px 80px rgba(0,0,0,.45); }
@@ -393,6 +398,7 @@ body[data-bar-layout=center] .nav-button,body[data-bar-layout=left] .nav-button 
 body[data-bar-style=box] .nav-button.active .nav-icon { background:var(--accent-soft); }
 body[data-bar-style=icon-color] .nav-button.active { color:var(--muted); }
 body[data-bar-style=icon-color] .nav-button.active .nav-icon { background:transparent; color:var(--accent-text,var(--accent)); }
+body[data-theme=light][data-bar-style=icon-color] .bottom-bar .nav-button.active .nav-icon { color:var(--accent); }
 body[data-bar-style=underline] .nav-button.active .nav-icon { background:transparent; }
 body[data-bar-labels=icons-only] .nav-button span:last-child { display:none; }
 body[data-bar-labels=labels-only] .nav-button .nav-icon { display:none; }

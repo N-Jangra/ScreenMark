@@ -704,6 +704,19 @@
       ].filter(section => section.items.length) };
     }
     if (ref.type === "character") {
+      const anilistCharacter = String(ref.id).match(/^anilist-character:(\d+)$/);
+      if (anilistCharacter) {
+        const characterId = Number(anilistCharacter[1]);
+        const query = `query($id:Int){Character(id:$id){id name{full native} image{large medium} description siteUrl media(sort:POPULARITY_DESC,perPage:15){nodes{id title{english romaji}format startDate{year}coverImage{medium}}}}}`;
+        const result = anilistResponse(await get("https://graphql.anilist.co", { ...settings, method: "POST", headers: POST_JSON, body: JSON.stringify({ query, variables: { id: characterId } }) }));
+        const character = result.Character;
+        if (!character) throw new Error("AniList could not load this character.");
+        const media = (character.media?.nodes || []).map(row => {
+          const category = row.format === "MOVIE" ? "movie" : "series", title = row.title?.english || row.title?.romaji || "Untitled";
+          return { id: row.id, title, image: row.coverImage?.medium || "", meta: [row.format, row.startDate?.year].filter(Boolean).join(" · "), ref: { type: "show", id: row.id, title, extra: { source: "anilist", category } } };
+        });
+        return { type: "character", source: "AniList", title: character.name?.full || ref.title || "Unknown", image: character.image?.large || character.image?.medium || "", url: character.siteUrl || `https://anilist.co/character/${characterId}`, description: clean(character.description || ""), facts: character.name?.native ? [["Also known as", character.name.native]] : [], sections: media.length ? [{ title: "Appears in", kind: "shows", items: media }] : [] };
+      }
       const character = await get(`${base}/characters/${id}`, settings), extra = ref.extra || {};
       const actors = extra.person ? [{ title: extra.person.name, image: extra.person.image || "", ref: { type: "person", id: extra.person.id, title: extra.person.name } }] : [];
       const shows = extra.show ? [{ id: extra.show.id, title: extra.show.name, image: extra.show.image || "", meta: "Series" }] : [];
