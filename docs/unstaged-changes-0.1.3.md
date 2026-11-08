@@ -1,6 +1,6 @@
 # Unstaged changes report — ScreenMark 0.1.3
 
-Point-in-time inventory of the working tree relative to `HEAD`. The listed paths are unstaged; this report does not stage, commit, or change them. Untracked paths are intentionally included so reviewers can see new files alongside modified and deleted files. Run `git status --short` again before relying on this snapshot because working-tree status can change.
+Historical snapshot captured immediately before the grouped 0.1.3 commit sequence. At capture time, the listed paths were unstaged relative to `HEAD`; the report itself was also untracked. The work has since been committed, so this file records the pre-commit inventory rather than the current working-tree state. Run `git status --short` for current status. Untracked paths are included so reviewers can see new files alongside modified and deleted files.
 
 The 0.1.3 work represented here spans release and technical documentation, Android storage and backup handling, frontend/provider and IndexedDB behavior, detail/watchlist/theme/motion UI, tests, and logo assets. Consult source diffs for implementation details.
 
@@ -105,4 +105,4 @@ The 0.1.3 work represented here spans release and technical documentation, Andro
 
 ## Staging state
 
-No staged changes were present when this snapshot was generated.
+No staged changes were present when this snapshot was generated. The listed unstaged changes were subsequently committed in focused groups.
