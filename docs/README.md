@@ -2,7 +2,7 @@
 
 These guides describe ScreenMark 0.1.3: a local-first movie and TV-series tracker with source-separated discovery, title and episode details, progress history, lazy artwork, section-specific loading placeholders, adaptive low-resource motion and Android storage.
 
-- [App walkthrough](app-walkthrough.md) — current pages, status behavior, sharing and main settings.
+- [App walkthrough](app-walkthrough.md) — current pages, status behavior and main settings.
 - [Metadata sources](metadata.md) — provider coverage, API keys and source behavior.
 - [Data schema](db-schema.md) — stored library, history, and preferences.
 - [Storage](storage.md) — browser mirror and Android encrypted storage.

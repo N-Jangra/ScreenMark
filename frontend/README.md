@@ -7,7 +7,6 @@
 - `app.js` — app state, routing, interactions, persistence, page context, episode-driven status automation, and the shared poster image helper. Library thumbnails resolve from the bounded IndexedDB Blob cache near the viewport, with loading placeholders and failure fallback.
 - `app-config.js` — app name, categories, labels, and app-specific defaults.
 - `components/library.js` — shared episode progress calculations.
-- `components/share.js` — collection PDF generation, preview, saving and sharing; `components/share-title.js` handles an individual title's share sheet.
 - `pages/discover.js` — online Discover markup (type switch, suggestions).
 - `pages/add.js` — Add / Edit page (Movie or TV series).
 - `pages/profile.js` — profile, favorites collections and show/movie watchlists.

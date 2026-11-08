@@ -8,16 +8,13 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 
 - Appearance now offers a charcoal Dark theme alongside System, Light and AMOLED. Bottom navigation adds filled-pill and minimal active states, names-only labels, and more per-destination icon choices.
 - Settings → Animations adds Slow motion, Zoom page transitions, Scale sheets and dialogs, Fade tap feedback, Smooth/Snappy/Spring progress styles, and Shimmer/Soft pulse/Static placeholders. Choices persist, reset to defaults, and respect reduced-motion and low-resource settings.
-- PDF sharing adds List/Poster grid views, App/Light/Dark themes, an optional title page and a live layout preview for whole collections; individual movie and series exports add Detailed/Compact views, theme choices and a first-page preview.
-
 - A Node test suite for every local HTTP route, built-in metadata search and detail dispatch, custom-source mapping, and IndexedDB/data-worker operations (`npm test`).
 - Source-specific detail navigation for series, movies, episodes, cast and related titles, keeping supported content in ScreenMark's shared UI.
 - AniList anime series load paginated episode data by AniList's MyAnimeList ID through Tenrai, with paced/retried requests and alternate-title, year-aware TVmaze fallback when no Tenrai guide is available.
 - Bounded metadata refresh concurrency with automatic checks for saved titles and retry/resume handling.
 - Metadata sync progress uses compact local records, resumes legacy interrupted entries, and preserves completed history when no refresh is due.
-- IndexedDB thumbnail cleanup and bounded object URL caching, plus cache limits for generated share files.
+- IndexedDB thumbnail cleanup and bounded object URL caching.
 - Thumbnail downloads enforce a streaming byte limit before buffering, cap both output dimensions, and release decoded bitmap resources after processing.
-- Share PDF cover and screenshot loading is bounded on low-memory devices, timed-out late images are released, and generated share bitmaps are closed after rendering.
 - Lazy image reads from the saved Android folder can request a 16 MB cap; archive and migration reads remain unbounded so large backup data is preserved.
 - Library, collection, watchlist and detail posters now load local cached thumbnails on demand, with visible artwork placeholders until the image is ready or when it is unavailable.
 - Lazy metadata, gallery, episode and match artwork uses asynchronous decoding and hides broken images while preserving the surrounding placeholder surface.
@@ -33,6 +30,9 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 - Metadata, saved-folder import, artwork hydration and folder-mirroring workers now claim queue jobs with constant-time cursors rather than repeated array front-removal.
 - Concurrent workers recheck cursor bounds after idle/network waits to prevent duplicate or out-of-range claims at the end of a queue.
 - Verified overlapping IndexedDB scoped/full write ordering in an isolated browser context; removed unused settings-template arguments and data.
+
+### Changed
+
 - Background source refresh now omits cast, recommendation and gallery payloads and avoids recommendation fan-out; interactive detail pages retain those sections.
 - Detail loading reserves correctly shaped synopsis, facts, artwork and episode placeholders only where data is missing; shimmer is enabled by default and respects motion and low-end settings.
 - Movie details now group content into Overview, Details, Media, Ratings and Cast & Crew tabs when each section has data; the movie tab row scrolls horizontally on narrow screens instead of compressing labels.
@@ -48,9 +48,6 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 - Metadata provider responses and cached JSON are streamed and capped at 12 MB before parsing or caching, limiting oversized-payload memory spikes on low-memory devices.
 - Startup reconciliation now tracks scoped item and preference mutations instead of serializing a duplicate copy of every library record on the UI thread; imports and history clearing use incremental persistence.
 - Startup now waits for the initial library restore, plays the complete intro animation (including its configured repeat), and holds the finished mark for 500 ms before showing app data. A stalled GIF falls back to the static mark without bypassing the data-ready check.
-
-### Changed
-
 - Detail skeletons now use one subtle animated sweep per placeholder section instead of animating every bar; cold series expose the Episodes tab and skeleton immediately, empty Synopsis placeholders do not duplicate the empty overview card, and shimmer-off/reduced-motion/low-resource settings suppress the sweep.
 - Removed the app-wide floating Add button; manual entry now starts from the Add manually button in the Profile header, keeping library and detail pages clear.
 - Library persistence writes changed records incrementally through a data worker, with smaller database indexes and bounded background artwork hydration.
@@ -97,11 +94,16 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 - Watchlist and Upcoming cards use shared image handling for remote URL routing, local thumbnail cache hydration and image failure placeholders across list, poster and card layouts; local artwork begins loading earlier near the viewport.
 - Route transitions no longer compete between base and motion stylesheets; route, sheet, press and progress motion use consistent easing while honoring reduced-motion and low-resource preferences.
 - Detail-page Light theme styling keeps title, movie, episode, cast and character screens consistent: artwork fades blend into light surfaces, episode overlay copy and badges remain legible, portrait framing uses restrained shadows, and floating controls follow active theme tokens.
+- Device review improved Light theme contrast for accent-colored text on Upcoming and detail pages by using the theme's contrast-adjusted accent text color while preserving accent fills.
+- AniList character links in staff biographies open an in-app character profile with an overview and related titles; biography links and emphasis render as formatted content.
+- Unaired next episodes show a “Caught up” control on watchlists, and unaired episode rows show a day countdown instead of a tracking checkbox. Tapping “Caught up” explains that the next episode has not aired.
+- Discover search input and submit controls now share a consistent height, and the search field no longer shows a nested browser-default border.
 - Removed stale frontend page and icon references no longer included in the app shell.
 
 ### Removed
 
 - The unreachable legacy Dashboard renderer and its script include; Dashboard and Search hashes remain supported aliases to Discover.
+- Collection and title sharing controls, PDF generation, and the Android ShareIntent bridge.
 
 ## [0.1.2] — 2026-11-07
 
