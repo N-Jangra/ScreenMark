@@ -12,15 +12,15 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "light", textSize: "normal", dateFormat: "auto", imageStorage: "all", reduceMotion: false, animationSpeed: "fast", pageTransition: "slide", sheetAnimation: "slide", pressEffect: "shrink", progressAnimation: true, progressStyle: "smooth", skeletonShimmer: true, placeholderAnimation: "shimmer", mainColor: "default", accentColorDefaultVersion: 2,
+    theme: "system", textSize: "normal", dateFormat: "auto", imageStorage: "all", reduceMotion: false, animationSpeed: "fast", pageTransition: "slide", sheetAnimation: "slide", pressEffect: "shrink", progressAnimation: true, progressStyle: "smooth", skeletonShimmer: true, placeholderAnimation: "shimmer", mainColor: "default", accentColorDefaultVersion: 2,
     showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, navIcons: { discover: "bookmark", "series-watchlist": "tv", "movie-watchlist": "clapperboard", profile: "user-round" },
     navBar: { order: navKeys, visible: { "series-watchlist": true, "movie-watchlist": true, discover: true, profile: true } },
-    metadataSourceOrder: ["tvmaze", "anilist", "omdb"], customSources: [],
+    metadataSourceOrder: ["tvmaze", "imdb", "omdb", "tvdb", "tmdb", "rottentomatoes", "anilist", "kitsu", "jikan"], customSources: [],
     dashboardDefaultCategory: "series", cardCorners: "rounded",
     automaticCompletion: "automatic", defaultStatus: "",
     metadataSyncWorkers: 2, syncRequestDelay: 0, syncScope: "needed",
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30,
-    metadataMode: "online", metadataSources: { tvmaze: true, anilist: true, jikan: true, kitsu: true, omdb: false, imdb: true, rottentomatoes: true }, metadataRefreshInterval: "weekly", offlineFallback: "cached", thumbnailSize: "medium",
+    metadataMode: "online", metadataSources: { tvmaze: true, imdb: true, omdb: false, tvdb: false, tmdb: false, rottentomatoes: true, anilist: true, kitsu: false, jikan: false }, metadataRefreshInterval: "weekly", offlineFallback: "cached", thumbnailSize: "medium",
     backgroundBackups: false,
     apiKeys: {}, sourceOptions: {}
   };
