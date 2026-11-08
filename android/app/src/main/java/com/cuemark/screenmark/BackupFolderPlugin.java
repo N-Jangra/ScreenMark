@@ -17,12 +17,19 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import android.util.Base64;
 
 import com.getcapacitor.JSArray;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 
 // Lets the user pick a folder (via Android's Storage Access Framework tree picker)
 // to store ScreenMark backups in, and persists access to it across app restarts so
@@ -76,11 +83,16 @@ public class BackupFolderPlugin extends Plugin {
 
     // ---- Chunked export: "Save as" picker or backup folder, then many small writes (no giant bridge message). ----
     // Own thread so an export is never stuck behind a long folder sync.
-    private final ExecutorService exportExecutor = Executors.newSingleThreadExecutor(runnable -> { Thread t = new Thread(runnable, "SavePoint-Export"); t.setDaemon(true); return t; });
+    private final ExecutorService exportExecutor = Executors.newSingleThreadExecutor(runnable -> { Thread t = new Thread(runnable, "ScreenMark-Export"); t.setDaemon(true); return t; });
     private OutputStream exportStream;
 
     private synchronized void closeExportStream() {
-        if (exportStream != null) { try { exportStream.flush(); exportStream.close(); } catch (Exception ignored) {} exportStream = null; }
+        OutputStream stream = exportStream;
+        exportStream = null;
+        if (stream != null) {
+            try { stream.flush(); } catch (Exception ignored) {}
+            try { stream.close(); } catch (Exception ignored) {}
+        }
     }
 
     @PluginMethod
@@ -88,7 +100,7 @@ public class BackupFolderPlugin extends Plugin {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType(call.getString("mimeType", "application/json"));
-        intent.putExtra(Intent.EXTRA_TITLE, call.getString("fileName", "savepoint-backup.json"));
+        intent.putExtra(Intent.EXTRA_TITLE, call.getString("fileName", "screenmark-backup.json"));
         startActivityForResult(call, intent, "createDocumentResult");
     }
 
@@ -115,7 +127,7 @@ public class BackupFolderPlugin extends Plugin {
                 JSObject out = new JSObject();
                 out.put("uri", uri.toString());
                 call.resolve(out);
-            } catch (Exception e) { call.reject("Could not create the file: " + e.getMessage(), e); }
+            } catch (Exception e) { closeExportStream(); call.reject("Could not create the file: " + e.getMessage(), e); }
         });
     }
 
@@ -123,6 +135,7 @@ public class BackupFolderPlugin extends Plugin {
     public void beginFolderExport(PluginCall call) {
         exportExecutor.execute(() -> {
             try {
+                closeExportStream();
                 String treeUriStr = call.getString("uri"), fileName = call.getString("fileName");
                 if (treeUriStr == null || fileName == null) { call.reject("Missing 'uri' or 'fileName'"); return; }
                 Uri treeUri = Uri.parse(treeUriStr);
@@ -130,13 +143,12 @@ public class BackupFolderPlugin extends Plugin {
                 Uri existing = findChildDocument(treeUri, dirUri, fileName);
                 Uri target = existing != null ? existing : DocumentsContract.createDocument(getContext().getContentResolver(), dirUri, "application/json", fileName);
                 if (target == null) throw new Exception("Failed to create the file in the backup folder");
-                closeExportStream();
                 exportStream = getContext().getContentResolver().openOutputStream(target, "wt");
                 if (exportStream == null) throw new Exception("Could not open the file for writing");
                 JSObject out = new JSObject();
                 out.put("uri", target.toString());
                 call.resolve(out);
-            } catch (Exception e) { call.reject("Could not start the export: " + e.getMessage(), e); }
+            } catch (Exception e) { closeExportStream(); call.reject("Could not start the export: " + e.getMessage(), e); }
         });
     }
 
@@ -189,14 +201,9 @@ public class BackupFolderPlugin extends Plugin {
                 return;
             }
 
-            OutputStream out = getContext().getContentResolver().openOutputStream(targetUri, "wt");
-            if (out == null) {
-                call.reject("Failed to open backup file for writing");
-                return;
-            }
-            out.write(content.getBytes(StandardCharsets.UTF_8));
-            out.flush();
-            out.close();
+            OutputStream stream = getContext().getContentResolver().openOutputStream(targetUri, "wt");
+            if (stream == null) throw new Exception("Failed to open backup file for writing");
+            try (OutputStream out = stream) { out.write(content.getBytes(StandardCharsets.UTF_8)); }
 
             JSObject result = new JSObject();
             result.put("success", true);
@@ -221,19 +228,14 @@ public class BackupFolderPlugin extends Plugin {
 
         try {
             Uri uri = Uri.parse(uriStr);
-            InputStream in = getContext().getContentResolver().openInputStream(uri);
-            if (in == null) {
-                call.reject("Failed to open file for reading");
-                return;
-            }
-
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             byte[] chunk = new byte[8192];
-            int bytesRead;
-            while ((bytesRead = in.read(chunk)) != -1) {
-                buffer.write(chunk, 0, bytesRead);
+            InputStream stream = getContext().getContentResolver().openInputStream(uri);
+            if (stream == null) throw new Exception("Failed to open file for reading");
+            try (InputStream in = stream) {
+                int bytesRead;
+                while ((bytesRead = in.read(chunk)) != -1) buffer.write(chunk, 0, bytesRead);
             }
-            in.close();
 
             JSObject result = new JSObject();
             result.put("content", buffer.toString("UTF-8"));
@@ -259,19 +261,20 @@ public class BackupFolderPlugin extends Plugin {
 
         try {
             Uri uri = Uri.parse(uriStr);
-            InputStream in = getContext().getContentResolver().openInputStream(uri);
-            if (in == null) {
-                call.reject("Failed to open file for reading");
-                return;
-            }
-
+            int maxBytes = Math.max(0, call.getInt("maxBytes", 0));
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             byte[] chunk = new byte[8192];
-            int bytesRead;
-            while ((bytesRead = in.read(chunk)) != -1) {
-                buffer.write(chunk, 0, bytesRead);
+            long totalBytes = 0;
+            InputStream stream = getContext().getContentResolver().openInputStream(uri);
+            if (stream == null) throw new Exception("Failed to open file for reading");
+            try (InputStream in = stream) {
+                int bytesRead;
+                while ((bytesRead = in.read(chunk)) != -1) {
+                    totalBytes += bytesRead;
+                    if (maxBytes > 0 && totalBytes > maxBytes) throw new Exception("Binary file exceeds the requested size limit");
+                    buffer.write(chunk, 0, bytesRead);
+                }
             }
-            in.close();
 
             JSObject result = new JSObject();
             result.put("base64Content", Base64.encodeToString(buffer.toByteArray(), Base64.NO_WRAP));
@@ -387,6 +390,13 @@ public class BackupFolderPlugin extends Plugin {
         getContext().getSharedPreferences("screenmark_backup_location", android.content.Context.MODE_PRIVATE)
             .edit().putString("uri", uri).apply();
         call.resolve(new JSObject().put("success", true));
+    }
+
+    @PluginMethod
+    public void getRememberedFolder(PluginCall call) {
+        String uri = getContext().getSharedPreferences("screenmark_backup_location", android.content.Context.MODE_PRIVATE)
+            .getString("uri", "");
+        call.resolve(new JSObject().put("uri", uri));
     }
 
     private void doHasPersistedFolder(PluginCall call) {
@@ -535,14 +545,9 @@ public class BackupFolderPlugin extends Plugin {
             Uri dirUri = getOrCreateDir(treeUri, dirPath);
             Uri fileUri = getOrCreateFile(treeUri, dirUri, fileName, "application/json");
 
-            OutputStream out = getContext().getContentResolver().openOutputStream(fileUri, "wt");
-            if (out == null) {
-                call.reject("Failed to open file for writing");
-                return;
-            }
-            out.write(content.getBytes(StandardCharsets.UTF_8));
-            out.flush();
-            out.close();
+            OutputStream stream = getContext().getContentResolver().openOutputStream(fileUri, "wt");
+            if (stream == null) throw new Exception("Failed to open file for writing");
+            try (OutputStream out = stream) { out.write(content.getBytes(StandardCharsets.UTF_8)); }
 
             JSObject result = new JSObject();
             result.put("success", true);
@@ -579,14 +584,9 @@ public class BackupFolderPlugin extends Plugin {
 
             byte[] bytes = Base64.decode(base64Content, Base64.DEFAULT);
 
-            OutputStream out = getContext().getContentResolver().openOutputStream(fileUri, "wt");
-            if (out == null) {
-                call.reject("Failed to open file for writing");
-                return;
-            }
-            out.write(bytes);
-            out.flush();
-            out.close();
+            OutputStream stream = getContext().getContentResolver().openOutputStream(fileUri, "wt");
+            if (stream == null) throw new Exception("Failed to open file for writing");
+            try (OutputStream out = stream) { out.write(bytes); }
 
             JSObject result = new JSObject();
             result.put("success", true);
@@ -615,12 +615,59 @@ public class BackupFolderPlugin extends Plugin {
         storageExecutor.execute(() -> doExportTarArchive(call));
     }
 
+    // Reads both the legacy root-level database.json entry and the current
+    // screenmark-db/database.json entry. SAF stream reading stays off the UI thread.
+    @PluginMethod
+    public void readTarEntry(PluginCall call) {
+        storageExecutor.execute(() -> doReadTarEntry(call));
+    }
+
+    private void doReadTarEntry(PluginCall call) {
+        String uriStr = call.getString("uri");
+        String requested = call.getString("entryName");
+        if (uriStr == null || requested == null) {
+            call.reject("Missing 'uri' or 'entryName' parameter");
+            return;
+        }
+        try (InputStream raw = getContext().getContentResolver().openInputStream(Uri.parse(uriStr))) {
+            if (raw == null) throw new IOException("Failed to open archive");
+            try (TarArchiveInputStream tar = new TarArchiveInputStream(raw)) {
+                TarArchiveEntry entry;
+                while ((entry = tar.getNextTarEntry()) != null) {
+                    String name = entry.getName();
+                    boolean databaseAlias = requested.endsWith("_database.json") && name.endsWith("/database.json");
+                    if (!entry.isDirectory() && (requested.equals(name) ||
+                        ("database.json".equals(requested) && name.endsWith("/database.json")) || databaseAlias)) {
+                        // Avoid unbounded allocation from a damaged or malicious archive.
+                        final int maxBytes = 256 * 1024 * 1024;
+                        if (entry.getSize() < 0 || entry.getSize() > maxBytes) {
+                            throw new IOException("Archive database entry is too large");
+                        }
+                        ByteArrayOutputStream bytes = new ByteArrayOutputStream(
+                            (int) Math.min(entry.getSize(), 1024 * 1024));
+                        byte[] chunk = new byte[8192];
+                        int count;
+                        while ((count = tar.read(chunk)) != -1) {
+                            if (bytes.size() + count > maxBytes) throw new IOException("Archive database entry is too large");
+                            bytes.write(chunk, 0, count);
+                        }
+                        JSObject result = new JSObject();
+                        result.put("content", bytes.toString("UTF-8"));
+                        call.resolve(result);
+                        return;
+                    }
+                }
+            }
+            call.reject("Database entry was not found in the archive");
+        } catch (Exception e) {
+            call.reject("Failed to read TAR archive: " + e.getMessage(), e);
+        }
+    }
+
     private void doExportTarArchive(PluginCall call) {
         String treeUriStr = call.getString("uri");
         JSArray sourceDirPathArr = call.getArray("sourceDirPath");
         String tarFileName = call.getString("tarFileName");
-        String extraJsonFileName = call.getString("extraJsonFileName");
-        String extraJsonContent = call.getString("extraJsonContent");
 
         if (treeUriStr == null || sourceDirPathArr == null || tarFileName == null) {
             call.reject("Missing 'uri', 'sourceDirPath', or 'tarFileName' parameter");
@@ -630,6 +677,7 @@ public class BackupFolderPlugin extends Plugin {
         try {
             Uri treeUri = Uri.parse(treeUriStr);
             String[] sourceDirPath = jsArrayToStringArray(sourceDirPathArr);
+            String extraJsonFileName = call.getString("extraJsonFileName");
             Uri sourceDirUri = getOrCreateDir(treeUri, sourceDirPath);
             String rootFolderName = sourceDirPath[sourceDirPath.length - 1];
 
@@ -639,19 +687,22 @@ public class BackupFolderPlugin extends Plugin {
             );
             Uri tarUri = getOrCreateFile(treeUri, rootDir, tarFileName, "application/x-tar");
 
-            OutputStream rawOut = getContext().getContentResolver().openOutputStream(tarUri, "wt");
-            if (rawOut == null) {
-                call.reject("Failed to open tar file for writing");
-                return;
+            OutputStream stream = getContext().getContentResolver().openOutputStream(tarUri, "wt");
+            if (stream == null) throw new Exception("Failed to open tar file for writing");
+            try (TarArchiveOutputStream tar = new TarArchiveOutputStream(stream, "UTF-8")) {
+                tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
+                tar.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_POSIX);
+                tar.setAddPaxHeadersForNonAsciiNames(true);
+                // Keep the historical root entry so old restore clients continue
+                // to work; its source is the already-written folder database, not
+                // a large duplicate JSON string passed over the JS bridge.
+                Uri databaseUri = findChildDocument(treeUri, sourceDirUri, "database.json");
+                if (databaseUri != null && extraJsonFileName != null) {
+                    addFileToTar(treeUri, databaseUri, extraJsonFileName, tar);
+                }
+                addDirToTar(treeUri, sourceDirUri, rootFolderName, tar);
+                tar.finish();
             }
-
-            TarWriter tar = new TarWriter(rawOut);
-            if (extraJsonFileName != null && extraJsonContent != null) {
-                tar.writeEntry(extraJsonFileName, extraJsonContent.getBytes(StandardCharsets.UTF_8));
-            }
-            addDirToTar(treeUri, sourceDirUri, rootFolderName, tar);
-            tar.finish();
-            rawOut.close();
 
             JSObject result = new JSObject();
             result.put("success", true);
@@ -662,7 +713,7 @@ public class BackupFolderPlugin extends Plugin {
         }
     }
 
-    private void addDirToTar(Uri treeUri, Uri dirUri, String archivePathPrefix, TarWriter tar) throws Exception {
+    private void addDirToTar(Uri treeUri, Uri dirUri, String archivePathPrefix, TarArchiveOutputStream tar) throws Exception {
         Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
             treeUri,
             DocumentsContract.getDocumentId(dirUri)
@@ -680,81 +731,71 @@ public class BackupFolderPlugin extends Plugin {
 
         if (cursor == null) return;
 
-        while (cursor.moveToNext()) {
-            String docId = cursor.getString(0);
-            String name = cursor.getString(1);
-            String mimeType = cursor.getString(2);
-            Uri childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId);
-            String archivePath = archivePathPrefix + "/" + name;
+        try (Cursor rows = cursor) {
+            while (rows.moveToNext()) {
+                String docId = rows.getString(0);
+                String name = rows.getString(1);
+                String mimeType = rows.getString(2);
+                Uri childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId);
+                String archivePath = archivePathPrefix + "/" + name;
 
-            if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType)) {
-                addDirToTar(treeUri, childUri, archivePath, tar);
-            } else {
-                InputStream in = getContext().getContentResolver().openInputStream(childUri);
-                if (in == null) continue;
-                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-                byte[] chunk = new byte[8192];
-                int bytesRead;
-                while ((bytesRead = in.read(chunk)) != -1) {
-                    buffer.write(chunk, 0, bytesRead);
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType)) {
+                    addDirToTar(treeUri, childUri, archivePath, tar);
+                } else {
+                    addFileToTar(treeUri, childUri, archivePath, tar);
                 }
-                in.close();
-                tar.writeEntry(archivePath, buffer.toByteArray());
             }
         }
-        cursor.close();
     }
 
-    // Minimal POSIX (ustar) tar writer: 512-byte header per entry, content padded
-    // to a 512-byte boundary, and a 1024-byte zero-block trailer. No compression —
-    // gzip would need a native Deflater wrapper, and plain tar is enough here since
-    // the screenmark-db/ files (JSON + WebP) are already small and mostly incompressible.
-    private static class TarWriter {
-        private final OutputStream out;
-
-        TarWriter(OutputStream out) {
-            this.out = out;
+    private void addFileToTar(Uri treeUri, Uri fileUri, String archivePath, TarArchiveOutputStream tar) throws Exception {
+        long size = queryDocumentSize(treeUri, fileUri);
+        File staged = null;
+        if (size < 0) {
+            // SAF usually reports file sizes. If a cloud provider does not, stage
+            // one file at a time so TAR can still write a known-size entry without
+            // retaining the library or file contents in heap memory.
+            staged = File.createTempFile("screenmark-tar-", ".part", getContext().getCacheDir());
+            try (InputStream in = getContext().getContentResolver().openInputStream(fileUri);
+                 OutputStream out = new FileOutputStream(staged)) {
+                if (in == null) throw new IOException("Failed to open backup item");
+                size = copy(in, out);
+            }
         }
-
-        void writeEntry(String path, byte[] content) throws Exception {
-            byte[] header = new byte[512];
-            byte[] nameBytes = path.getBytes(StandardCharsets.UTF_8);
-            System.arraycopy(nameBytes, 0, header, 0, Math.min(nameBytes.length, 100));
-
-            writeOctal(header, 100, 8, 0644);
-            writeOctal(header, 108, 8, 0);
-            writeOctal(header, 116, 8, 0);
-            writeOctal(header, 124, 12, content.length);
-            writeOctal(header, 136, 12, System.currentTimeMillis() / 1000);
-            header[156] = '0';
-            System.arraycopy("ustar\0".getBytes(StandardCharsets.US_ASCII), 0, header, 257, 6);
-            System.arraycopy("00".getBytes(StandardCharsets.US_ASCII), 0, header, 263, 2);
-
-            for (int i = 148; i < 156; i++) header[i] = ' ';
-            int checksum = 0;
-            for (byte b : header) checksum += (b & 0xFF);
-            writeOctal(header, 148, 8, checksum);
-            header[154] = 0;
-
-            out.write(header);
-            out.write(content);
-            int padding = (512 - (content.length % 512)) % 512;
-            if (padding > 0) out.write(new byte[padding]);
-        }
-
-        void finish() throws Exception {
-            out.write(new byte[1024]);
-        }
-
-        private void writeOctal(byte[] header, int offset, int length, long value) {
-            String octal = Long.toOctalString(value);
-            int padLength = length - 1 - octal.length();
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < padLength; i++) sb.append('0');
-            sb.append(octal);
-            byte[] bytes = sb.toString().getBytes(StandardCharsets.US_ASCII);
-            System.arraycopy(bytes, 0, header, offset, Math.min(bytes.length, length - 1));
-            header[offset + length - 1] = 0;
+        try {
+            TarArchiveEntry entry = new TarArchiveEntry(archivePath);
+            entry.setSize(size);
+            tar.putArchiveEntry(entry);
+            try (InputStream in = staged == null
+                    ? getContext().getContentResolver().openInputStream(fileUri)
+                    : new FileInputStream(staged)) {
+                if (in == null) throw new IOException("Failed to open backup item");
+                long copied = copy(in, tar);
+                if (copied != size) throw new IOException("Backup item changed while it was being archived");
+            }
+            tar.closeArchiveEntry();
+        } finally {
+            if (staged != null && staged.exists()) staged.delete();
         }
     }
+
+    private long queryDocumentSize(Uri treeUri, Uri fileUri) {
+        try (Cursor cursor = getContext().getContentResolver().query(fileUri,
+                new String[] { DocumentsContract.Document.COLUMN_SIZE }, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) return cursor.getLong(0);
+        } catch (Exception ignored) {}
+        return -1;
+    }
+
+    private long copy(InputStream in, OutputStream out) throws IOException {
+        byte[] chunk = new byte[32 * 1024];
+        long total = 0;
+        int count;
+        while ((count = in.read(chunk)) != -1) {
+            out.write(chunk, 0, count);
+            total += count;
+        }
+        return total;
+    }
+
 }

@@ -4,21 +4,27 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.File;
 
-// Clears only the Android WebView HTTP/resource cache. It does not clear
-// localStorage, app data, backups, or the user's saved folder permission.
+// Clears temporary response/share files without touching the library, backups,
+// preferences, or the user's saved folder permission.
 @CapacitorPlugin(name = "CacheManager")
 public class CacheManagerPlugin extends Plugin {
     @PluginMethod
     public void clearWebViewCache(PluginCall call) {
         try {
             getBridge().getWebView().clearCache(true);
-            call.resolve();
         } catch (Exception e) {
-            // WebView cache clearing is best-effort. Cache Storage and the
-            // thumbnail data kept in app state must remain usable even when
-            // Android has no WebView cache directory to clear.
-            call.resolve();
+            // Continue with app-owned temporary files if WebView clearing fails.
         }
+        deleteTree(new File(getContext().getCacheDir(), "shared-images"));
+        call.resolve();
+    }
+
+    private static void deleteTree(File file) {
+        if (!file.exists()) return;
+        File[] children = file.listFiles();
+        if (children != null) for (File child : children) deleteTree(child);
+        file.delete();
     }
 }

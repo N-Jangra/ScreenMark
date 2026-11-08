@@ -40,6 +40,10 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -49,6 +53,12 @@ import java.util.concurrent.Executors;
 public class ShareIntentPlugin extends Plugin {
     private final ExecutorService imageExecutor = Executors.newSingleThreadExecutor();
     private static final String DOWNLOAD_CHANNEL_ID = "image-downloads";
+
+    @Override
+    public void load() {
+        super.load();
+        pruneSharedImages(new File(getContext().getCacheDir(), "shared-images"), null);
+    }
 
     @PluginMethod
     public void getInitialShare(PluginCall call) {
@@ -95,6 +105,31 @@ public class ShareIntentPlugin extends Plugin {
     private File chunkFile;
     private FileOutputStream chunkOut;
 
+    private synchronized void clearChunk(boolean deleteFile) {
+        File old = chunkFile;
+        chunkFile = null;
+        if (chunkOut != null) { try { chunkOut.close(); } catch (Exception ignored) {} chunkOut = null; }
+        if (deleteFile && old != null) old.delete();
+    }
+
+    private void pruneSharedImages(File directory, File protectedFile) {
+        File[] files = directory.listFiles();
+        if (files == null || files.length == 0) return;
+        Set<File> staged;
+        synchronized (stagedImages) { staged = new HashSet<>(stagedImageFiles); }
+        Arrays.sort(files, Comparator.comparingLong(File::lastModified));
+        long cutoff = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000;
+        long total = 0; int remaining = files.length;
+        for (File file : files) total += file.length();
+        for (File file : files) {
+            if ((protectedFile != null && file.equals(protectedFile)) || staged.contains(file)) continue;
+            if (file.lastModified() < cutoff || remaining > 40 || total > 96L * 1024 * 1024) {
+                long size = file.length();
+                if (file.delete()) { total -= size; remaining--; }
+            }
+        }
+    }
+
     @PluginMethod
     public void beginFile(PluginCall call) {
         String ext = call.getString("extension", "pdf").replaceAll("[^A-Za-z0-9]", "");
@@ -103,14 +138,15 @@ public class ShareIntentPlugin extends Plugin {
         imageExecutor.execute(() -> {
             try {
                 synchronized (this) {
-                    if (chunkOut != null) { try { chunkOut.close(); } catch (Exception ignored) {} chunkOut = null; }
+                    clearChunk(true);
                     File directory = new File(getContext().getCacheDir(), "shared-images");
                     if (!directory.exists() && !directory.mkdirs()) throw new Exception("Could not prepare the file.");
+                    pruneSharedImages(directory, null);
                     chunkFile = new File(directory, UUID.randomUUID() + "-" + safeName + "." + ext);
                     chunkOut = new FileOutputStream(chunkFile);
                 }
                 call.resolve();
-            } catch (Exception error) { call.reject(error.getMessage() == null ? "Could not start the file." : error.getMessage(), error); }
+            } catch (Exception error) { synchronized (this) { clearChunk(true); } call.reject(error.getMessage() == null ? "Could not start the file." : error.getMessage(), error); }
         });
     }
 
@@ -124,7 +160,7 @@ public class ShareIntentPlugin extends Plugin {
                     chunkOut.write(android.util.Base64.decode(data, android.util.Base64.DEFAULT));
                 }
                 call.resolve();
-            } catch (Exception error) { call.reject(error.getMessage() == null ? "Could not write the file." : error.getMessage(), error); }
+            } catch (Exception error) { synchronized (this) { clearChunk(true); } call.reject(error.getMessage() == null ? "Could not write the file." : error.getMessage(), error); }
         });
     }
 
@@ -134,12 +170,13 @@ public class ShareIntentPlugin extends Plugin {
         String name = call.getString("filename", "ScreenMark").replaceAll("[^A-Za-z0-9._-]", "-").replaceAll("\\.+$", "");
         final String safeName = name.isEmpty() ? "ScreenMark" : name;
         imageExecutor.execute(() -> {
+            File source = null;
             try {
-                File source;
                 synchronized (this) {
                     if (chunkOut == null || chunkFile == null) throw new Exception("No file to save.");
                     chunkOut.close(); chunkOut = null;
                     source = chunkFile;
+                    chunkFile = null;
                 }
                 byte[] bytes = java.nio.file.Files.readAllBytes(source.toPath());
                 String location = saveDownload(safeName, new ImageData(bytes, mime));
@@ -147,7 +184,8 @@ public class ShareIntentPlugin extends Plugin {
                 boolean notified = postDownloadNotification(actualName, location);
                 JSObject result = new JSObject(); result.put("location", location); result.put("notification", notified);
                 call.resolve(result);
-            } catch (Exception error) { call.reject(error.getMessage() == null ? "Could not save the file." : error.getMessage(), error); }
+            } catch (Exception error) { synchronized (this) { clearChunk(true); } call.reject(error.getMessage() == null ? "Could not save the file." : error.getMessage(), error); }
+            finally { if (source != null) source.delete(); }
         });
     }
 
@@ -156,12 +194,14 @@ public class ShareIntentPlugin extends Plugin {
         String mime = call.getString("mimeType", "application/pdf");
         String title = call.getString("title", "ScreenMark");
         imageExecutor.execute(() -> {
+            File source = null;
             try {
                 final Uri uri;
                 synchronized (this) {
                     if (chunkOut == null || chunkFile == null) throw new Exception("No file to share.");
                     chunkOut.close(); chunkOut = null;
-                    uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", chunkFile);
+                    source = chunkFile; chunkFile = null;
+                    uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", source);
                 }
                 getActivity().runOnUiThread(() -> {
                     try {
@@ -176,7 +216,7 @@ public class ShareIntentPlugin extends Plugin {
                         call.resolve();
                     } catch (Exception error) { call.reject("Could not open Android sharing.", error); }
                 });
-            } catch (Exception error) { call.reject(error.getMessage() == null ? "Could not share the file." : error.getMessage(), error); }
+            } catch (Exception error) { if (source != null) source.delete(); synchronized (this) { clearChunk(true); } call.reject(error.getMessage() == null ? "Could not share the file." : error.getMessage(), error); }
         });
     }
 
@@ -194,6 +234,7 @@ public class ShareIntentPlugin extends Plugin {
                 byte[] bytes = android.util.Base64.decode(data, android.util.Base64.DEFAULT);
                 File directory = new File(getContext().getCacheDir(), "shared-images");
                 if (!directory.exists() && !directory.mkdirs()) throw new Exception("Could not prepare the file.");
+                pruneSharedImages(directory, chunkFile);
                 File file = new File(directory, UUID.randomUUID() + "-" + safeName + "." + ext);
                 try (FileOutputStream output = new FileOutputStream(file)) { output.write(bytes); }
                 Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
@@ -217,8 +258,17 @@ public class ShareIntentPlugin extends Plugin {
     // Multi-image share: images are staged one at a time (keeps each bridge call small), then sent together.
     private final java.util.ArrayList<Uri> stagedImages = new java.util.ArrayList<>();
 
+    private final java.util.ArrayList<File> stagedImageFiles = new java.util.ArrayList<>();
+
     @PluginMethod
-    public void clearStagedImages(PluginCall call) { synchronized (stagedImages) { stagedImages.clear(); } call.resolve(); }
+    public void clearStagedImages(PluginCall call) {
+        synchronized (stagedImages) {
+            stagedImages.clear();
+            for (File file : stagedImageFiles) file.delete();
+            stagedImageFiles.clear();
+        }
+        call.resolve();
+    }
 
     @PluginMethod
     public void stageImage(PluginCall call) {
@@ -227,20 +277,21 @@ public class ShareIntentPlugin extends Plugin {
         if (source.isEmpty()) { call.reject("The image source is empty."); return; }
         final String safeName = name.isEmpty() ? "ScreenMark-image" : name;
         imageExecutor.execute(() -> {
+            File cached = null;
             try {
                 ImageData image = readImage(source);
-                File cached = cacheImage(safeName, image);
+                cached = cacheImage(safeName, image);
                 Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", cached);
-                synchronized (stagedImages) { stagedImages.add(uri); }
+                synchronized (stagedImages) { stagedImages.add(uri); stagedImageFiles.add(cached); }
                 call.resolve();
-            } catch (Exception error) { call.reject(error.getMessage() == null ? "Could not process this image." : error.getMessage(), error); }
+            } catch (Exception error) { if (cached != null) cached.delete(); call.reject(error.getMessage() == null ? "Could not process this image." : error.getMessage(), error); }
         });
     }
 
     @PluginMethod
     public void shareStagedImages(PluginCall call) {
         final java.util.ArrayList<Uri> uris;
-        synchronized (stagedImages) { uris = new java.util.ArrayList<>(stagedImages); stagedImages.clear(); }
+        synchronized (stagedImages) { uris = new java.util.ArrayList<>(stagedImages); stagedImages.clear(); stagedImageFiles.clear(); }
         if (uris.isEmpty()) { call.reject("No images to share."); return; }
         String title = call.getString("title", "ScreenMark images");
         getActivity().runOnUiThread(() -> {
@@ -376,6 +427,7 @@ public class ShareIntentPlugin extends Plugin {
     private File cacheImage(String baseName, ImageData image) throws Exception {
         File directory = new File(getContext().getCacheDir(), "shared-images");
         if (!directory.exists() && !directory.mkdirs()) throw new Exception("Could not prepare the image.");
+        pruneSharedImages(directory, chunkFile);
         File file = new File(directory, UUID.randomUUID() + "-" + baseName + "." + extension(image.mimeType));
         try (FileOutputStream output = new FileOutputStream(file)) { output.write(image.bytes); }
         return file;
