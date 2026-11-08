@@ -6,6 +6,7 @@
       detailPreview, items, detailItemId, detailReturnPage, detailData,
       detailLoading, detailError, detailEditMode, category, labelCategory, prefs, roles, esc
     } = context;
+    const renderImage = context.imageMarkup || window.SplitAppImageMarkup;
 
     const detailValue = value => Array.isArray(value)
       ? value.map(detailValue).filter(Boolean).join(", ")
@@ -16,25 +17,39 @@
     const safeUrl = value => {
       try {
         const url = new URL(String(value || ""));
-        return ["https:", "http:"].includes(url.protocol) ? url.href : "";
+        return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
       } catch { return ""; }
     };
     const safeImage = value => /^data:image\/[a-z0-9.+-]+;base64,/i.test(String(value || "")) ? String(value) : safeUrl(value);
 
     const heading = title => { const m = /^(.*?)\s*\((\d+)\)\s*$/.exec(String(title || "")); return m ? `${esc(m[1])} <b>${m[2]}</b>` : esc(title || ""); };
-    const refButton = (ref, className, inner) => `<button type="button" class="${className}" data-detail-ref="${esc(ref.type)}:${esc(ref.id)}" data-detail-ref-title="${esc(ref.title || "")}"${ref.extra ? ` data-detail-ref-extra="${esc(JSON.stringify(ref.extra))}"` : ""}>${inner}</button>`;
+    const refButton = (ref, className, inner, replace = false) => `<button type="button" class="${className}" data-detail-ref="${esc(ref.type)}:${esc(ref.id)}" data-detail-ref-title="${esc(ref.title || "")}"${ref.extra ? ` data-detail-ref-extra="${esc(JSON.stringify(ref.extra))}"` : ""}${replace ? ` data-ref-replace="true"` : ""}>${inner}</button>`;
+    const episodeRef = entry => {
+      const ref = entry?.ref || { type: "episode", id: entry?.id, title: entry?.title };
+      if (ref.extra?.source || !context.detailRef?.extra?.source) return ref;
+      return { ...ref, extra: { ...ref.extra, source: context.detailRef.extra.source } };
+    };
     const ratingTone = rating => rating >= 9 ? "r5" : rating >= 8 ? "r4" : rating >= 7 ? "r3" : rating >= 6 ? "r2" : "r1";
     const ratingsGrid = rows => {
       const rated = rows.filter(row => row.rating), seasons = [...new Set(rows.map(row => row.season))];
       if (!rated.length) return `<p class="detail-description">No episode ratings yet.</p>`;
       const average = rated.reduce((sum, row) => sum + row.rating, 0) / rated.length;
-      const cell = row => `<button type="button" class="ep-rate ${row.rating ? ratingTone(row.rating) : "r0"}" data-detail-ref="episode:${esc(row.id)}" data-detail-ref-title="${esc(row.title)}" title="S${esc(row.season)}E${esc(row.number)} · ${esc(row.title)}${row.rating ? ` · ★ ${row.rating}` : ""}">${row.rating ? Number(row.rating).toFixed(1) : "–"}</button>`;
-      const longest = Math.max(...seasons.map(season => rows.filter(row => row.season === season).length));
+      const cell = row => { const ref = row.ref || { type: "episode", id: row.id, title: row.title }; return `<button type="button" class="ep-rate ${row.rating ? ratingTone(row.rating) : "r0"}" data-detail-ref="${esc(ref.type)}:${esc(ref.id)}" data-detail-ref-title="${esc(ref.title || row.title)}"${ref.extra ? ` data-detail-ref-extra="${esc(JSON.stringify(ref.extra))}"` : ""} title="S${esc(row.season)}E${esc(row.number)} · ${esc(row.title)}${row.rating ? ` · ★ ${row.rating}` : ""}">${row.rating ? Number(row.rating).toFixed(1) : "–"}</button>`; };
+      const seasonCounts = new Map();
+      const episodesBySeason = new Map();
+      const episodeByPosition = new Map();
+      rows.forEach(row => seasonCounts.set(row.season, (seasonCounts.get(row.season) || 0) + 1));
+      rows.forEach(row => {
+        const seasonRows = episodesBySeason.get(row.season) || [];
+        seasonRows.push(row); episodesBySeason.set(row.season, seasonRows);
+        episodeByPosition.set(`${row.season}:${row.number}`, row);
+      });
+      const longest = seasons.reduce((max, season) => Math.max(max, seasonCounts.get(season) || 0), 0);
       let saved = ""; try { saved = localStorage.getItem("screenmark_ratings_layout") || ""; } catch (_) {}
       const layout = saved === "horizontal" || saved === "vertical" ? saved : longest > 12 ? "vertical" : "horizontal";
       const numbers = Array.from({ length: longest }, (_, index) => index + 1);
-      const horizontal = seasons.map(season => `<div class="ep-ratings-row"><span class="ep-ratings-label">S${esc(season)}</span>${rows.filter(row => row.season === season).map(cell).join("")}</div>`).join("");
-      const verticalCells = number => `<span class="ep-ratings-label">E${number}</span>${seasons.map(season => { const row = rows.find(entry => entry.season === season && entry.number === number); return row ? cell(row) : `<span class="ep-rate-empty"></span>`; }).join("")}`;
+      const horizontal = seasons.map(season => `<div class="ep-ratings-row"><span class="ep-ratings-label">S${esc(season)}</span>${(episodesBySeason.get(season) || []).map(cell).join("")}</div>`).join("");
+      const verticalCells = number => `<span class="ep-ratings-label">E${number}</span>${seasons.map(season => { const row = episodeByPosition.get(`${season}:${number}`); return row ? cell(row) : `<span class="ep-rate-empty"></span>`; }).join("")}`;
       const chunkSize = 24, initialNumbers = numbers.slice(0, chunkSize), remainingNumbers = numbers.slice(chunkSize);
       const vertical = `<div class="ep-ratings-v"${remainingNumbers.length ? " data-ratings-lazy" : ""}><div class="ep-ratings-cols" style="--seasons:${seasons.length}"><span class="ep-ratings-label"></span>${seasons.map(season => `<span class="ep-ratings-label ep-ratings-head">S${esc(season)}</span>`).join("")}${initialNumbers.map(verticalCells).join("")}</div>${Array.from({ length: Math.ceil(remainingNumbers.length / chunkSize) }, (_, index) => remainingNumbers.slice(index * chunkSize, (index + 1) * chunkSize)).map(chunk => `<template data-ratings-chunk>${chunk.map(verticalCells).join("")}</template>`).join("")}${remainingNumbers.length ? `<span class="ep-ratings-sentinel" data-ratings-sentinel aria-hidden="true"></span>` : ""}</div>`;
       return `<div class="ep-ratings" data-layout="${layout}"><div class="ep-ratings-bar"><p class="ep-ratings-note">Average ★ ${average.toFixed(1)} across ${rated.length} rated episodes</p><button type="button" class="ep-layout-toggle" data-ratings-layout aria-label="Switch grid direction">${layout === "vertical" ? "Horizontal" : "Vertical"}</button></div><div class="ep-ratings-scroll ep-ratings-h">${horizontal}</div><div class="ep-ratings-scroll ep-ratings-v">${vertical}</div></div>`;
@@ -47,16 +62,19 @@
       const totalDone = rows.filter(row => watchedIds.has(String(row.id))).length;
       const allWatched = rows.length > 0 && totalDone === rows.length;
       const allIds = rows.map(row => row.id).join(",");
-      const allEpisodesHeader = `<header class="all-episodes-header"><h4>All episodes</h4>${canToggle ? `<button type="button" class="season-check all-episodes-check${allWatched ? " is-complete" : ""}" data-season-toggle="${esc(allIds)}" data-season-done="${allWatched}" role="checkbox" aria-checked="${allWatched}" aria-label="${allWatched ? "Mark all episodes unwatched" : "Mark all episodes watched"}">✓</button>` : ""}</header>`;
+      const hasUpcoming = rows.some(row => window.SplitAppLibrary.isUpcoming?.(row) && !watchedIds.has(String(row.id)));
+      const allEpisodesHeader = `<header class="all-episodes-header"><h4>All episodes</h4>${canToggle ? `<button type="button" class="season-check all-episodes-check${allWatched ? " is-complete" : ""}" data-season-toggle="${esc(allIds)}" data-season-done="${allWatched}" role="checkbox" aria-checked="${allWatched}" aria-label="${allWatched ? "Mark all episodes unwatched" : `Mark released episodes watched${hasUpcoming ? "; upcoming episodes will be skipped" : ""}`}">✓</button>` : ""}</header>`;
       const panels = seasons.map(season => {
         const { list, done } = stats(season), info = section.seasons?.[season] || {};
         const all = list.length > 0 && done === list.length, pct = list.length ? Math.round(done / list.length * 100) : 0;
+        const seasonHasUpcoming = list.some(row => window.SplitAppLibrary.isUpcoming?.(row) && !watchedIds.has(String(row.id)));
         const ids = list.map(row => row.id).join(","), year = info.premiere ? String(info.premiere).slice(0, 4) : "";
         const rowsHtml = `<ul class="episode-list">${list.map(row => {
           const watched = watchedIds.has(String(row.id)), thumb = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${rows.indexOf(row)}.image`] || row.image) || fallbackImage;
-          const check = canToggle ? `<button type="button" class="episode-check ${watched ? "is-watched" : ""}" data-episode-toggle data-episode-id="${esc(row.id)}" data-episode-title="${esc(`S${row.season}E${row.number} ${row.title}`)}" role="checkbox" aria-checked="${watched}" aria-label="Mark ${esc(row.title)} watched">${watched ? "✓" : ""}</button>` : "";
+          const upcoming = Boolean(window.SplitAppLibrary.isUpcoming?.(row)) && !watched;
+          const check = canToggle ? `<button type="button" class="episode-check ${watched ? "is-watched" : ""}" data-episode-toggle data-episode-id="${esc(row.id)}" data-episode-title="${esc(`S${row.season}E${row.number} ${row.title}`)}" role="checkbox" aria-checked="${watched}" aria-label="${upcoming ? `${esc(row.title)} has not aired yet` : `Mark ${esc(row.title)} ${watched ? "unwatched" : "watched"}`}"${upcoming ? ' disabled title="Not available until after it airs"' : ""}>${watched ? "✓" : ""}</button>` : "";
           const meta = [window.SplitAppDates.text(row.airdate), row.runtime ? `${row.runtime}m` : ""].filter(Boolean).join("  ");
-          return `<li class="episode-row${watched ? " is-watched" : ""}">${refButton(row.ref || { type: "episode", id: row.id }, "episode-main", `<span class="episode-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async">` : ""}</span><span class="episode-text"><strong>S${esc(row.season)}·E${esc(row.number)} — ${esc(row.title)}</strong><small>${esc(meta)}${row.rating ? ` <b class="episode-rating ${ratingTone(row.rating)}">★ ${Number(row.rating).toFixed(1)}</b>` : ""}</small>${row.description ? `<em>${esc(row.description)}</em>` : ""}</span>`)}${check}</li>`;
+          return `<li class="episode-row${watched ? " is-watched" : ""}">${refButton(row.ref || { type: "episode", id: row.id }, "episode-main", `<span class="episode-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : ""}</span><span class="episode-text"><strong>S${esc(row.season)}·E${esc(row.number)} — ${esc(row.title)}</strong><small>${esc(meta)}${row.rating ? ` <b class="episode-rating ${ratingTone(row.rating)}">★ ${Number(row.rating).toFixed(1)}</b>` : ""}</small>${row.description ? `<em>${esc(row.description)}</em>` : ""}</span>`)}${check}</li>`;
         }).join("")}</ul>`;
         const expanded = season === selected;
         return `<div class="season-accordion-group${expanded ? " is-open" : ""}"><div class="season-accordion-row${all ? " is-complete" : ""}" data-season-pill="${esc(season)}" role="button" tabindex="0" aria-expanded="${expanded}" aria-label="Toggle season ${season}"><span class="season-accordion-trigger${expanded ? " is-open" : ""}"><span>Season ${esc(season)}${year ? ` <small>(${esc(year)})</small>` : ""}</span><span class="season-accordion-chevron" aria-hidden="true">⌄</span></span><span class="season-accordion-count">${done}/${list.length}</span>${canToggle ? `<button type="button" class="season-check${all ? " is-complete" : ""}" data-season-toggle="${esc(ids)}" data-season-done="${all}" role="checkbox" aria-checked="${all}" aria-label="${all ? `Mark season ${season} unwatched` : `Mark season ${season} watched`}">✓</button>` : ""}<span class="season-row-progress"><i class="${all ? "is-complete" : ""}" style="width:${pct}%"></i></span></div><div class="season-panel" data-season-panel="${esc(season)}"${expanded ? "" : " hidden"}>${expanded ? rowsHtml : `<template data-lazy-season>${rowsHtml}</template>`}</div></div>`;
@@ -66,30 +84,43 @@
 
     const renderRefPage = () => {
       const data = context.refData, kind = context.detailRef?.type;
-      const refId = String(context.detailRef?.id || ""), refSource = data?.source || (/^tt\d+$/i.test(refId) ? "OMDb" : /^(tmdb:|tmdb-episode:)/i.test(refId) ? "TMDB" : "TVmaze");
+      const refId = String(context.detailRef?.id || ""), sourceKey = context.detailRef?.extra?.source, sourceName = window.SplitAppMetadata?.providers?.find(row => row.key === sourceKey)?.name, refSource = data?.source || sourceName || (/^tt\d+$/i.test(refId) ? "OMDb" : /^(tmdb:|tmdb-episode:)/i.test(refId) ? "TMDB" : "TVmaze");
       // A saved series' episode: watched toggle and Prev/Next navigation.
       const savedItem = kind === "episode" ? context.refItem : null, epInfo = savedItem ? window.SplitAppLibrary.episodeInfo(savedItem) : null;
       const refEpisode = epInfo?.eps.find(entry => String(entry.id) === String(context.detailRef?.id) || String(entry.ref?.id) === String(context.detailRef?.id));
       const epId = String(refEpisode?.id ?? context.detailRef?.id ?? ""), epIndex = refEpisode && epInfo ? epInfo.eps.indexOf(refEpisode) : -1;
       const epWatched = epIndex >= 0 && epInfo.watched.has(epId);
-      const watchedButton = epIndex >= 0 ? `<button type="button" class="ep-watch-button${epWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(savedItem.id)}" data-episode-id="${esc(epId)}" data-episode-title="${esc(data?.title || "Episode")}" aria-pressed="${epWatched}">${epWatched ? "✓ Watched" : "Mark watched"}</button>` : "<span></span>";
+      const refUpcoming = epIndex >= 0 && Boolean(window.SplitAppLibrary.isUpcoming?.(refEpisode)) && !epWatched;
+      const watchedButton = epIndex >= 0 ? `<button type="button" class="ep-watch-button${epWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(savedItem.id)}" data-episode-id="${esc(epId)}" data-episode-title="${esc(data?.title || "Episode")}" aria-pressed="${epWatched}"${refUpcoming ? ' disabled title="Not available until after it airs"' : ""}>${refUpcoming ? "Not aired yet" : epWatched ? "✓ Watched" : "Mark watched"}</button>` : "<span></span>";
       const back = `<header class="detail-page-heading demo-detail-heading"><button type="button" class="detail-back" data-detail-back><span aria-hidden="true">‹</span> Back</button></header>`;
       const refClass = `detail-page demo-cinema-page demo-ref-page demo-${esc(kind || "detail")}-page`;
-      if (context.refLoading && !data) return `<div class="${refClass}">${back}<p class="app-info detail-loading">Loading from ${esc(refSource)}…</p></div>`;
+      if (context.refLoading && !data) {
+        const widths = values => values.map(width => `<i style="--skeleton-width:${width}"></i>`).join("");
+        const lines = (count, values = ["92%", "76%", "58%"]) => `<span class="detail-skeleton-lines">${widths(Array.from({ length: count }, (_, index) => values[index % values.length]))}</span>`;
+        const section = (title, body, className = "") => `<section class="detail-section detail-card ref-skeleton-section${className ? ` ${className}` : ""}" aria-hidden="true"><h3>${title}</h3>${body}</section>`;
+        const castRows = count => `<div class="detail-carousel ref-skeleton-cast">${Array.from({ length: count }, (_, index) => `<div class="ref-skeleton-cast-row"><span class="ref-skeleton-avatar detail-skeleton-block"></span><span>${lines(2, [index % 2 ? "66%" : "82%", index % 2 ? "42%" : "54%"])}</span></div>`).join("")}</div>`;
+        const actor = kind === "person" || kind === "character";
+        const character = kind === "character";
+        const actorHero = `<header class="demo-actor-hero ref-skeleton-actor"><span class="demo-actor-portrait ref-skeleton-portrait detail-skeleton-block"></span><div class="demo-actor-copy"><span class="demo-source-label">${character ? "Character profile" : "Cast profile"}</span><span class="ref-skeleton-heading detail-skeleton-block"></span>${lines(2, ["72%", "46%"])}</div></header>`;
+        const episodeHero = `<article class="ep-hero ref-skeleton-episode-hero"><div class="ep-still ref-skeleton-still detail-skeleton-block"><div class="ep-still-copy"><span class="ref-skeleton-kicker"></span><span class="ref-skeleton-episode-title"></span><span class="ref-skeleton-pills"><i></i><i></i><i></i></span></div></div></article>`;
+        const overview = section(character ? "Appears in" : "Cast &amp; crew", castRows(character ? 3 : 4), "ref-skeleton-list");
+        const episodeSections = `${section("Synopsis", lines(4, ["100%", "96%", "84%", "54%"]))}${savedItem ? `<section class="detail-section detail-card ref-skeleton-series ref-skeleton-section" aria-hidden="true"><span class="detail-skeleton-block"></span>${lines(2, ["70%", "92%"])}</section>` : ""}${section("Cast", castRows(3), "ref-skeleton-list")}`;
+        const loadingBody = actor ? `${actorHero}${overview}` : `${episodeHero}${episodeSections}`;
+        return `<div class="${refClass}" aria-busy="true">${back}<p class="app-info detail-loading sr-only" role="status">Loading ${character ? "character" : kind === "person" ? "cast profile" : "episode details"} from ${esc(refSource)}…</p>${loadingBody}</div>`;
+      }
       if (!data) return `<div class="${refClass}">${back}<div class="detail-error"><p>${esc(context.refError || "Could not load this page.")}</p><span class="detail-error-actions">${context.detailRef?.extra?.source === "imdb" || /^imdb-episode:tt/i.test(String(context.detailRef?.id || "")) ? `<button class="button secondary small" type="button" data-review-provider-session="imdb">Open IMDb</button>` : ""}<button class="button secondary small" data-detail-ref-retry>Try again</button></span></div></div>`;
       const image = safeImage(data.image);
       const episodeFallback = safeImage(savedItem?.customCover || savedItem?.localThumbnailData || savedItem?.image) || safeImage((data.sections || []).flatMap(section => section.items || []).find(row => /poster|screenshot|still/i.test(`${row.title || ""} ${row.meta || ""}`) && row.image)?.image);
       const episodeImage = image || episodeFallback;
       const actorPortrait = image ? `<button type="button" class="demo-actor-portrait detail-image-trigger" data-detail-image-src="${esc(image)}" data-detail-image-label="${esc(data.title)}"><img src="${esc(image)}" alt="${esc(data.title)}" onerror="this.hidden=true"></button>` : `<span class="demo-actor-portrait" aria-hidden="true"><svg class="person-placeholder" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg></span>`;
       const actorHero = `<header class="demo-actor-hero">${actorPortrait}<div class="demo-actor-copy"><span class="demo-source-label">${kind === "character" ? "Character profile" : data.source ? `${esc(data.source)} cast profile` : "Actor &amp; crew profile"}</span><h1>${esc(data.title)}</h1>${data.subtitle ? `<p>${esc(data.subtitle)}</p>` : ""}<div class="demo-fact-pills">${(data.facts || []).map(([label, value]) => `<span>${esc(label)} · ${esc(window.SplitAppDates.text(value))}</span>`).join("")}</div></div></header>`;
-      const hero = `<article class="detail-hero ios-hero ref-hero demo-ref-hero"><div class="ios-hero-bg"${image ? ` style="background-image:url('${esc(image)}')"` : ""}></div><div class="ios-hero-body">${image ? `<button type="button" class="detail-image-trigger detail-cover-trigger${data.landscape ? " is-landscape" : ""}" data-detail-image-src="${esc(image)}" data-detail-image-label="${esc(data.title)}"><img class="detail-image" src="${esc(image)}" alt="" onerror="this.hidden=true"></button>` : `<div class="detail-image-placeholder">✦</div>`}<div class="detail-hero-copy"><p class="eyebrow">${esc(refSource)} · ${esc(kind)}</p><h2>${esc(data.title)}</h2>${data.subtitle ? `<p class="detail-description">${esc(data.subtitle)}</p>` : ""}<div class="detail-badges">${(data.facts || []).map(([label, value]) => `<span>${esc(label)}: ${esc(window.SplitAppDates.text(value))}</span>`).join("")}</div></div></div>${epIndex >= 0 ? (() => { const prev = epInfo.eps[epIndex - 1], next = epInfo.eps[epIndex + 1]; const nav = (entry, label) => entry ? `<button type="button" class="button secondary" data-detail-ref="episode:${esc(entry.ref?.id || entry.id)}" data-detail-ref-title="${esc(entry.title)}" data-ref-replace="true">${label}</button>` : `<button type="button" class="button secondary" disabled>${label}</button>`; return `<div class="ep-nav-row">${nav(prev, "‹ Prev ep")}${nav(next, "Next ep ›")}</div>`; })() : ""}</article>`;
-      const factPills = (data.facts || []).map(([label, value]) => `<span class="${label === "Rating" ? "is-rating" : ""}">${esc(label)}: ${esc(window.SplitAppDates.text(value))}</span>`).join("");
-      const navButton = (entry, label) => entry ? `<button type="button" class="ep-nav-button" data-detail-ref="episode:${esc(entry.ref?.id || entry.id)}" data-detail-ref-title="${esc(entry.title)}" data-ref-replace="true">${label}</button>` : `<button type="button" class="ep-nav-button" disabled>${label}</button>`;
+      const hero = `<article class="detail-hero ios-hero ref-hero demo-ref-hero"><div class="ios-hero-bg"${image ? ` style="background-image:url('${esc(image)}')"` : ""}></div><div class="ios-hero-body">${image ? `<button type="button" class="detail-image-trigger detail-cover-trigger${data.landscape ? " is-landscape" : ""}" data-detail-image-src="${esc(image)}" data-detail-image-label="${esc(data.title)}"><img class="detail-image" src="${esc(image)}" alt="" onerror="this.hidden=true"></button>` : `<div class="detail-image-placeholder">✦</div>`}<div class="detail-hero-copy"><p class="eyebrow">${esc(refSource)} · ${esc(kind)}</p><h2>${esc(data.title)}</h2>${data.subtitle ? `<p class="detail-description">${esc(data.subtitle)}</p>` : ""}<div class="detail-badges">${(data.facts || []).map(([label, value]) => `<span>${esc(label)}: ${esc(window.SplitAppDates.text(value))}</span>`).join("")}</div></div></div>${epIndex >= 0 ? (() => { const prev = epInfo.eps[epIndex - 1], next = epInfo.eps[epIndex + 1]; const nav = (entry, label) => entry ? refButton(episodeRef(entry), "button secondary", label, true) : `<button type="button" class="button secondary" disabled>${label}</button>`; return `<div class="ep-nav-row">${nav(prev, "‹ Prev ep")}${nav(next, "Next ep ›")}</div>`; })() : ""}</article>`;
+      const navButton = (entry, label) => entry ? refButton(episodeRef(entry), "ep-nav-button", label, true) : `<button type="button" class="ep-nav-button" disabled>${label}</button>`;
       const epCode = /^(.*?)\s*·\s*S(\d+)E(\d+)\s*$/i.exec(String(data.subtitle || ""));
       const epKicker = epCode ? `${epCode[1]} · Season ${epCode[2]} · Episode ${epCode[3]}` : data.subtitle || "Episode";
       const epFacts = (data.facts || []).map(([label, value]) => { const text = window.SplitAppDates.text(value); return /rating/i.test(label) ? `<span class="is-rating">${esc(String(text).replace(/^★?\s*/, "★ "))}</span>` : /aired|date/i.test(label) ? `<span>Aired ${esc(text)}</span>` : /runtime/i.test(label) ? `<span>${esc(String(text).replace(/\s*min.*/i, ""))} min</span>` : `<span>${esc(label)}: ${esc(text)}</span>`; }).join("");
       const epHero = kind === "episode" ? `<article class="ep-hero"><div class="ep-still">${episodeImage ? `<button type="button" class="detail-image-trigger" data-detail-image-src="${esc(episodeImage)}" data-detail-image-label="${esc(data.title)}"><img src="${esc(episodeImage)}" alt="" onerror="this.hidden=true"></button>` : ""}<div class="ep-still-copy"><span class="ep-kicker">${esc(epKicker)}</span><h1>${esc(data.title)}</h1><div class="demo-episode-facts ep-pills">${epFacts}</div></div></div></article>` : "";
-      const epNavCard = kind === "episode" && epIndex >= 0 ? `<section class="ep-checkin-card"><span class="db-label">Episode navigation &amp; check-in</span><div class="ep-nav-row">${navButton(epInfo.eps[epIndex - 1], "‹ Prev")}<button type="button" class="ep-nav-button ep-center-check${epWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(savedItem.id)}" data-episode-id="${esc(epId)}" data-episode-title="${esc(data.title)}" aria-pressed="${epWatched}">${epWatched ? "✓ Watched" : "＋ Mark watched"}</button>${navButton(epInfo.eps[epIndex + 1], "Next ›")}</div></section>` : "";
+      const epNavCard = kind === "episode" && epIndex >= 0 ? `<section class="ep-checkin-card"><span class="db-label">Episode navigation &amp; check-in</span><div class="ep-nav-row">${navButton(epInfo.eps[epIndex - 1], "‹ Prev")}<button type="button" class="ep-nav-button ep-center-check${epWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(savedItem.id)}" data-episode-id="${esc(epId)}" data-episode-title="${esc(data.title)}" aria-pressed="${epWatched}"${refUpcoming ? ' disabled title="Not available until after it airs"' : ""}>${refUpcoming ? "Not aired yet" : epWatched ? "✓ Watched" : "＋ Mark watched"}</button>${navButton(epInfo.eps[epIndex + 1], "Next ›")}</div></section>` : "";
       const seriesGuide = kind === "episode" && savedItem ? (() => { const art = safeImage(savedItem.customCover || savedItem.localThumbnailData || savedItem.image); return `<button type="button" class="detail-section detail-card series-guide-card" data-detail-back><span class="sg-art">${art ? `<img src="${esc(art)}" alt="" onerror="this.hidden=true">` : ""}</span><span class="sg-copy"><small>Series guide</small><strong>${esc(savedItem.title)}</strong><em>${epInfo ? `${epInfo.done}/${epInfo.total} episodes watched · ` : ""}Return to full season list ›</em></span></button>`; })() : "";
       const reactionCard = "";
       const personSections = data.sections || [], refPageSize = 20;
@@ -101,10 +132,10 @@
         const rows = kind === "person" ? sourceRows.slice(Math.max(0, refPage * refPageSize - start), Math.max(0, (refPage + 1) * refPageSize - start)) : sourceRows;
         if (kind === "person" && !rows.length) return "";
         const body = section.kind === "episodes-list"
-          ? `<ul class="episode-list">${rows.map(row => { const thumb = safeImage(row.image) || episodeFallback; return `<li class="episode-row">${refButton(row.ref, "episode-main", `<span class="episode-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy">` : ""}</span><span class="episode-text"><strong>${esc(row.title)}</strong>${row.meta ? `<small>${esc(window.SplitAppDates.text(row.meta))}</small>` : ""}</span>`)}</li>`; }).join("")}</ul>`
+          ? `<ul class="episode-list">${rows.map(row => { const thumb = safeImage(row.image) || episodeFallback; return `<li class="episode-row">${refButton(row.ref, "episode-main", `<span class="episode-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : ""}</span><span class="episode-text"><strong>${esc(row.title)}</strong>${row.meta ? `<small>${esc(window.SplitAppDates.text(row.meta))}</small>` : ""}</span>`)}</li>`; }).join("")}</ul>`
           : `<div class="detail-carousel">${rows.map(row => {
-              const art = safeImage(row.image), isCast = /^(cast|characters|staff|guest cast|guest crew)/i.test(section.title || ""), fallback = isCast ? `<svg class="person-placeholder" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>` : "", inner = isCast ? `<span class="detail-carousel-art rt-cast-art">${art ? `<img src="${esc(art)}" alt="" loading="lazy">` : fallback}</span><span class="rt-cast-copy"><strong>${esc(row.title)}</strong>${row.meta ? `<small>${esc(row.meta)}</small>` : ""}</span>` : `<span class="detail-carousel-art">${art ? `<img src="${esc(art)}" alt="" loading="lazy">` : fallback}</span><strong>${esc(row.title)}</strong>${row.meta ? `<small>${esc(row.meta)}</small>` : ""}`;
-              const ref = row.ref || (section.kind === "shows" ? { type: "show", id: row.id, title: row.title } : null);
+              const art = safeImage(row.image), isCast = section.kind === "people" || /^(cast|characters|staff|guest cast|guest crew)/i.test(section.title || ""), fallback = isCast ? `<svg class="person-placeholder" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>` : "", inner = isCast ? `<span class="detail-carousel-art rt-cast-art">${art ? `<img src="${esc(art)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : fallback}</span><span class="rt-cast-copy"><strong>${esc(row.title)}</strong>${row.meta ? `<small>${esc(row.meta)}</small>` : ""}</span>` : `<span class="detail-carousel-art">${art ? `<img src="${esc(art)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : fallback}</span><strong>${esc(row.title)}</strong>${row.meta ? `<small>${esc(row.meta)}</small>` : ""}`;
+              const ref = row.ref || (section.kind === "shows" ? { type: "show", id: row.id, title: row.title } : section.kind === "people" || /^(cast|characters|staff|guest cast|guest crew)/i.test(section.title || "") ? { type: "person", id: `preview:${encodeURIComponent(row.title || "unknown")}`, title: row.title, extra: { previewOnly: true, source: data.source || "ScreenMark", image: row.image || "", role: row.meta || "", url: row.url || "" } } : null);
               return ref ? refButton(ref, isCast ? "detail-carousel-card rt-cast-card" : "detail-carousel-card", inner) : `<div class="detail-carousel-card${isCast ? " rt-cast-card" : ""}">${inner}</div>`;
             }).join("")}</div>`;
         const castClass = /^(cast|characters|staff|guest cast|guest crew)/i.test(section.title || "") ? "demo-cast-section" : "";
@@ -118,22 +149,23 @@
 
     const renderSection = (section, watchedIds = new Set(), canToggleEpisodes = false, item = null, sectionIndex = 0, imageButton = () => "", fallbackEpisodeImage = "") => {
       const items = section.items || [];
-      const body = section.kind === "carousel"
+      const body = section.kind === "carousel" || section.kind === "people"
         ? `<div class="detail-carousel">${items.map((entry, entryIndex) => {
             const href = safeUrl(entry.url);
             const image = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || entry.image);
-            const isCast = /^(cast|characters|staff|guest cast|guest crew)/i.test(section.title || "");
+            const isCast = section.kind === "people" || /^(cast|characters|staff|guest cast|guest crew)/i.test(section.title || "");
             const placeholder = isCast ? `<svg class="person-placeholder" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>` : "";
-            const inner = isCast ? `<span class="detail-carousel-art rt-cast-art">${image ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async">` : placeholder}</span><span class="rt-cast-copy"><strong>${esc(entry.title || "Untitled")}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}</span>` : `<span class="detail-carousel-art">${image ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async">` : placeholder}</span><strong>${esc(entry.title || "Untitled")}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}`;
+            const inner = isCast ? `<span class="detail-carousel-art rt-cast-art">${image ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : placeholder}</span><span class="rt-cast-copy"><strong>${esc(entry.title || "Untitled")}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}</span>` : `<span class="detail-carousel-art">${image ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : placeholder}</span><strong>${esc(entry.title || "Untitled")}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}`;
             const cardClass = isCast ? "detail-carousel-card rt-cast-card" : "detail-carousel-card";
-            return entry.ref ? refButton(entry.ref, cardClass, inner) : href ? `<a class="${cardClass}" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : `<div class="${cardClass}">${inner}</div>`;
+            const ref = entry.ref || (isCast ? { type: /^characters/i.test(section.title || "") ? "character" : "person", id: `preview:${encodeURIComponent(entry.title || "unknown")}`, title: entry.title, extra: { previewOnly: true, source: loaded.source || "ScreenMark", image: entry.image || "", role: entry.meta || "", url: entry.url || "" } } : null);
+            return ref ? refButton(ref, cardClass, inner) : href ? `<a class="${cardClass}" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : `<div class="${cardClass}">${inner}</div>`;
           }).join("")}</div>`
         : section.kind === "ratings" ? ratingsGrid(items)
         : section.kind === "episodes" ? episodeGuide(section, items, watchedIds, canToggleEpisodes, item, sectionIndex, imageButton, fallbackEpisodeImage)
         : section.kind === "gallery"
         ? `<div class="detail-gallery">${items.map((entry, entryIndex) => {
             const image = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || entry.image || entry.url);
-            return image ? imageButton(image, entry.title || "Screenshot", `<img src="${esc(image)}" alt="${esc(entry.title || "Source image")}" loading="lazy"><span>${esc(entry.title || "")}</span>`, "detail-gallery-image") : "";
+            return image ? imageButton(image, entry.title || "Screenshot", `<img src="${esc(image)}" alt="${esc(entry.title || "Source image")}" loading="lazy" decoding="async" onerror="this.hidden=true"><span>${esc(entry.title || "")}</span>`, "detail-gallery-image") : "";
           }).join("")}</div>`
         : `<div class="detail-source-list">${items.map((entry, entryIndex) => {
             const href = safeUrl(entry.url);
@@ -144,7 +176,7 @@
             const toggle = section.kind === "episodes" && canToggleEpisodes
               ? `<button class="episode-toggle ${watched ? "is-watched" : ""}" type="button" data-episode-toggle data-episode-id="${esc(episodeId)}" data-episode-title="${title}" aria-pressed="${watched}">${watched ? "Watched ✓" : "Mark watched"}</button>`
               : "";
-            const thumbnail = image ? imageButton(image, entry.title || "Source image", `<img src="${esc(image)}" alt="" loading="lazy">`, "detail-source-image") : "";
+            const thumbnail = image ? imageButton(image, entry.title || "Source image", `<img src="${esc(image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">`, "detail-source-image") : "";
             const content = `<div class="detail-source-item">${thumbnail}<div><strong>${title}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}${entry.description ? `<p>${esc(entry.description)}</p>` : ""}${href && section.kind !== "episodes" ? `<a class="detail-entry-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>` : ""}${toggle}</div></div>`;
             return content;
           }).join("")}</div>`;
@@ -156,13 +188,14 @@
 
     function renderDetails() {
       if (context.detailRef) return renderRefPage();
-      const item = detailPreview || items.find(row => row.id === detailItemId);
+      const item = detailPreview || context.itemById?.(detailItemId) || items.find(row => row.id === detailItemId);
       if (!item) return `<div class="empty-state"><strong>That entry is no longer in your library.</strong><button class="button secondary" data-go="${esc(detailReturnPage)}">Back to library</button></div>`;
 
       const source = window.SplitAppMetadata.providers.find(row => row.key === (item.metadataSource || item.source));
       const loaded = detailData || {};
       const image = safeImage(item.customCover || item.localThumbnailData || item.localImageData?.["image"] || item.localImageData?.["cachedDetails.portraitImage"] || item.localImageData?.["cachedDetails.image"] || loaded.portraitImage || loaded.image || item.image);
       const landscape = safeImage(item.localImageData?.["cachedDetails.landscapeImage"] || item.localImageData?.["cachedDetails.backgroundImage"] || loaded.landscapeImage || loaded.backgroundImage);
+      const hasSummary = Boolean(loaded.description || item.description || item.summary);
       const summary = loaded.description || item.description || item.summary || "No description is available for this entry yet.";
       const sourceUrl = safeUrl(loaded.url || item.url || item.providerUrl);
       const goal = Math.max(0, Number(item.goal || loaded.goal) || (category(item.category)?.unit === "minutes" ? Number(loaded.facts?.runtimeMinutes) : 0) || 0);
@@ -182,7 +215,14 @@
       const popupImageButton = (src, label, content, className = "") => src
         ? `<button type="button" class="detail-image-trigger ${className}" data-detail-image-src="${esc(src)}" data-detail-image-label="${esc(label)}" aria-label="View ${esc(label)}">${content}</button>`
         : "";
-      const detailImage = popupImageButton(image, `${item.title} cover`, `<img class="detail-image" src="${esc(image)}" alt="${esc(item.title)} cover" onerror="this.hidden=true">`, "detail-cover-trigger");
+      const hasLocalPoster = Boolean(item.thumbnailPath && !item.localThumbnailData && !item.localPortraitData && !item.customCover);
+      const posterFallback = `<div class="detail-image-placeholder" hidden>${esc(category(item.category)?.icon || "✦")}</div>`;
+      const posterMarkup = renderImage
+        ? renderImage(item, image, `${item.title} cover`, posterFallback, "detail-image")
+        : `<img class="detail-image" src="${esc(image)}" alt="${esc(item.title)} cover" onerror="this.hidden=true">`;
+      const detailImage = image || hasLocalPoster
+        ? `<button type="button" class="detail-image-trigger detail-cover-trigger" data-detail-image-src="${esc(image)}" data-detail-image-label="${esc(item.title)} cover" aria-label="View ${esc(item.title)} cover">${posterMarkup}</button>`
+        : popupImageButton(image, `${item.title} cover`, posterMarkup, "detail-cover-trigger");
       const buySub = [fields.find(row => /developer/i.test(row.label))?.value, loaded.year || item.year].filter(Boolean).map(detailValue).join(" • ");
       const purchase = loaded.purchase && safeUrl(loaded.purchase.url)
         ? `<div class="ios-buy"><div class="ios-buy-copy"><p>${loaded.purchase.isFree ? "Play" : "Buy"} ${esc(item.title)} <span>on Steam</span></p>${buySub ? `<small>${esc(buySub)}</small>` : ""}</div><strong>${esc(loaded.purchase.price || "")}</strong><a class="button primary" href="${esc(loaded.purchase.url)}" target="_blank" rel="noopener noreferrer">${loaded.purchase.isFree ? "Play on Steam" : "Buy on Steam"}</a></div>`
@@ -194,13 +234,22 @@
       const watchedSet = new Set((item.watchedEpisodeIds || []).map(String));
       const indexedSections = sections.map((section, index) => ({ section, index })), taken = new Set();
       const takeSlot = pattern => indexedSections.filter(({ section, index }) => !taken.has(index) && pattern.test(section.title || "") && taken.add(index));
-      const slots = { media: takeSlot(/^(trailers|images|screenshots|posters)/i), cast: takeSlot(/^(cast|characters|staff)/i), ratings: indexedSections.filter(({ section, index }) => !taken.has(index) && section.kind === "ratings" && taken.add(index)), episodes: indexedSections.filter(({ section, index }) => !taken.has(index) && section.kind === "episodes" && taken.add(index)), related: takeSlot(/^(related|you might also like|same series)/i) };
+      const castSection = section => section.kind === "people" || /^(cast|characters|staff|guest cast|guest crew)(?:\b|\s)/i.test(section.title || "");
+      if (context.detailCastOnline === false) indexedSections.filter(({ section }) => castSection(section)).forEach(({ index }) => taken.add(index));
+      const slots = { media: takeSlot(/^(trailers|images|screenshots|posters)/i), cast: context.detailCastOnline === false ? [] : takeSlot(/^(cast|characters|staff)/i), ratings: indexedSections.filter(({ section, index }) => !taken.has(index) && section.kind === "ratings" && taken.add(index)), episodes: indexedSections.filter(({ section, index }) => !taken.has(index) && section.kind === "episodes" && taken.add(index)), related: takeSlot(/^(related|you might also like|same series)/i) };
       slots.other = indexedSections.filter(({ index }) => !taken.has(index));
       const fallbackEpisodeImage = safeImage(item.customCover || item.localThumbnailData || item.image || item.backdrop) || safeImage(slots.media.flatMap(({ section, index }) => (section.items || []).map((entry, entryIndex) => item.localImageData?.[`cachedDetails.sections.${index}.items.${entryIndex}.image`] || entry.image)).find(Boolean));
       const renderRows = rows => rows.map(({ section, index }) => renderSection(section, watchedSet, canProgress, item, index, popupImageButton, fallbackEpisodeImage)).join("");
       const useSynopsisLayout = item.category === "series" || item.category === "movie";
       const synopsisTrailerUrl = safeUrl(loaded.trailer?.url) || `https://www.youtube.com/results?search_query=${encodeURIComponent(`${loaded.title || item.title} ${loaded.year || item.year || ""} official trailer`.trim())}`;
       const synopsisTrailer = useSynopsisLayout ? `<a class="demo-synopsis-trailer" href="${esc(synopsisTrailerUrl)}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▶</span> Watch official ${item.category === "series" ? "series" : "movie"} trailer (YouTube)</a>` : "";
+      const loadingLines = (count, widths = ["100%", "88%", "64%"]) => Array.from({ length: count }, (_, index) => `<i style="--skeleton-width:${widths[index % widths.length]}"></i>`).join("");
+      const detailPlaceholders = detailLoading ? {
+        synopsis: !hasSummary ? `<section class="detail-section detail-skeleton-block" aria-hidden="true"><h3>Synopsis</h3><div class="detail-skeleton-lines">${loadingLines(3)}</div></section>` : "",
+        facts: !(facts.length || fields.length) ? `<section class="detail-section detail-skeleton-block" aria-hidden="true"><h3>Production details</h3><div class="detail-skeleton-facts">${loadingLines(3, ["38%", "54%", "32%"])}<span>${loadingLines(3, ["58%", "76%", "48%"])}</span></div></section>` : "",
+        media: !slots.media.length ? `<section class="detail-section detail-skeleton-block" aria-hidden="true"><h3>Images</h3><div class="detail-skeleton-art">${loadingLines(3, ["100%", "100%", "100%"])} </div></section>` : "",
+        episodes: item.category === "series" && !slots.episodes.length ? `<section class="detail-section detail-skeleton-block" aria-hidden="true"><h3>Episodes</h3><div class="detail-skeleton-episodes">${loadingLines(3, ["100%", "100%", "100%"])} </div></section>` : ""
+      } : { synopsis: "", facts: "", media: "", episodes: "" };
       const part = {
         legacyProgress: canProgress ? (() => {
           const cat = category(item.category) || {}, stepSize = cat.step || 1, short = cat.unit === "minutes" ? "m" : "ep";
@@ -213,15 +262,15 @@
           return `<section class="detail-progress-card progress-console"><div class="pc-top-row"><div class="pc-big-ratio"><b>${progress}</b>${goal ? `/${goal}` : ""} <small>${esc(short === "m" ? "min" : "ep")}</small> <span>${goal ? `${percent}%` : ""}</span></div><span class="pc-remaining">${goal ? (leftUnits ? `${fmtLeft || `${leftUnits} ${esc(unit)}`} left` : "Completed") : ""}</span></div><div class="progress-line pc-bar-track"><span style="width:${percent}%"></span></div>${goal ? "" : `<small class="pc-note">Edit the entry to set a total and track completion.</small>`}<div class="detail-quick-adjust pc-steppers"><span class="pc-step-label">${cat.unit === "minutes" ? "Runtime scrub" : "Quick adjust"}</span><div class="ios-stepper pc-step-group">${quick.map((amount, index) => `<button type="button"${index === 1 ? ' class="accent"' : ""} data-adjust-progress="${amount}">${amount < 0 ? "−" : "+"}${Math.abs(amount)}${short}</button>`).join("")}</div></div></section>`;
         })() : "",
         tracking: canProgress ? `<section class="detail-section detail-tracking-section"><h3>Tracking status</h3><div class="ios-pills detail-status-pills">${statuses.map(status => `<button type="button" class="ios-pill${status === item.status ? " active" : ""}" data-detail-status-btn="${esc(status)}">${esc(status)}</button>`).join("")}</div></section><dialog class="choice-dialog detail-delete-dialog" id="detail-delete-dialog"><form method="dialog"><div class="choice-dialog-grabber"></div><h2>Delete ${esc(item.title)}?</h2><p>This removes the title from your collection.</p><footer class="choice-dialog-actions"><button type="button" class="button secondary" data-detail-delete-cancel>Cancel</button><button type="button" class="button primary" data-detail-delete-confirm>Delete</button></footer></form></dialog>` : "",
-        media: renderRows(slots.media),
-        trailer: useSynopsisLayout ? "" : loaded.trailer && safeUrl(loaded.trailer.url) ? `<section class="detail-section"><h3>Official trailer</h3><a class="detail-trailer" href="${esc(safeUrl(loaded.trailer.url))}" target="_blank" rel="noopener noreferrer">${safeImage(loaded.trailer.image) ? `<img src="${esc(safeImage(loaded.trailer.image))}" alt="" loading="lazy">` : ""}<span class="detail-trailer-play" aria-hidden="true">▶</span><strong>${esc(loaded.trailer.title || "Watch trailer")}</strong></a></section>` : (loaded.title || item.title) ? `<section class="detail-section"><h3>Trailer</h3><a class="detail-trailer-search" href="${esc(`https://www.youtube.com/results?search_query=${encodeURIComponent(`${loaded.title || item.title} ${loaded.year || item.year || ""} official trailer`.trim())}`)}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▶</span><span>Find the trailer on YouTube</span><small>This source has no trailer link</small></a></section>` : "",
+        media: renderRows(slots.media) + detailPlaceholders.media,
+        trailer: useSynopsisLayout ? "" : loaded.trailer && safeUrl(loaded.trailer.url) ? `<section class="detail-section"><h3>Official trailer</h3><a class="detail-trailer" href="${esc(safeUrl(loaded.trailer.url))}" target="_blank" rel="noopener noreferrer">${safeImage(loaded.trailer.image) ? `<img src="${esc(safeImage(loaded.trailer.image))}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : ""}<span class="detail-trailer-play" aria-hidden="true">▶</span><strong>${esc(loaded.trailer.title || "Watch trailer")}</strong></a></section>` : (loaded.title || item.title) ? `<section class="detail-section"><h3>Trailer</h3><a class="detail-trailer-search" href="${esc(`https://www.youtube.com/results?search_query=${encodeURIComponent(`${loaded.title || item.title} ${loaded.year || item.year || ""} official trailer`.trim())}`)}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▶</span><span>Find the trailer on YouTube</span><small>This source has no trailer link</small></a></section>` : "",
         ratings: renderRows(slots.ratings),
-        episodes: renderRows(slots.episodes),
+        episodes: renderRows(slots.episodes) + detailPlaceholders.episodes,
         stores: (loaded.stores || []).length ? `<section class="detail-section detail-stores"><h3>Where to buy</h3><div class="detail-store-list">${loaded.stores.map(row => safeUrl(row.url) ? `<a class="button secondary small" href="${esc(safeUrl(row.url))}" target="_blank" rel="noopener noreferrer">${esc(row.name)} ↗</a>` : "").join("")}</div></section>` : "",
         tags: (loaded.tags || []).length ? `<section class="detail-section"><h3>Tags</h3><div class="detail-chips">${loaded.tags.map(tag => `<span>${esc(tag)}</span>`).join("")}</div></section>` : "",
         breakdown: (loaded.ratingBreakdown || []).length ? `<section class="detail-section detail-rating-breakdown"><h3>Player ratings${loaded.ratingCount ? ` · ${Number(loaded.ratingCount).toLocaleString()}` : ""}</h3><div class="rating-bar" role="img" aria-label="${esc(loaded.ratingBreakdown.map(row => `${row.label} ${row.percent}%`).join(", "))}">${loaded.ratingBreakdown.map((row, index) => `<span class="rating-seg rating-seg-${index % 4}" style="width:${Math.max(2, Number(row.percent) || 0)}%"></span>`).join("")}</div><div class="rating-legend">${loaded.ratingBreakdown.map((row, index) => `<span><i class="rating-seg-${index % 4}"></i>${esc(row.label)} <b>${esc(row.percent)}%</b></span>`).join("")}</div></section>` : "",
         communityRating: item.category === "movie" && Number(loaded.rating) > 0 ? `<section class="detail-section movie-community-rating"><h3>Community rating</h3><div><strong>★ ${Number(loaded.rating).toFixed(1)}</strong><span>${Number(loaded.ratingCount) ? `${Number(loaded.ratingCount).toLocaleString()} votes` : "TMDB"}</span></div></section>` : "",
-        facts: facts.length || fields.length ? `<section class="detail-section"><h3>${item.category === "movie" ? "Theatrical release facts" : "Production details"}</h3><div class="detail-facts">${facts.map(([label, value]) => `<div><span>${esc(label)}</span><strong>${esc(detailValue(value))}</strong></div>`).join("")}${fields.filter(row => !(item.category === "series" && /^genres?$/i.test(String(row.label || "")))).map(row => `<div><span>${esc(row.label)}</span><strong>${esc(detailValue(row.value))}</strong></div>`).join("")}</div></section>` : "",
+        facts: facts.length || fields.length ? `<section class="detail-section"><h3>${item.category === "movie" ? "Theatrical release facts" : "Production details"}</h3><div class="detail-facts">${facts.map(([label, value]) => `<div><span>${esc(label)}</span><strong>${esc(detailValue(value))}</strong></div>`).join("")}${fields.filter(row => !(item.category === "series" && /^genres?$/i.test(String(row.label || "")))).map(row => `<div><span>${esc(row.label)}</span><strong>${esc(detailValue(row.value))}</strong></div>`).join("")}</div></section>` : detailPlaceholders.facts,
         requirements: loaded.requirements ? (() => {
           const { minimum = [], recommended = [] } = loaded.requirements;
           const labels = [...new Set([...minimum, ...recommended].map(([label]) => label))];
@@ -234,7 +283,9 @@
         related: renderRows(slots.related),
         other: renderRows(slots.other),
         links: links.length ? `<section class="detail-section detail-links-section"><h3>Links</h3><div class="detail-link-list">${links.map(link => `<a href="${esc(link.href)}" target="_blank" rel="noopener noreferrer">${esc(link.label || link.title || link.site || link.href)} ↗</a>`).join("")}</div></section>` : "",
-        overview: `<section class="detail-section demo-overview-section"><h3>${useSynopsisLayout ? "Synopsis" : "Overview"}</h3><p class="detail-description">${esc(summary)}</p>${synopsisTrailer}</section>`
+        overview: !hasSummary && detailLoading
+          ? detailPlaceholders.synopsis
+          : `<section class="detail-section demo-overview-section"><h3>${useSynopsisLayout ? "Synopsis" : "Overview"}</h3><p class="detail-description">${esc(summary)}</p>${synopsisTrailer}</section>${detailPlaceholders.synopsis}`
       };
       const epInfo = canProgress && item.category === "series" ? window.SplitAppLibrary.episodeInfo(item) : null;
       const unifiedProgress = epInfo ? (() => {
@@ -246,21 +297,34 @@
           const sourceIndex = (episodeSection?.items || []).findIndex(entry => String(entry.id) === String(episode.id));
           const image = safeImage(item.localImageData?.[`cachedDetails.sections.${episodeSectionIndex}.items.${sourceIndex}.image`] || episode.image) || safeImage(item.customCover || item.localThumbnailData || item.image);
           const episodeTitle = episode.title || `Episode ${episode.number}`;
-          const media = image ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async">` : `<span class="tracking-episode-placeholder" aria-hidden="true">▶</span>`;
+          const media = image ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : `<span class="tracking-episode-placeholder" aria-hidden="true">▶</span>`;
           const open = refButton(episode.ref || { type: "episode", id: episode.id }, "tracking-episode-open", `<span class="tracking-episode-art">${media}</span><span class="tracking-episode-copy"><strong>S${String(episode.season).padStart(2, "0")} | E${String(episode.number).padStart(2, "0")}</strong><small>${esc(episodeTitle)}</small></span>`);
-          return `<article class="tracking-episode-card${watched ? " is-watched" : ""}"${index === focusIndex ? ' data-current-episode="true"' : ""}>${open}<button type="button" class="tracking-episode-check${watched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(item.id)}" data-episode-id="${esc(episode.id)}" data-episode-title="${esc(`S${episode.season}E${episode.number} ${episodeTitle}`)}" aria-pressed="${watched}" aria-label="${watched ? "Mark unwatched" : "Mark watched"} · ${esc(epInfo.mark(episode))}">${watched ? "✓" : "✓"}</button></article>`;
+          const upcoming = Boolean(window.SplitAppLibrary.isUpcoming?.(episode)) && !watched;
+          return `<article class="tracking-episode-card${watched ? " is-watched" : ""}"${index === focusIndex ? ' data-current-episode="true"' : ""}>${open}<button type="button" class="tracking-episode-check${watched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(item.id)}" data-episode-id="${esc(episode.id)}" data-episode-title="${esc(`S${episode.season}E${episode.number} ${episodeTitle}`)}" aria-pressed="${watched}" aria-label="${upcoming ? `Not aired yet · ${epInfo.mark(episode)}` : `${watched ? "Mark unwatched" : "Mark watched"} · ${epInfo.mark(episode)}`}"${upcoming ? ' disabled title="Not available until after it airs"' : ""}>✓</button></article>`;
         }).join("");
         return `<section class="continue-tracking"><h2>Continue tracking</h2><div class="tracking-episode-rail" data-tracking-episode-rail aria-label="Episodes">${cards}</div></section>`;
       })() : part.legacyProgress;
       const hasRatingTab = slots.ratings.length > 0 || (loaded.ratingBreakdown || []).length > 0 || (item.category === "movie" && Number(loaded.rating) > 0);
       const hasTabs = item.category === "movie" || item.category === "series" || slots.episodes.length > 0 || slots.ratings.length > 0;
       let detailBody;
-      if (hasTabs) {
-        const tabs = [slots.episodes.length && ["episodes", "Episodes"], ["overview", "Overview"], hasRatingTab && ["ratings", "Ratings"], slots.cast.length && ["cast", "Cast & Crew"]].filter(Boolean);
+      if (item.category === "movie") {
+        const movieHasMedia = Boolean(slots.media.length || loaded.trailer?.url || detailPlaceholders.media);
+        const tabs = [["overview", "Overview"], ["details", "Details"], movieHasMedia && ["media", "Media"], hasRatingTab && ["ratings", "Ratings"], slots.cast.length && ["cast", "Cast & Crew"]].filter(Boolean);
+        const activeTab = tabs.some(([key]) => key === context.detailTab) ? context.detailTab : "overview";
+        const panel = (key, html) => `<div class="detail-tab-panel" data-detail-panel="${key}"${activeTab === key ? "" : " hidden"}>${html}</div>`;
+        detailBody = `<div class="detail-tabs movie-detail-tabs" role="tablist">${tabs.map(([key, label]) => `<button type="button" role="tab" class="${activeTab === key ? "active" : ""}" aria-selected="${activeTab === key}" data-detail-tab="${key}">${label}</button>`).join("")}</div>`
+          + panel("overview", [part.overview, part.tracking, part.related].join(""))
+          + panel("details", [part.facts, part.tags, part.stores, part.requirements, part.languages, part.other, part.links].join(""))
+          + (movieHasMedia ? panel("media", [part.trailer, part.media].join("")) : "")
+          + (hasRatingTab ? panel("ratings", [part.ratings, part.communityRating, part.breakdown].join("")) : "")
+          + (slots.cast.length ? panel("cast", part.cast) : "");
+      } else if (hasTabs) {
+        const hasEpisodeGuide = slots.episodes.length > 0 || Boolean(detailPlaceholders.episodes);
+        const tabs = [hasEpisodeGuide && ["episodes", "Episodes"], ["overview", "Overview"], hasRatingTab && ["ratings", "Ratings"], slots.cast.length && ["cast", "Cast & Crew"]].filter(Boolean);
         const activeTab = tabs.some(([key]) => key === context.detailTab) ? context.detailTab : tabs.find(([key]) => key === "episodes")?.[0] || tabs.find(([key]) => key === "overview")?.[0] || tabs[0][0];
         const panel = (key, html) => `<div class="detail-tab-panel" data-detail-panel="${key}"${activeTab === key ? "" : " hidden"}>${html}</div>`;
         detailBody = `<div class="detail-tabs" role="tablist">${tabs.map(([key, label]) => `<button type="button" role="tab" class="${activeTab === key ? "active" : ""}" aria-selected="${activeTab === key}" data-detail-tab="${key}">${label}</button>`).join("")}</div>`
-          + (slots.episodes.length ? panel("episodes", part.episodes) : "")
+          + (hasEpisodeGuide ? panel("episodes", part.episodes) : "")
           + panel("overview", [part.overview, part.trailer, part.tracking, part.facts, item.category === "series" ? "" : part.tags, part.media, part.stores, part.requirements, part.languages, part.other, part.related, part.links].join(""))
           + (hasRatingTab ? panel("ratings", [part.ratings, part.communityRating, part.breakdown].join("")) : "")
           + (slots.cast.length ? panel("cast", part.cast) : "");
@@ -273,7 +337,7 @@
           ${detailHeading}
           <div class="ios-hero-bg"${(landscape || image) ? ` style="background-image:url('${esc(landscape || image)}')"` : ""}><span class="hero-source-badge"><i data-lucide="${item.category === "movie" ? "film" : "tv"}" aria-hidden="true"></i>${esc(source?.name || item.metadataSource || "ScreenMark")} • ${esc(category(item.category)?.singular || labelCategory(item.category))}</span></div>
           <div class="ios-hero-body">
-            ${image ? detailImage : `<div class="detail-image-placeholder">${esc(category(item.category)?.icon || "✦")}</div>`}
+            ${image || hasLocalPoster ? detailImage : `<div class="detail-image-placeholder">${esc(category(item.category)?.icon || "✦")}</div>`}
             <div class="detail-hero-copy">
               ${(() => { const label = `${item.category === "movie" ? "🎞" : "📺"} ${source?.name || item.metadataSource || "ScreenMark"} · ${category(item.category)?.singular || labelCategory(item.category)}`; return sourceUrl ? `<a class="dh-source-tag" href="${esc(sourceUrl)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : `<span class="dh-source-tag">${esc(label)}</span>`; })()}
               <h2>${esc(canProgress ? item.title : (loaded.title || item.title))}</h2>
@@ -283,9 +347,9 @@
           </div>
           ${purchase}
         </article>
-        ${detailLoading ? `<p class="app-info detail-loading">Loading full details from ${esc(source?.name || "the metadata source")}…</p>` : ""}
+        ${detailLoading ? `<p class="detail-loading sr-only" role="status" aria-live="polite">Loading details from ${esc(source?.name || "the metadata source")}</p>` : ""}
         ${detailError ? `<div class="detail-error"><p>${esc(detailError)}</p><span class="detail-error-actions">${["imdb", "rottentomatoes"].includes(item.metadataSource) ? `<button class="button secondary small" type="button" data-review-provider-session="${esc(item.metadataSource)}">Open ${item.metadataSource === "imdb" ? "IMDb" : "Rotten Tomatoes"}</button>` : ""}<button class="button secondary small" data-action="refresh-details">Try again</button></span></div>` : ""}
-        ${canProgress && detailEditMode ? `<form id="detail-edit-form" class="detail-edit-form"><label>Title<input name="title" required maxlength="180" value="${esc(item.title)}"></label><label>Status<span class="detail-select-wrap"><select name="status">${statuses.map(status => `<option value="${esc(status)}" ${status === item.status ? "selected" : ""}>${esc(status)}</option>`).join("")}</select><i data-lucide="chevron-down" aria-hidden="true"></i></span></label><div class="detail-edit-numbers"><label>Progress<input name="progress" type="number" min="0" step="${esc(prefs.progressIncrement || 1)}" value="${progress}"></label><label>Goal<input name="goal" type="number" min="0" step="1" value="${goal}"></label></div></form>` : ""}
+        ${canProgress && detailEditMode ? `<form id="detail-edit-form" class="detail-edit-form"><label>Title<input name="title" required maxlength="180" value="${esc(item.title)}"></label><label>Status<span class="detail-select-wrap"><select name="status">${statuses.map(status => `<option value="${esc(status)}" ${status === item.status ? "selected" : ""}>${esc(status)}</option>`).join("")}</select><i data-lucide="chevron-down" aria-hidden="true"></i></span></label><div class="detail-edit-numbers"><label>Progress<input name="progress" type="number" min="0" step="${esc(category(item.category)?.step || 1)}" value="${progress}"></label><label>Goal<input name="goal" type="number" min="0" step="1" value="${goal}"></label></div></form>` : ""}
         <div class="detail-body-grid"><aside class="demo-detail-console">${unifiedProgress}${canProgress && !detailEditMode ? `<section class="detail-manage-card inline-tools-strip" aria-label="Metadata and artwork"><button type="button" class="detail-manage-btn mini-tool-btn" data-fix-match="${esc(item.id)}"><i data-lucide="link" aria-hidden="true"></i>Fix match</button><button type="button" class="detail-manage-btn mini-tool-btn" data-change-cover="${esc(item.id)}"><i data-lucide="image" aria-hidden="true"></i>Change poster</button></section>` : ""}</aside><div class="demo-detail-content">${detailBody}</div></div>
         <dialog class="detail-image-modal" id="detail-image-modal" aria-label="Image viewer"><button type="button" class="detail-image-modal-close" data-detail-image-close aria-label="Close image">×</button><button type="button" class="detail-image-modal-nav detail-image-modal-prev" data-detail-image-prev aria-label="Previous image">‹</button><figure><img data-detail-modal-img alt=""><figcaption data-detail-modal-caption></figcaption></figure><button type="button" class="detail-image-modal-nav detail-image-modal-next" data-detail-image-next aria-label="Next image">›</button></dialog>
       </div>`;

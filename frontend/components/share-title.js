@@ -2,8 +2,6 @@
 (() => {
   const W = 1080, M = 40, PH = 1527; // PH = one A4 page at this width
   const h = () => window.SplitAppShare.helpers;
-  const native = () => window.Capacitor?.Plugins?.ShareIntent;
-  const norm = s => String(s || "").toLowerCase();
   const perf = window.SplitAppPerf;
 
   function wrap(ctx, text, maxWidth) {
@@ -33,9 +31,9 @@
   }
 
   // Draws the sheet. `paged` keeps each block inside one PDF page. Returns a canvas cropped to its content.
-  async function draw(game, opts, paged) {
+  async function draw(game, opts, paged, appearance = {}) {
     const { themeColors, withAlpha, roundRect, fit } = h();
-    const C = themeColors();
+    const C = themeColors(appearance.theme || "app"), compact = appearance.layout === "compact";
     const font = getComputedStyle(document.body).fontFamily || "sans-serif";
     const tall = document.createElement("canvas"); tall.width = W; tall.height = 7000 + Math.ceil((opts.screenshots ? (game.shots || []).length : 0) / 2) * 360 + 400;
     const drawStart = performance.now();
@@ -46,7 +44,7 @@
     let y = 0;
     // Start a block of height `need`: in paged mode jump to the next page if it would straddle the break.
     const place = (need, gap = 22) => {
-      y += gap;
+      y += compact ? Math.max(8, Math.round(gap * .58)) : gap;
       if (paged) { const into = y % PH; if (into + need > PH - 6 && need < PH - 160) y = (Math.floor(y / PH) + 1) * PH + 40; }
       return y;
     };
@@ -98,7 +96,7 @@
     y = top + heroH;
 
     // ---- Scores & stats tiles
-    const SEC = 70;
+    const SEC = compact ? 56 : 70;
     const section = (name, bodyH, drawBody) => { const t = place(bodyH + SEC); card(t, bodyH + SEC); title(name, t); drawBody(t + SEC); y = t + bodyH + SEC; };
     if (opts.details && g.scores.length) {
       const n = g.scores.length, cols = n <= 2 ? n : n === 4 ? 2 : 3, tw = (inner - 56 - 24 * (cols - 1)) / cols, rows = Math.ceil(g.scores.length / cols), th = 94;
@@ -203,8 +201,6 @@
     return out;
   }
 
-  const bytesToBase64 = bytes => { let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(bin); };
-  const blobOf = (canvas, q) => new Promise(r => canvas.toBlob(r, "image/jpeg", q));
 
   // Minimal PDF: each A4-high slice of the sheet is a JPEG on its own page.
   async function makePdf(canvas, onProgress) {
@@ -250,7 +246,9 @@
   }
 
   function open(game, { showPopup, closePopup, toast, esc, loadImage }) {
-    document.getElementById("share-title-dialog")?.remove();
+    const previousDialog = document.getElementById("share-title-dialog");
+    previousDialog?._disposeShareImages?.();
+    previousDialog?.remove();
     const dialog = document.createElement("dialog");
     dialog.id = "share-title-dialog"; dialog.className = "choice-dialog share-dialog share-title-dialog";
     const g = groupFields(game.fields || []);
@@ -260,7 +258,7 @@
       requirements: Boolean(game.requirements?.minimum?.length || game.requirements?.recommended?.length),
       tags: Boolean((game.tags || []).length || (game.languages || []).length), screenshots: game.shotUrls.length > 0
     };
-    const state = { format: "pdf", ...Object.fromEntries(Object.entries(has).map(([k, v]) => [k, v])) };
+    const state = { format: "pdf", theme: "app", layout: "report", ...Object.fromEntries(Object.entries(has).map(([k, v]) => [k, v])) };
     const labels = { details: game.category === "series" ? ["Series details", "Premiered, creators, cast and ratings"] : ["Movie details", "Release date, director, cast and ratings"], playtime: game.category === "series" ? ["Episodes & runtime", "Episode count, seasons and runtime"] : ["Runtime", "Movie length and runtime"], description: ["Overview", "The saved synopsis"], requirements: ["Additional details", "Networks, studios and other saved metadata"], tags: ["Tags & languages", "Genres, tags and supported languages"], screenshots: ["Images", `All ${game.shotUrls.length} gallery images`] };
     const choice = (attr, key, label, help, active, disabled = false, kind = "radio") => `<button type="button" role="${kind}" aria-checked="${active}" class="export-choice${active ? " active" : ""}${disabled ? " locked" : ""}" ${disabled ? "disabled" : `data-${attr}="${key}"`}><span class="${kind === "radio" ? "export-radio" : "export-check"}" aria-hidden="true"></span><span><strong>${label}</strong><small>${help}</small></span></button>`;
     const check = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -268,7 +266,9 @@
       const chip = (key, label, on, disabled, always) => `<button type="button" class="share-chip${on ? " on" : ""}${always ? " always" : ""}" ${disabled || always ? "disabled" : `data-inc="${key}"`} aria-pressed="${on}"><span class="share-chip-box">${on ? check : ""}</span><span>${label}</span></button>`;
       dialog.querySelector(".share-body").innerHTML = `<p class="settings-overline share-label">FORMAT</p>
         <div class="share-modes" role="radiogroup" aria-label="Format"><button type="button" role="radio" aria-checked="${state.format === "pdf"}" class="${state.format === "pdf" ? "active" : ""}" data-fmt="pdf">PDF</button><button type="button" role="radio" aria-checked="${state.format === "image"}" class="${state.format === "image" ? "active" : ""}" data-fmt="image">Image</button></div>
+        <div class="share-pdf-controls"><label>Theme<select data-share-theme><option value="app"${state.theme === "app" ? " selected" : ""}>App theme</option><option value="light"${state.theme === "light" ? " selected" : ""}>Light</option><option value="dark"${state.theme === "dark" ? " selected" : ""}>Dark</option></select></label>${state.format === "pdf" ? `<label>View<select data-share-layout><option value="report"${state.layout === "report" ? " selected" : ""}>Detailed report</option><option value="compact"${state.layout === "compact" ? " selected" : ""}>Compact report</option></select></label>` : ""}</div>
         <p class="share-hint">${state.format === "pdf" ? "A paged report, easy to open or print." : "One long picture, easy to post in chats."}</p>
+        <section class="share-title-preview" aria-label="First page preview"><strong>Preview · first page</strong><img data-share-preview alt="Preview of the shared title" loading="lazy"><small data-share-preview-pages>Preparing preview…</small></section>
         <p class="settings-overline share-label">INCLUDE</p>
         <div class="share-chips">${chip("base", "Cover, status & progress", true, false, true)}${Object.keys(labels).map(k => chip(k, labels[k][0], has[k] && state[k], !has[k], false)).join("")}</div>
         <p class="share-hint">${Object.keys(labels).filter(k => !has[k]).map(k => labels[k][0]).join(", ") ? "Greyed out: no saved data for these sections." : ""}</p>`;
@@ -279,30 +279,45 @@
 
     // Images start loading the moment the popup opens, and the sheet is drawn ahead of the tap.
     let shotsLoaded = 0;
-    const shotsPromise = Promise.all(game.shotUrls.map(u => loadImage(u).catch(() => null).then(img => { shotsLoaded += 1; return img; })));
+    const bitmapResources = new Set();
+    const holdImage = image => { if (typeof image?.close === "function") bitmapResources.add(image); return image; };
+    const shotsPromise = (async () => {
+      const shots = new Array(game.shotUrls.length);
+      const reportedMemory = Number(navigator.deviceMemory) || 4;
+      const batchSize = reportedMemory <= 2 ? 2 : 4;
+      for (let offset = 0; offset < game.shotUrls.length; offset += batchSize) {
+        const batch = await Promise.all(game.shotUrls.slice(offset, offset + batchSize).map(u => loadImage(u).catch(() => null).then(img => { holdImage(img); shotsLoaded += 1; return img; })));
+        batch.forEach((image, index) => { shots[offset + index] = image; });
+      }
+      return shots;
+    })();
     const cache = new Map();
     let progress = { pct: 0, etaMs: 0, note: "" };
     const progressText = () => progress.pct === 0 && game.shotUrls.length && shotsLoaded < game.shotUrls.length ? `Loading screenshots ${shotsLoaded} of ${game.shotUrls.length}…` : `Preparing… ${progress.pct}%${progress.etaMs > 2500 ? ` · about ${Math.ceil(progress.etaMs / 1000)} s left` : ""}${progress.note ? ` · ${progress.note}` : ""}`;
-    const optsKey = () => JSON.stringify([state.format, ...Object.keys(has).map(k => has[k] && state[k])]);
-    const build = () => {
-      const key = optsKey();
+    const snapshotState = () => ({ format: state.format, theme: state.theme, layout: state.format === "pdf" ? state.layout : "report", ...Object.fromEntries(Object.keys(has).map(k => [k, has[k] && state[k]])) });
+    const optsKey = (snapshot = snapshotState()) => JSON.stringify([snapshot.format, snapshot.theme, snapshot.layout, ...Object.keys(has).map(k => snapshot[k])]);
+    const build = (snapshot = snapshotState()) => {
+      const key = optsKey(snapshot);
       if (!cache.has(key)) cache.set(key, (async () => {
-        const shots = state.screenshots && has.screenshots ? await shotsPromise : [];
-        const o = Object.fromEntries(Object.keys(has).map(k => [k, has[k] && state[k]]));
-        const cover = await game.coverPromise;
+        const shots = snapshot.screenshots && has.screenshots ? await shotsPromise : [];
+        const o = Object.fromEntries(Object.keys(has).map(k => [k, snapshot[k]]));
+        const cover = holdImage(await game.coverPromise);
         progress = { pct: 5, etaMs: 0, note: "" };
-        const canvas = await draw({ ...game, cover, shots }, o, state.format === "pdf");
+        const canvas = await draw({ ...game, cover, shots }, o, snapshot.format === "pdf", { theme: snapshot.theme, layout: snapshot.layout });
         progress = { pct: 35, etaMs: 0, note: "" };
         // A slow layout step means a slow canvas: use the faster method from the next build on.
         if (canvas.drawMs > 5000 && perf.state.level === 0) perf.escalate();
-        const bytes = state.format === "pdf" ? await makePdf(canvas, info => { progress = { pct: 35 + Math.round(info.pct * .65), etaMs: info.etaMs, note: info.note }; }) : await encodeImage(canvas);
+        const bytes = snapshot.format === "pdf" ? await makePdf(canvas, info => { progress = { pct: 35 + Math.round(info.pct * .65), etaMs: info.etaMs, note: info.note }; }) : await encodeImage(canvas);
+        const previewCanvas = document.createElement("canvas"), previewH = Math.min(PH, canvas.height);
+        previewCanvas.width = 270; previewCanvas.height = Math.max(1, Math.round(previewH * previewCanvas.width / W));
+        perf.ctx2d(previewCanvas).drawImage(canvas, 0, 0, W, previewH, 0, 0, previewCanvas.width, previewCanvas.height);
         progress = { pct: 100, etaMs: 0, note: "" };
-        return { bytes, pages: state.format === "pdf" ? Math.ceil(canvas.height / PH) : 1 };
+        return { bytes, format: snapshot.format, theme: snapshot.theme, layout: snapshot.layout, pages: snapshot.format === "pdf" ? Math.ceil(canvas.height / PH) : 1, preview: previewCanvas.toDataURL("image/jpeg", .76) };
       })());
       return cache.get(key);
     };
     let warm = 0;
-    const prewarm = () => { clearTimeout(warm); warm = setTimeout(() => { if (dialog.isConnected) build().catch(() => cache.delete(optsKey())); }, 350); };
+    const prewarm = () => { clearTimeout(warm); const snapshot = snapshotState(), key = optsKey(snapshot); warm = setTimeout(() => { if (dialog.isConnected) build(snapshot).then(result => { if (key !== optsKey() || !dialog.isConnected) return; const img = dialog.querySelector("[data-share-preview]"); if (img) img.src = result.preview; const note = dialog.querySelector("[data-share-preview-pages]"); if (note) note.textContent = result.format === "pdf" ? `${result.pages} ${result.pages === 1 ? "page" : "pages"} · ${result.layout === "compact" ? "Compact" : "Detailed"} · ${result.theme === "app" ? "App" : result.theme} theme` : "Image preview"; }).catch(() => cache.delete(key)); }, 350); };
     prewarm();
 
     dialog.addEventListener("click", async event => {
@@ -313,21 +328,39 @@
       const i = t.closest("[data-inc]"); if (i) { const k = i.dataset.inc; state[k] = !state[k]; paint(); return prewarm(); }
       const wantSave = Boolean(t.closest("[data-share-save]")), wantShare = Boolean(t.closest("[data-share-go]"));
       if (!wantSave && !wantShare) return;
-      const buttons = dialog.querySelectorAll(".share-footer button"); buttons.forEach(b => { b.disabled = true; });
+      const controls = [...dialog.querySelectorAll(".share-footer button,.share-body button,.share-body select")], wasDisabled = controls.map(control => control.disabled); controls.forEach(control => { control.disabled = true; });
       try {
         say(progressText(), "busy");
         const ticker = setInterval(() => say(progressText(), "busy"), 250);
-        let built; try { built = await build(); } finally { clearInterval(ticker); }
+        let built; try { built = await build(snapshotState()); } finally { clearInterval(ticker); }
         const { bytes } = built;
         const name = game.title.normalize("NFKD").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "title";
-        const pdf = state.format === "pdf";
+        const pdf = built.format === "pdf";
         const mime = pdf ? "application/pdf" : "image/jpeg", ext = pdf ? "pdf" : "jpg";
         if (wantSave) { say("Saving…", "busy"); const where = await h().saveBytes(bytes, mime, ext, name); say(`Saved to ${where}.`, "ok"); toast(`Saved to ${where}.`); }
         else { say("Opening share…", "busy"); await h().shareBytes(bytes, mime, ext, name, game.title); say(""); }
       } catch (error) { cache.delete(optsKey()); if (!/cancel|abort/i.test(String(error?.message || error?.name))) say(error?.message || "Could not complete that.", "error"); else say(""); }
-      finally { buttons.forEach(b => { b.disabled = false; }); }
+      finally { controls.forEach((control, index) => { control.disabled = wasDisabled[index]; }); }
     });
-    dialog.addEventListener("close", () => { clearTimeout(warm); setTimeout(() => dialog.remove(), 300); });
+    dialog.addEventListener("change", event => {
+      if (event.target.matches("[data-share-theme]")) state.theme = ["light", "dark"].includes(event.target.value) ? event.target.value : "app";
+      else if (event.target.matches("[data-share-layout]")) state.layout = event.target.value === "compact" ? "compact" : "report";
+      else return;
+      paint(); prewarm();
+    });
+    let disposePromise = null;
+    const disposeShareImages = () => {
+      if (disposePromise) return disposePromise;
+      clearTimeout(warm);
+      const builds = [...cache.values()];
+      disposePromise = Promise.allSettled([...builds, Promise.resolve(game.coverPromise), shotsPromise]).then(() => {
+        bitmapResources.forEach(image => { try { image.close(); } catch (_) {} });
+        bitmapResources.clear();
+      });
+      return disposePromise;
+    };
+    dialog._disposeShareImages = disposeShareImages;
+    dialog.addEventListener("close", () => { disposeShareImages(); setTimeout(() => dialog.remove(), 300); });
     showPopup(dialog);
   }
 

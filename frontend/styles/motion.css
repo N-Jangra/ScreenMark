@@ -1,24 +1,19 @@
 /* Motion + performance layer: short transform/opacity movement, with low-end and reduced-motion fallbacks. */
-:root{--ease-out:cubic-bezier(.2,.7,.2,1);--ease-spring:cubic-bezier(.32,.72,0,1)}
+:root{--ease-out:cubic-bezier(.22,.68,.25,1);--ease-in-out:cubic-bezier(.4,0,.2,1);--ease-spring:cubic-bezier(.2,.8,.2,1)}
 
 /* ---- Page transitions (direction aware) ---- */
-@keyframes sp-in-fwd{from{opacity:0;transform:translate3d(14px,0,0)}to{opacity:1;transform:none}}
-@keyframes sp-in-back{from{opacity:0;transform:translate3d(-14px,0,0)}to{opacity:1;transform:none}}
-@keyframes sp-rise{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
+@keyframes sp-in-fwd{from{opacity:0;transform:translate3d(8px,0,0)}to{opacity:1;transform:translate3d(0,0,0)}}
+@keyframes sp-in-back{from{opacity:0;transform:translate3d(-8px,0,0)}to{opacity:1;transform:translate3d(0,0,0)}}
 @keyframes sp-sheet-up{from{transform:translate3d(0,100%,0)}to{transform:none}}
 @keyframes sp-pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
 @keyframes sp-fade{from{opacity:0}to{opacity:1}}
+@keyframes sp-zoom{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:scale(1)}}
+@keyframes sp-pulse{0%,100%{opacity:.72}50%{opacity:1}}
 @keyframes sp-fab{from{opacity:0;transform:scale(.6) translate3d(0,12px,0)}to{opacity:1;transform:none}}
 
-body[data-nav-dir=forward] #page-content.page-route-enter{animation:sp-in-fwd calc(var(--speed,180ms) * 1.4) var(--ease-out) both}
-body[data-nav-dir=back] #page-content.page-route-enter{animation:sp-in-back calc(var(--speed,180ms) * 1.4) var(--ease-out) both}
+body[data-nav-dir=forward] #page-content.page-route-enter{animation:sp-in-fwd calc(var(--speed,180ms) * 1.25) var(--ease-out) both}
+body[data-nav-dir=back] #page-content.page-route-enter{animation:sp-in-back calc(var(--speed,180ms) * 1.25) var(--ease-out) both}
 
-/* gentle stagger for the first few cards only */
-#page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section):nth-child(-n+6){animation:sp-rise calc(var(--speed,180ms) * 1.6) var(--ease-out) both}
-#page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section):nth-child(2){animation-delay:calc(var(--speed,180ms) * .25)}
-#page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section):nth-child(3){animation-delay:calc(var(--speed,180ms) * .5)}
-#page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section):nth-child(4){animation-delay:calc(var(--speed,180ms) * .75)}
-#page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section):nth-child(n+5){animation-delay:var(--speed,180ms)}
 
 /* ---- Sheets, dialogs, backdrops ---- */
 .choice-dialog[open]{animation:sp-sheet-up calc(var(--speed,180ms) * 1.9) var(--ease-spring) both}
@@ -26,9 +21,7 @@ body[data-nav-dir=back] #page-content.page-route-enter{animation:sp-in-back calc
 #setting-picker-dialog.is-closing{animation:sp-sheet-down calc(var(--speed,180ms) * .8) cubic-bezier(.4,0,.8,.4) both}
 body[data-sheet-anim=slide] #setting-picker-dialog[open]{animation-name:sp-sheet-up}
 body[data-sheet-anim=fade] #setting-picker-dialog[open]{animation-name:sp-fade}
-body[data-sheet-anim=pop] #setting-picker-dialog[open]{animation-name:sp-pop}
 body[data-sheet-anim=fade] #setting-picker-dialog.is-closing{animation-name:sp-fade;animation-direction:reverse}
-body[data-sheet-anim=pop] #setting-picker-dialog.is-closing{animation-name:sp-pop;animation-direction:reverse}
 @keyframes sp-sheet-down{from{opacity:1;transform:translate3d(0,0,0)}to{opacity:0;transform:translate3d(0,28px,0)}}
 dialog.ios-action-sheet[open]{animation:sp-sheet-up calc(var(--speed,180ms) * 1.6) var(--ease-spring) both}
 dialog::backdrop{animation:sp-fade calc(var(--speed,180ms) * 1.4) ease both}
@@ -36,18 +29,17 @@ dialog::backdrop{animation:sp-fade calc(var(--speed,180ms) * 1.4) ease both}
 @media(min-width:768px){.choice-dialog[open],dialog.ios-action-sheet[open]{animation-name:sp-pop}}
 
 /* ---- Micro-interactions ---- */
-.floating-add-button:not([hidden]){animation:sp-fab calc(var(--speed,180ms) * 2) var(--ease-spring) both}
-.button,button,[role=button],a.demo-poster-open,.ios-pill,.icon-button,.nav-button,.sidebar-nav-button,.card-menu-button,.icon-picker-option,.entry-status-option{transition:transform calc(var(--speed,180ms) * .7) var(--ease-out),background-color var(--speed,180ms) ease,color var(--speed,180ms) ease}
-button:active,[role=button]:active,a.demo-poster-open:active,.ios-pill:active,.floating-add-button:active{transform:scale(.97)}
-:is(.item-card,.discover-card,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section){transition:transform calc(var(--speed,180ms) * .7) var(--ease-out),border-color var(--speed,180ms) ease}
+.button,button,[role=button],a.demo-poster-open,.ios-pill,.icon-button,.nav-button,.sidebar-nav-button,.card-menu-button,.icon-picker-option,.entry-status-option{transition:transform calc(var(--speed,180ms) * .7) var(--ease-out),background-color var(--speed,180ms) var(--ease-in-out),color var(--speed,180ms) var(--ease-in-out),opacity var(--speed,180ms) var(--ease-in-out)}
+button:active,[role=button]:active,a.demo-poster-open:active,.ios-pill:active{transform:scale(.97)}
+:is(.item-card,.discover-card,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.episode-row,.season-panel,.stats-activity-panel,.stats-activity-entry,.add-main-card,.add-metadata-section){transition:transform calc(var(--speed,180ms) * .7) var(--ease-out),border-color var(--speed,180ms) var(--ease-in-out)}
 :is(.item-card,.discover-card,.demo-poster-tile,.demo-up-next-card):active{transform:scale(.985)}
 .nav-button.active .nav-icon{animation:sp-fab calc(var(--speed,180ms) * 1.6) var(--ease-spring) both}
-.progress-line span,.bar-track span,.demo-up-next-progress i,.stats-time-progress span,.stats-overview-progress i,.season-progress i{transition:width calc(var(--speed,180ms) * 2.4) var(--ease-out)}
+.progress-line span,.bar-track span,.demo-up-next-progress i,.stats-overview-progress i,.season-progress i{transition:width calc(var(--speed,180ms) * 1.8) var(--ease-out)}
 .toast{transition:transform calc(var(--speed,180ms) * 1.4) var(--ease-spring),opacity var(--speed,180ms) ease}
 
 /* ---- Performance: skip layout/paint of off-screen groups & cards ---- */
-.dashboard-status-group{content-visibility:auto;contain-intrinsic-size:auto 220px}
-.item-card,.discover-card{contain:layout style}
+
+
 /* Keep page-level fixed controls anchored to the viewport and let native scroll anchoring
    compensate as images load; layout containment here can detach them on Android WebView. */
 #page-content{min-width:0}
@@ -57,10 +49,9 @@ html[data-lowend=true]{--speed:min(var(--speed,180ms),120ms)}
 html[data-lowend=true] *{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 html[data-lowend=true] .item-card,html[data-lowend=true] .ios-card,html[data-lowend=true] .detail-section,html[data-lowend=true] .detail-hero{box-shadow:none!important}
 html[data-lowend=true] .topbar,html[data-lowend=true] .bottom-bar,html[data-lowend=true] .detail-page-heading,html[data-lowend=true] .add-entry-heading,html[data-lowend=true] .choice-dialog-header,html[data-lowend=true] .app-sidebar{background:var(--surface)!important}
-html[data-lowend=true] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section){animation:none}
-html[data-lowend=true] .floating-add-button,html[data-lowend=true] .nav-button.active .nav-icon{animation:none}
+html[data-lowend=true] .nav-button.active .nav-icon{animation:none}
 html[data-lowend=true] .ios-hero-bg::after{backdrop-filter:none}
-html[data-lowend=true] body[data-nav-dir] #page-content.page-route-enter{animation-name:sp-fade;animation-duration:110ms}
+html[data-lowend=true] body[data-nav-dir] #page-content.page-route-enter{animation-duration:110ms}
 
 /* ---- Reduce motion / Animation speed Off ---- */
 body[data-reduced-motion=true] *,body[data-reduced-motion=true] *::before,body[data-reduced-motion=true] *::after,
@@ -68,29 +59,26 @@ body[data-reduced-motion=true] dialog::backdrop{animation:none!important;transit
 @media(prefers-reduced-motion:reduce){*,*::before,*::after,dialog::backdrop{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* ---- Settings → Animations: style choices (body data-* set by applyPreferences) ---- */
-@keyframes sp-zoom{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
-@keyframes sp-flip{from{opacity:0;transform:perspective(900px) rotateY(-14deg) translate3d(12px,0,0)}to{opacity:1;transform:none}}
 body[data-page-anim=fade][data-nav-dir] #page-content.page-route-enter{animation-name:sp-fade}
 body[data-page-anim=zoom][data-nav-dir] #page-content.page-route-enter{animation-name:sp-zoom}
-body[data-page-anim=rise][data-nav-dir] #page-content.page-route-enter{animation-name:sp-rise}
-body[data-page-anim=flip][data-nav-dir] #page-content.page-route-enter{animation-name:sp-flip}
-body[data-page-anim=none][data-nav-dir] #page-content.page-route-enter{animation:none}
-body[data-card-anim=fade] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section):nth-child(-n+6){animation-name:sp-fade}
-body[data-card-anim=pop] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section):nth-child(-n+6){animation-name:sp-pop}
-body[data-card-anim=slide] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section):nth-child(-n+6){animation-name:sp-in-fwd}
-body[data-card-anim=none] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section){animation:none}
-body[data-stagger=false] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section){animation-delay:0s!important}
-body[data-sheet-anim=pop] .choice-dialog[open],body[data-sheet-anim=pop] dialog.ios-action-sheet[open]{animation-name:sp-pop}
+body[data-page-anim=none][data-nav-dir] #page-content.page-route-enter{animation:none!important}
 body[data-sheet-anim=fade] .choice-dialog[open],body[data-sheet-anim=fade] dialog.ios-action-sheet[open]{animation-name:sp-fade}
 body[data-sheet-anim=slide] .choice-dialog[open],body[data-sheet-anim=slide] dialog.ios-action-sheet[open]{animation-name:sp-sheet-up}
-body[data-press=soft] :is(button,[role=button],a.demo-poster-open,.ios-pill,.icon-button,.nav-button,.sidebar-nav-button,.floating-add-button,.card-menu-button,.entry-status-option):active{transform:scale(.98)}
-body[data-press=none] :is(button,[role=button],a.demo-poster-open,.ios-pill,.icon-button,.nav-button,.sidebar-nav-button,.floating-add-button,.card-menu-button,.entry-status-option):active,body[data-press=none] :is(.item-card,.demo-poster-tile,.demo-up-next-card):active{transform:none}
-@media(hover:hover){body[data-hover-lift=true] :is(.item-card,.discover-card,.detail-carousel-card,.demo-poster-tile,.demo-up-next-card,.stats-overview-tile,.stats-destination,.timeline-day-card,.season-card){transition:transform calc(var(--speed,180ms) * .9) var(--ease-out),box-shadow calc(var(--speed,180ms) * .9) var(--ease-out)}
-body[data-hover-lift=true] :is(.item-card,.discover-card,.demo-poster-tile,.demo-up-next-card,.stats-overview-tile,.stats-destination,.timeline-day-card,.season-card):hover{transform:translate3d(0,-4px,0);box-shadow:0 12px 24px -10px #0004}
-body[data-hover-lift=true] .detail-carousel-card:hover{transform:translate3d(0,-3px,0)}}
-body[data-nav-bounce=false] .nav-button.active .nav-icon{animation:none}
-body[data-progress-anim=false] :is(.progress-line span,.bar-track span,.demo-up-next-progress i,.stats-time-progress span,.stats-overview-progress i,.season-progress i){transition:none}
+body[data-sheet-anim=scale] .choice-dialog[open],body[data-sheet-anim=scale] dialog.ios-action-sheet[open]{animation-name:sp-pop}
+body[data-sheet-anim=slide] :is(.choice-dialog,dialog.ios-action-sheet).is-closing{animation:sp-sheet-down calc(var(--speed,180ms) * .8) cubic-bezier(.4,0,.8,.4) both}
+body[data-sheet-anim=fade] :is(.choice-dialog,dialog.ios-action-sheet).is-closing{animation:sp-fade calc(var(--speed,180ms) * .8) ease reverse both}
+body[data-sheet-anim=scale] :is(.choice-dialog,dialog.ios-action-sheet).is-closing{animation:sp-pop calc(var(--speed,180ms) * .8) var(--ease-out) reverse both}
+body[data-sheet-anim=scale] #setting-picker-dialog.is-closing{animation:sp-pop calc(var(--speed,180ms) * .8) var(--ease-out) reverse both}
+body[data-press=none] :is(button,[role=button],a.demo-poster-open,.ios-pill,.icon-button,.nav-button,.sidebar-nav-button,.card-menu-button,.entry-status-option):active,body[data-press=none] :is(.item-card,.demo-poster-tile,.demo-up-next-card):active{transform:none}
+body[data-press=fade] :is(button,[role=button],a.demo-poster-open,.ios-pill,.icon-button,.nav-button,.sidebar-nav-button,.card-menu-button,.entry-status-option):active,body[data-press=fade] :is(.item-card,.demo-poster-tile,.demo-up-next-card):active{transform:none;opacity:.72}
+body[data-progress-anim=false] :is(.progress-line span,.bar-track span,.demo-up-next-progress i,.stats-overview-progress i,.season-progress i){transition:none}
+body[data-progress-style=snappy] :is(.progress-line span,.bar-track span,.demo-up-next-progress i,.stats-overview-progress i,.season-progress i){transition-duration:calc(var(--speed,180ms) * 1.25);transition-timing-function:cubic-bezier(.2,.7,.2,1)}
+body[data-progress-style=spring] :is(.progress-line span,.bar-track span,.demo-up-next-progress i,.stats-overview-progress i,.season-progress i){transition-duration:calc(var(--speed,180ms) * 1.8);transition-timing-function:cubic-bezier(.2,1.12,.3,1)}
 body[data-shimmer=false] :is(.discover-suggest-loading span,.discover-catalog-loading span,[class*=skeleton],[class*=shimmer]){animation:none}
+html[data-lowend=false] body[data-placeholder-anim=pulse] :is(.discover-suggest-loading span,.discover-catalog-loading span,[class*=skeleton],[class*=shimmer]){animation:sp-pulse 1.35s ease-in-out infinite}
+html[data-lowend=false] body[data-placeholder-anim=pulse] .detail-skeleton-block::after{animation:sp-pulse 1.35s ease-in-out infinite}
+html[data-perf=mid][data-lowend=true] body[data-reduced-motion=false][data-placeholder-anim=pulse] :is(.discover-suggest-loading span,.discover-catalog-loading span,[class*=skeleton],[class*=shimmer]){animation:sp-pulse 2.2s ease-in-out infinite!important}
+html[data-perf=mid][data-lowend=true] body[data-reduced-motion=false][data-placeholder-anim=pulse] .detail-skeleton-block::after{animation:sp-pulse 2.2s ease-in-out infinite!important}
 
 /* Android touch scrolling: keep the document on the native viewport scroller, add momentum to
    horizontal rails, and avoid blur layers while the finger is moving. */
@@ -105,12 +93,12 @@ dialog,.setting-picker-list,.import-preview-list ul{overscroll-behavior:contain}
 }
 @media(max-width:767px){html{scrollbar-gutter:auto}}
 html[data-perf="low"] #page-content.page-route-enter{animation:none!important}
-html[data-perf="low"] :is(.floating-add-button,.nav-button.active .nav-icon,.discover-suggest-loading span,.discover-catalog-loading span,[class*=skeleton],[class*=shimmer]){animation:none!important}
-html[data-perf="low"] :is(.progress-line span,.bar-track span,.demo-up-next-progress i,.stats-time-progress span,.stats-overview-progress i,.season-progress i){transition:none!important}
-html[data-perf="low"] .item-card{transition:none!important}
+html[data-perf="low"] :is(.nav-button.active .nav-icon,.discover-suggest-loading span,.discover-catalog-loading span,[class*=skeleton],[class*=shimmer]){animation:none!important}
+html[data-perf="low"] :is(.progress-line span,.bar-track span,.demo-up-next-progress i,.stats-overview-progress i,.season-progress i){transition:none!important}
+
 html[data-perf="low"] dialog::backdrop{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
 html[data-lowend="true"] #page-content.page-route-enter{animation-duration:110ms!important}
-html[data-lowend="true"] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section){animation:none!important}
-html[data-lowend="true"] :is(.floating-add-button,.nav-button.active .nav-icon,.discover-suggest-loading span,.discover-catalog-loading span,[class*=skeleton],[class*=shimmer]){animation:none!important}
-html[data-lowend="true"] :is(.item-card,.discover-card,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.explore-source-card,.explore-list-row,.episode-row,.season-panel,.stats-game-row,.stats-activity-panel,.stats-activity-entry,.stats-runtime-panel,.stats-time-status-card,.stats-genre-row,.stats-status-group,.stats-playtime-row,.stats-runtime-lookup-row,.add-main-card,.add-metadata-section){transition-duration:120ms!important;transition-property:transform,border-color,background-color,color!important}
+html[data-lowend="true"] #page-content.page-route-enter :is(.item-card,.discover-card,.settings-section,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.episode-row,.season-panel,.stats-activity-panel,.stats-activity-entry,.add-main-card,.add-metadata-section){animation:none!important}
+html[data-lowend="true"] :is(.nav-button.active .nav-icon,.discover-suggest-loading span,.discover-catalog-loading span,[class*=skeleton],[class*=shimmer]){animation:none!important}
+html[data-lowend="true"] :is(.item-card,.discover-card,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.episode-row,.season-panel,.stats-activity-panel,.stats-activity-entry,.add-main-card,.add-metadata-section){transition-duration:120ms!important;transition-property:transform,border-color,background-color,color!important}
 @media(pointer:coarse){html[data-lowend="true"] :is(.chip-row,.timeline-filters,.detail-toolbar,.detail-carousel,.season-poster-deck,.tracking-episode-rail,.discover-rail,.discover-source-strip,.discover-genre-row,.detail-gallery,.icon-picker-carousel,.timeline-month-days,.detail-status-pills){scroll-behavior:auto!important}}

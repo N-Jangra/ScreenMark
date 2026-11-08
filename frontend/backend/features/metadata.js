@@ -43,8 +43,9 @@
     const options = preferences.sourceOptions?.[sourceKey] || {}, provider = providers.find(source => source.key === sourceKey), headers = {};
     let target = String(url);
     const domain = cleanDomain(options.domain);
-    if (domain && /^[a-z0-9.-]+(:\d+)?$/.test(domain) && provider?.domain) {
-      try { const parsed = new URL(target); if (parsed.hostname === provider.domain) { parsed.host = domain; target = parsed.href; } } catch (_) {}
+    const approvedDomains = provider ? new Set([provider.domain, ...(provider.altNames || [])].filter(Boolean)) : new Set();
+    if (domain && approvedDomains.has(domain) && provider?.domain) {
+      try { const parsed = new URL(target); if (parsed.protocol === "https:" && parsed.hostname === provider.domain) { parsed.hostname = domain; target = parsed.href; } } catch (_) {}
     }
     if (String(options.userAgent || "").trim()) headers["User-Agent"] = String(options.userAgent).trim();
     if (String(options.cookies || "").trim()) headers.Cookie = String(options.cookies).trim();

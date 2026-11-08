@@ -37,14 +37,6 @@
       `${num(x + r)} ${num(y + h)} l ${num(x + r - k)} ${num(y + h)} ${num(x)} ${num(y + h - r + k)} ${num(x)} ${num(y + h - r)} c ` +
       `${num(x)} ${num(y + r)} l ${num(x)} ${num(y + r - k)} ${num(x + r - k)} ${num(y)} ${num(x + r)} ${num(y)} c h\n`;
   }
-  function star(cx, cy, r) {
-    let d = "";
-    for (let i = 0; i < 10; i++) {
-      const a = -Math.PI / 2 + i * Math.PI / 5, rad = i % 2 ? r * 0.42 : r;
-      d += `${num(cx + Math.cos(a) * rad)} ${num(cy - Math.sin(a) * rad)} ${i ? "l" : "m"} `;
-    }
-    return d + "h\n";
-  }
 
   const perf = window.SplitAppPerf;
   const measure = document.createElement("canvas").getContext("2d");
@@ -56,7 +48,6 @@
     return v.trimEnd() + "…";
   };
 
-  const blobOf = (canvas, q) => new Promise(r => canvas.toBlob(r, "image/jpeg", q));
   async function coverJpeg(img) {
     const k = perf.scale(), c = document.createElement("canvas"); c.width = Math.round(84 * k); c.height = Math.round(114 * k);
     const ctx = perf.ctx2d(c);
@@ -78,7 +69,8 @@
   }
 
   // entries: [{ title, tags, progress }]; covers: array of Image/ImageBitmap/null; theme: { page, text, muted, line, accent, card2 }
-  async function build({ title, entries, covers, theme, onProgress }) {
+  async function build({ title, entries, covers, theme, layout = "list", titlePage = false, onProgress }) {
+    layout = layout === "grid" ? "grid" : "list";
     const bg = rgb(theme.page, [1, 1, 1]), text = rgb(theme.text, [.1, .1, .15]), muted = rgb(theme.muted, [.45, .47, .55]);
     const line = rgb(theme.line, mix(bg, text, .12), bg), accent = rgb(theme.accent, [.39, .33, .96]), card2 = rgb(theme.card2, mix(bg, text, .06), bg);
     const track = perf.tracker(entries.length, { slowStepMs: 150, slowTotalMs: 12000, onUpdate: info => onProgress?.(info) });
@@ -101,9 +93,69 @@
         y -= 62;
       }
     };
+    if (titlePage) {
+      const titleText = fitText(title, 28, true, PW - MX * 2 - 32), countText = `${entries.length} ${entries.length === 1 ? "title" : "titles"}`;
+      let coverOps = fill(bg) + `0 0 ${num(PW)} ${num(PH)} re f\n`;
+      coverOps += fill(card2) + roundRect(MX, PH - 245, PW - MX * 2, 160, 18) + "f\n";
+      coverOps += fill(accent) + roundRect(MX, PH - 245, 7, 160, 3) + "f\n";
+      coverOps += fill(text) + `BT /F2 28 Tf ${num(MX + 26)} ${num(PH - 145)} Td ${lit(winAnsi(titleText).text)} Tj ET\n`;
+      coverOps += fill(muted) + `BT /F1 14 Tf ${num(MX + 26)} ${num(PH - 183)} Td ${lit(winAnsi(countText).text)} Tj ET\n`;
+      coverOps += stroke(accent) + `2 w ${num(MX + 26)} ${num(PH - 210)} m ${num(MX + 86)} ${num(PH - 210)} l S\n`;
+      coverOps += fill(muted) + `BT /F2 9 Tf ${num(MX + 26)} 42 Td (SCREENMARK) Tj ET\n`;
+      pages.push(coverOps);
+    }
     newPage(true);
     const textCol = MX + 26 + TW + 10, rightW = 96, colW = PW - MX - rightW - textCol;
-    for (let i = 0; i < entries.length; i++) {
+    if (layout === "grid") {
+      const columns = 3, gap = 10, cardW = (PW - MX * 2 - gap * (columns - 1)) / columns, cardH = 188, coverW = 82, coverH = 108;
+      const wrapTwo = (value, size, bold, max) => {
+        const words = String(value || "").split(/\s+/).filter(Boolean), lines = [];
+        let line = "";
+        for (const word of words) { const next = line ? `${line} ${word}` : word; if (line && widthOf(next, size, bold) > max) { lines.push(line); line = word; } else line = next; }
+        if (line) lines.push(line);
+        if (lines.length > 2) lines.length = 2;
+        if (lines[1] && widthOf(lines[1], size, bold) > max) lines[1] = fitText(lines[1], size, bold, max);
+        if (words.length && lines.length === 1 && widthOf(lines[0], size, bold) > max) lines[0] = fitText(lines[0], size, bold, max);
+        return lines;
+      };
+      for (let i = 0; i < entries.length; i++) {
+        const column = i % columns;
+        if (column === 0) {
+          if (y - cardH < MB) newPage(false);
+          else if (i) y -= 10;
+        }
+        const e = entries[i], x = MX + column * (cardW + gap), top = y, bottom = top - cardH;
+        ops += fill(card2) + roundRect(x, bottom, cardW, cardH, 9) + "f\n";
+        ops += stroke(mix(bg, line, .8)) + "0.6 w\n" + roundRect(x, bottom, cardW, cardH, 9) + "S\n";
+        const tx = x + (cardW - coverW) / 2, ty = top - 10 - coverH;
+        ops += "q\n" + roundRect(tx, ty, coverW, coverH, 4) + "W n\n";
+        if (covers[i]) {
+          const t0 = performance.now();
+          if (perf.state.level >= 1) for (let n = i; n < Math.min(entries.length, i + 12); n++) if (covers[n]) jpegFor(n);
+          const jpg = await jpegFor(i); track.step(performance.now() - t0);
+          if (track.shouldSwitch()) perf.escalate(level => track.switched(level));
+          const id = addImage(jpg); ops += `${num(coverW)} 0 0 ${num(coverH)} ${num(tx)} ${num(ty)} cm /Im${id} Do\n`;
+        } else {
+          track.advance(); ops += fill(mix(bg, accent, .16)) + `${num(tx)} ${num(ty)} ${num(coverW)} ${num(coverH)} re f\n`;
+          const letter = winAnsi(String(e.title || "?").trim().charAt(0).toUpperCase() || "?");
+          if (letter.ok) ops += fill(accent) + `BT /F2 28 Tf ${num(tx + coverW / 2 - widthOf(letter.text, 28, true) / 2)} ${num(ty + coverH / 2 - 9)} Td ${lit(letter.text)} Tj ET\n`;
+        }
+        ops += "Q\n";
+        const nameLines = wrapTwo(e.title, 9, true, cardW - 16);
+        for (let n = 0; n < nameLines.length; n++) {
+          const enc = winAnsi(nameLines[n]);
+          if (enc.ok) ops += fill(text) + `BT /F2 9 Tf ${num(x + 8)} ${num(top - 130 - n * 11)} Td ${lit(enc.text)} Tj ET\n`;
+          else { const img = await textJpeg(nameLines[n], 9, true, text, card2, cardW - 16); const id = addImage(img); ops += `q ${num(img.ptW)} 0 0 ${num(img.ptH)} ${num(x + 8)} ${num(top - 130 - n * 11 - 2)} cm /Im${id} Do Q\n`; }
+        }
+        if (e.tags) {
+          const tags = fitText(e.tags, 7, false, cardW - 16), enc = winAnsi(tags);
+          if (enc.ok) ops += fill(muted) + `BT /F1 7 Tf ${num(x + 8)} ${num(top - 155)} Td ${lit(enc.text)} Tj ET\n`;
+          else { const img = await textJpeg(tags, 7, false, muted, card2, cardW - 16); const id = addImage(img); ops += `q ${num(img.ptW)} 0 0 ${num(img.ptH)} ${num(x + 8)} ${num(top - 157)} cm /Im${id} Do Q\n`; }
+        }
+        if (e.progress) { const p = fitText(e.progress, 7.5, false, cardW - 16), enc = winAnsi(p); if (enc.ok) ops += fill(accent) + `BT /F2 7.5 Tf ${num(x + 8)} ${num(top - 174)} Td ${lit(enc.text)} Tj ET\n`; }
+      }
+      pages.push(ops);
+    } else for (let i = 0; i < entries.length; i++) {
       if (y - ROW < MB) newPage(false);
       const e = entries[i], top = y, mid = top - ROW / 2;
       // index

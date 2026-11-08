@@ -2,7 +2,14 @@
 (() => {
   window.SplitAppPages = window.SplitAppPages || {};
   let coverId = "";
-  const artOf = item => item?.customCover || item?.localThumbnailData || item?.image || "";
+  const PAGE_BATCH = 100;
+  const titleCollator = new Intl.Collator(undefined, { sensitivity: "base" });
+  const collectionVisible = new Map();
+  let collectionQueryKey = "";
+  const collectionSortCache = new Map();
+  let collectionCacheItems = null, collectionCacheRevision, collectionCacheKey = "";
+  const watchlistVisible = new Map();
+  const artOf = item => item?.customCover || item?.localThumbnailData || item?.localPortraitData || item?.image || "";
   const landscapeOf = item => item?.localLandscapeData || item?.localImageData?.["cachedDetails.landscapeImage"] || item?.localImageData?.["cachedDetails.backgroundImage"] || item?.backdrop || item?.cachedDetails?.landscapeImage || item?.cachedDetails?.backgroundImage || "";
   const stampOf = item => Number(item?.createdAt) || Number(item?.updatedAt) || 0;
   const isDone = (item, roles) => String(item?.status || "").toLowerCase() === String(roles?.done || "completed").toLowerCase();
@@ -16,22 +23,24 @@
     const value = duration(minutes);
     return `<span class="profile-time-value"><strong>${value.months}</strong><small>MONTHS</small></span><span class="profile-time-value"><strong>${value.days}</strong><small>DAYS</small></span><span class="profile-time-value"><strong>${value.hours}</strong><small>HOURS</small></span>`;
   };
-  const coverMarkup = (item, esc, landscape = false) => {
+  const coverMarkup = (item, esc, landscape = false, imageMarkup = window.SplitAppImageMarkup) => {
     const art = landscape ? landscapeOf(item) : artOf(item);
-    return art ? `<img src="${esc(art)}" alt="${esc(item.title)} cover" loading="lazy" decoding="async" onerror="this.hidden=true">` : `<span class="profile-art-placeholder"><i data-lucide="clapperboard" aria-hidden="true"></i></span>`;
+    const fallback = `<span class="profile-art-placeholder"><i data-lucide="clapperboard" aria-hidden="true"></i></span>`;
+    if (imageMarkup) return imageMarkup(landscape ? null : item, art, `${item.title} cover`, fallback);
+    return art ? `<img src="${esc(art)}" alt="${esc(item.title)} cover" loading="lazy" decoding="async" onerror="this.hidden=true">` : fallback;
   };
-  const posterButton = (item, esc, roles = {}, showProgress = false) => {
+  const posterButton = (item, esc, roles = {}, showProgress = false, imageMarkup = window.SplitAppImageMarkup) => {
     const goal = item.category === "series" ? Number(item.goal) || Number(item.facts?.episodeCount) || 0 : Number(item.goal) || Number(item.facts?.runtimeMinutes) || 0;
     const progress = Math.max(0, Number(item.progress) || 0);
     const done = isDone(item, roles);
     const percent = done ? 100 : goal ? Math.min(100, Math.round(progress / goal * 100)) : 0;
     const progressBar = showProgress ? `<span class="demo-poster-progress"><i class="${percent >= 100 ? "is-done" : ""}" style="width:${percent}%"></i></span>` : "";
-    return `<button type="button" class="profile-poster" data-open-details data-id="${esc(item.id)}" aria-label="Open ${esc(item.title)}">${coverMarkup(item, esc)}<span class="profile-poster-title">${esc(item.title)}</span>${progressBar}</button>`;
+    return `<button type="button" class="profile-poster" data-open-details data-id="${esc(item.id)}" aria-label="Open ${esc(item.title)}">${coverMarkup(item, esc, false, imageMarkup)}<span class="profile-poster-title">${esc(item.title)}</span>${progressBar}</button>`;
   };
   const sectionHeader = (title, target, count) => `<header class="profile-section-heading"><h2>${title}${Number.isFinite(count) ? ` <small>${count}</small>` : ""}</h2><button type="button" data-go="${target}" aria-label="See all ${title}"><i data-lucide="chevron-right" aria-hidden="true"></i></button></header>`;
 
   function profilePage(context) {
-    const { items = [], roles = {}, esc } = context;
+    const { items = [], roles = {}, esc, imageMarkup } = context;
     const series = items.filter(item => item.category === "series").sort((a, b) => stampOf(b) - stampOf(a));
     const movies = items.filter(item => item.category === "movie").sort((a, b) => stampOf(b) - stampOf(a));
     const candidates = items.filter(item => landscapeOf(item));
@@ -60,20 +69,33 @@
     const countCard = (label, count, icon) => `<a class="profile-stat-card profile-stat-count-card" href="#statistics"><span class="profile-stat-heading"><i data-lucide="${icon}" aria-hidden="true"></i><strong>${label}</strong></span><span class="profile-count-value">${Math.round(Number(count) || 0)}</span></a>`;
     const empty = `<div class="profile-empty"><i data-lucide="library" aria-hidden="true"></i><strong>Your profile is ready</strong><span>Add tracked movies and series to build your page.</span><button type="button" data-go="discover">Discover titles</button></div>`;
     const shelves = `${series.length ? `<section class="profile-shelf">${sectionHeader("Series", "series", series.length)}<div class="profile-poster-rail">${series.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div></section><section class="profile-shelf">${sectionHeader("♥ Series favorites", "series-favorites", favoriteSeries.length)}${favoriteSeries.length ? `<div class="profile-poster-rail">${favoriteSeries.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div>` : `<button type="button" class="profile-favorite-empty" data-go="series-favorites">No series favorites yet <i data-lucide="chevron-right" aria-hidden="true"></i></button>`}</section>` : ""}${movies.length ? `<section class="profile-shelf">${sectionHeader("Movies", "movies", movies.length)}<div class="profile-poster-rail">${movies.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div></section><section class="profile-shelf">${sectionHeader("♥ Movie favorites", "movie-favorites", favoriteMovies.length)}${favoriteMovies.length ? `<div class="profile-poster-rail">${favoriteMovies.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div>` : `<button type="button" class="profile-favorite-empty" data-go="movie-favorites">No movie favorites yet <i data-lucide="chevron-right" aria-hidden="true"></i></button>`}</section>` : ""}`;
-    return `<section class="profile-page"><section class="profile-hero"><div class="profile-cover">${cover ? coverMarkup(cover, esc, true) : `<span class="profile-cover-empty"></span>`}<span class="profile-cover-shade"></span></div><button type="button" class="profile-overflow-trigger" aria-label="More profile options" data-open-profile-menu><i data-lucide="ellipsis" aria-hidden="true"></i></button><div class="profile-identity"><span class="profile-avatar"><i data-lucide="user-round" aria-hidden="true"></i></span><div><h2>My Profile</h2><small>${items.length} tracked ${items.length === 1 ? "title" : "titles"}</small></div><button type="button" class="profile-edit" disabled title="Profile editing will be added later">Edit</button></div></section><dialog class="profile-options-dialog" id="profile-options-dialog" aria-label="Profile options"><header><strong>Profile options</strong><button type="button" data-profile-menu-close aria-label="Close options">×</button></header><nav><a href="#settings"><i data-lucide="settings" aria-hidden="true"></i><span>Settings</span></a><a href="#settings/metadata-sources"><i data-lucide="database" aria-hidden="true"></i><span>Metadata sources</span></a><a href="#statistics"><i data-lucide="chart-no-axes-column-increasing" aria-hidden="true"></i><span>Statistics</span></a><a href="#statistics/activity"><i data-lucide="activity" aria-hidden="true"></i><span>Activity</span></a><a href="#timeline"><i data-lucide="history" aria-hidden="true"></i><span>Timeline</span></a><a href="#settings/app-info"><i data-lucide="circle-help" aria-hidden="true"></i><span>About ScreenMark</span></a></nav></dialog><section class="profile-stats"><header class="profile-section-heading"><h2>Stats</h2><a href="#statistics" aria-label="Open full statistics"><i data-lucide="chevron-right" aria-hidden="true"></i></a></header><div class="profile-stat-rail">${timeCard("Series time", seriesMinutes, "tv")} ${countCard("Episodes watched", watchedEpisodes, "tv")} ${timeCard("Movie time", movieMinutes, "clapperboard")} ${countCard("Movies watched", watchedMovies, "clapperboard")}</div></section>${shelves}${items.length ? "" : empty}</section>`;
+    return `<section class="profile-page"><section class="profile-hero"><div class="profile-cover">${cover ? coverMarkup(cover, esc, true) : `<span class="profile-cover-empty"></span>`}<span class="profile-cover-shade"></span></div><button type="button" class="profile-overflow-trigger" aria-label="More profile options" data-open-profile-menu><i data-lucide="ellipsis" aria-hidden="true"></i></button><div class="profile-identity"><span class="profile-avatar"><i data-lucide="user-round" aria-hidden="true"></i></span><div><h2>My Profile</h2><small>${items.length} tracked ${items.length === 1 ? "title" : "titles"}</small></div><button type="button" class="profile-add-manual" data-profile-add><i data-lucide="plus" aria-hidden="true"></i><span>Add manually</span></button></div></section><dialog class="profile-options-dialog" id="profile-options-dialog" aria-label="Profile options"><header><strong>Profile options</strong><button type="button" data-profile-menu-close aria-label="Close options">×</button></header><nav><a href="#settings"><i data-lucide="settings" aria-hidden="true"></i><span>Settings</span></a><a href="#settings/metadata-sources"><i data-lucide="database" aria-hidden="true"></i><span>Metadata sources</span></a><a href="#statistics"><i data-lucide="chart-no-axes-column-increasing" aria-hidden="true"></i><span>Statistics</span></a><a href="#statistics/activity"><i data-lucide="activity" aria-hidden="true"></i><span>Activity</span></a><a href="#timeline"><i data-lucide="history" aria-hidden="true"></i><span>Timeline</span></a><a href="#settings/app-info"><i data-lucide="circle-help" aria-hidden="true"></i><span>About ScreenMark</span></a></nav></dialog><section class="profile-stats"><header class="profile-section-heading"><h2>Stats</h2><a href="#statistics" aria-label="Open full statistics"><i data-lucide="chevron-right" aria-hidden="true"></i></a></header><div class="profile-stat-rail">${timeCard("Series time", seriesMinutes, "tv")} ${countCard("Episodes watched", watchedEpisodes, "tv")} ${timeCard("Movie time", movieMinutes, "clapperboard")} ${countCard("Movies watched", watchedMovies, "clapperboard")}</div></section>${shelves}${items.length ? "" : empty}</section>`;
   }
 
   function collectionPage(context, kind, favorites = false) {
     const { items = [], esc, config, roles = {}, profileCollectionSort = "alpha", profileStatusFilter = "all", profileGenreFilter = "all", profileStatusGroups = false } = context;
     const category = kind === "movie" ? "movie" : "series";
     const title = favorites ? `${category === "series" ? "Series" : "Movie"} Favorites` : category === "series" ? "Shows" : "Movies";
+    const revisionKey = `${kind}|${favorites}|${profileCollectionSort}|${context.dataRevision ?? ""}`;
+    if (collectionCacheItems !== items || collectionCacheRevision !== context.dataRevision || collectionCacheKey !== revisionKey) {
+      collectionSortCache.clear(); collectionCacheItems = items; collectionCacheRevision = context.dataRevision; collectionCacheKey = revisionKey;
+    }
     const categoryItems = items.filter(item => item.category === category && (!favorites || item.favorite));
     const statuses = config.categories.find(row => row.key === category)?.statuses || [];
     const selectedStatus = statuses.includes(profileStatusFilter) ? profileStatusFilter : "all";
-    const sortItems = rows => [...rows].sort(profileCollectionSort === "alpha" ? (a, b) => a.title.localeCompare(b.title) : profileCollectionSort === "watched" ? (a, b) => (Number(b.progress) || 0) - (Number(a.progress) || 0) : profileCollectionSort === "rating" ? (a, b) => (Number(b.facts?.rating) || 0) - (Number(a.facts?.rating) || 0) : (a, b) => stampOf(b) - stampOf(a));
+    const sortItems = rows => [...rows].sort(profileCollectionSort === "alpha" ? (a, b) => titleCollator.compare(a.title || "", b.title || "") : profileCollectionSort === "watched" ? (a, b) => (Number(b.progress) || 0) - (Number(a.progress) || 0) : profileCollectionSort === "rating" ? (a, b) => (Number(b.facts?.rating) || 0) - (Number(a.facts?.rating) || 0) : (a, b) => stampOf(b) - stampOf(a));
     const genreOf = item => item.genres || item.facts?.genres || item.cachedDetails?.genres || [];
     const genres = [...new Set(categoryItems.flatMap(genreOf).map(value => String(value).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-    const filtered = sortItems(categoryItems.filter(item => (selectedStatus === "all" || item.status === selectedStatus) && (profileGenreFilter === "all" || genreOf(item).some(value => String(value).toLocaleLowerCase() === profileGenreFilter.toLocaleLowerCase()))));
+    const sortKey = `${kind}|${favorites}|${profileCollectionSort}`;
+    let sorted = collectionSortCache.get(sortKey);
+    if (!sorted || sorted.items !== items || sorted.revision !== context.dataRevision) {
+      sorted = { items, revision: context.dataRevision, rows: sortItems(categoryItems) };
+      collectionSortCache.set(sortKey, sorted);
+    }
+    const filtered = sorted.rows.filter(item => (selectedStatus === "all" || item.status === selectedStatus) && (profileGenreFilter === "all" || genreOf(item).some(value => String(value).toLocaleLowerCase() === profileGenreFilter.toLocaleLowerCase())));
+    const queryKey = `${kind}|${favorites}|${profileCollectionSort}|${selectedStatus}|${profileGenreFilter}|${profileStatusGroups}`;
+    if (queryKey !== collectionQueryKey) { collectionQueryKey = queryKey; collectionVisible.set(queryKey, PAGE_BATCH); }
+    const visibleCount = collectionVisible.get(queryKey) || PAGE_BATCH;
     const sortChoices = [["recent", "Recently added"], ["alpha", "Alphabetical"], ["rating", "Top rated"], ["watched", "Most watched"]];
     const selectedSortLabel = sortChoices.find(([key]) => key === profileCollectionSort)?.[1] || "Recently added";
     const filtersApplied = profileCollectionSort !== "alpha" || selectedStatus !== "all" || profileGenreFilter !== "all";
@@ -82,30 +104,34 @@
     let content;
     if (profileStatusGroups && selectedStatus === "all") {
       const ordered = [...statuses.filter(status => status !== (roles.done || "Completed")), roles.done || "Completed"].filter(status => statuses.includes(status));
-      const grouped = ordered.map(status => ({ status, rows: sortItems(filtered.filter(item => item.status === status)) })).filter(group => group.rows.length);
+      const groupMap = new Map(ordered.map(status => [status, []]));
+      filtered.slice(0, visibleCount).forEach(item => groupMap.get(item.status)?.push(item));
+      const grouped = ordered.map(status => ({ status, rows: groupMap.get(status) })).filter(group => group.rows.length);
       content = grouped.length ? `<div class="profile-status-groups">${grouped.map(group => `<section class="profile-status-group"><h3>${esc(group.status)}</h3>${gridFor(group.rows)}</section>`).join("")}</div>` : "";
-    } else content = gridFor(filtered);
+    } else content = gridFor(filtered.slice(0, visibleCount));
     if (!filtered.length) content = `<div class="profile-empty profile-list-empty"><i data-lucide="library" aria-hidden="true"></i><strong>${categoryItems.length ? "No titles match this filter" : favorites ? "No favorites yet" : `No ${title.toLowerCase()} yet`}</strong><span>${categoryItems.length ? "Choose another status or clear the filter." : "Titles you add to your library will appear here."}</span></div>`;
     const filterControl = filtersApplied
       ? `<footer class="profile-filter-bar"><button type="button" class="profile-filter-icon" data-open-profile-filters aria-label="Open filters"><i data-lucide="sliders-horizontal" aria-hidden="true"></i></button><button type="button" class="profile-sort-pill" data-open-profile-filters aria-label="Sort by ${esc(selectedSortLabel)}">${esc(selectedSortLabel)} <i data-lucide="chevron-down" aria-hidden="true"></i></button></footer>`
       : `<button type="button" class="profile-filter-pill" data-open-profile-filters><i data-lucide="sliders-horizontal" aria-hidden="true"></i><span>Filters</span></button>`;
-    return `<section class="profile-page profile-list-page"><header class="profile-list-header"><button type="button" data-go="profile" aria-label="Back to profile"><i data-lucide="chevron-left" aria-hidden="true"></i></button><h2>${title}</h2><div class="profile-list-header-actions"><button class="profile-visibility-toggle${profileStatusGroups ? " is-active" : ""}" type="button" data-profile-groups aria-label="${profileStatusGroups ? "Show all titles in one grid" : "Group titles by status"}" aria-pressed="${profileStatusGroups}"><i data-lucide="eye" aria-hidden="true"></i></button><button type="button" data-share-all aria-label="Share ${title}"><i data-lucide="share-2" aria-hidden="true"></i></button></div></header>${content}${filterControl}${filterDialog}</section>`;
+    const more = filtered.length > visibleCount ? `<button type="button" class="watchlist-browse" data-collection-more="${esc(queryKey)}">Show more · ${Math.min(visibleCount, filtered.length)} of ${filtered.length}</button>` : "";
+    return `<section class="profile-page profile-list-page"><header class="profile-list-header"><button type="button" data-go="profile" aria-label="Back to profile"><i data-lucide="chevron-left" aria-hidden="true"></i></button><h2>${title}</h2><div class="profile-list-header-actions"><button class="profile-visibility-toggle${profileStatusGroups ? " is-active" : ""}" type="button" data-profile-groups aria-label="${profileStatusGroups ? "Show all titles in one grid" : "Group titles by status"}" aria-pressed="${profileStatusGroups}"><i data-lucide="eye" aria-hidden="true"></i></button><button type="button" data-share-all aria-label="Share ${title}"><i data-lucide="share-2" aria-hidden="true"></i></button></div></header>${content}${more}${filterControl}${filterDialog}</section>`;
   }
 
   const watchlistStatus = (item, roles) => item.status === roles.queued || ["watchlist", "backlog", "queued", "to watch", "to play"].includes(String(item.status || "").toLowerCase());
   const activeStatus = (item, roles) => item.status === roles.active || ["watching", "in progress", "playing"].includes(String(item.status || "").toLowerCase());
   const holdStatus = (item, roles) => item.status === roles.hold || ["on hold", "paused", "haven't started", "not started yet"].includes(String(item.status || "").toLowerCase());
   const agoLong = item => Date.now() - (Number(item?.updatedAt) || Number(item?.createdAt) || 0) > 30 * 86400000;
-  const episodeAirTime = episode => Date.parse(episode?.airdate || "") || 0;
+  const episodeAirTime = episode => window.SplitAppLibrary.episodeAirTime?.(episode) || 0;
   const daysUntil = value => {
     const timestamp = Date.parse(value || "");
     if (!timestamp) return "Date unknown";
     const days = Math.max(0, Math.ceil((timestamp - Date.now()) / 86400000));
     return days === 0 ? "Today" : days === 1 ? "In 1 day" : `In ${days} days`;
   };
-  function watchlistCard({ item, episode, esc, roles, watched = false, upcoming = false, view = "list" }) {
+  function watchlistCard({ item, episode, esc, roles, imageMarkup = window.SplitAppImageMarkup, watched = false, upcoming = false, view = "list" }) {
     const isMovie = item.category === "movie";
-    const thumb = episode?.image || item.localThumbnailData || item.customCover || item.image || "";
+    const episodeArt = episode?.image || "";
+    const thumb = episodeArt || item.customCover || item.localThumbnailData || item.localPortraitData || item.image || "";
     const landscape = item.localLandscapeData || item.localImageData?.["cachedDetails.landscapeImage"] || item.localImageData?.["cachedDetails.backgroundImage"] || item.backdrop || item.cachedDetails?.landscapeImage || item.cachedDetails?.backgroundImage || thumb;
     const season = Number(episode?.season) || 0, number = Number(episode?.number) || 0;
     const code = isMovie ? (item.year ? String(item.year).slice(0, 4) : "MOVIE") : `S${String(season).padStart(2, "0")} | E${String(number).padStart(2, "0")}`;
@@ -117,16 +143,32 @@
     const tag = `<button type="button" class="watchlist-series-tag" data-open-details data-id="${esc(item.id)}">${esc(item.title)}${item.year ? ` (${esc(String(item.year).slice(0, 4))})` : ""} ›</button>`;
     const airdate = episode?.airdate || item.releaseDate || "";
     const check = upcoming ? `<span class="watchlist-airdate">${esc(daysUntil(airdate))}</span>` : isMovie ? `<button type="button" class="watchlist-check" data-watchlist-movie="${esc(item.id)}" aria-label="Mark ${esc(item.title)} watched">✓</button>` : `<button type="button" class="watchlist-check${isWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(item.id)}" data-episode-id="${esc(markId)}" data-episode-title="${esc(`${code} ${title}`)}" data-watchlist-card="${esc(item.id)}" aria-label="${isWatched ? "Watched" : "Mark watched"}" aria-pressed="${isWatched}">✓</button>`;
-    const remaining = isMovie ? "" : ` +${Math.max(0, (window.SplitAppLibrary.episodeInfo(item)?.total || 0) - (window.SplitAppLibrary.episodeInfo(item)?.done || 0))}`;
-    const art = thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : `<span class="watchlist-art-fallback"><i data-lucide="${isMovie ? "clapperboard" : "tv"}" aria-hidden="true"></i></span>`;
+    const episodeProgress = !isMovie ? window.SplitAppLibrary.episodeInfo(item) : null;
+    const remaining = isMovie ? "" : ` +${Math.max(0, (episodeProgress?.total || 0) - (episodeProgress?.done || 0))}`;
+    const fallback = `<span class="watchlist-art-fallback"><i data-lucide="${isMovie ? "clapperboard" : "tv"}" aria-hidden="true"></i></span>`;
+    const art = imageMarkup
+      ? imageMarkup(!episodeArt ? item : null, thumb, "", fallback)
+      : thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : fallback;
     if (view === "posters") {
       const progressInfo = !isMovie ? window.SplitAppLibrary.episodeInfo(item) : null;
-      const total = Number(progressInfo?.total) || Number(item.goal) || 0;
+      const posterThumb = item.customCover || item.localThumbnailData || item.localPortraitData || item.image || "";
+      const posterArt = imageMarkup
+        ? imageMarkup(item, posterThumb, `${item.title} poster`, fallback)
+        : posterThumb ? `<img src="${esc(posterThumb)}" alt="${esc(item.title)} poster" loading="lazy" decoding="async" onerror="this.hidden=true">` : fallback;
+      const total = Number(progressInfo?.total) || Number(item.goal) || (isMovie ? Number(item.facts?.runtimeMinutes) : 0) || 0;
       const trackedDone = Math.max(Number(progressInfo?.done) || 0, Number(item.progress) || 0, watchedIds.size);
       const done = total ? Math.min(total, trackedDone) : trackedDone;
       const percent = total ? Math.min(100, Math.round(done / total * 100)) : 0;
-      const progress = !isMovie && !upcoming ? `<span class="watchlist-poster-count">${total ? `${done} / ${total} episodes` : `${done} episodes watched`}</span><span class="watchlist-poster-progress"><i style="width:${percent}%"></i></span>` : "";
-      return `<article class="watchlist-card is-poster-view${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${cardOpen}><div class="watchlist-thumb">${art}</div>${progress}${check}</article>`;
+      const episodeLabel = !isMovie && episode
+        ? `S${String(season).padStart(2, "0")} · E${String(number).padStart(2, "0")}`
+        : isMovie ? (item.year ? String(item.year).slice(0, 4) : "MOVIE") : "EPISODES";
+      const progressCount = isMovie
+        ? total ? `${done} / ${total} min` : "Movie"
+        : total ? `${done} / ${total} eps` : `${done} eps`;
+      const progress = !upcoming ? `<span class="watchlist-poster-progress-count">${esc(progressCount)}</span><span class="watchlist-poster-progress"><i class="${percent >= 100 ? "is-done" : ""}" style="width:${percent}%"></i></span>` : "";
+      const posterTitle = `<span class="watchlist-poster-title">${esc(item.title)}</span>`;
+      const badge = `<span class="watchlist-poster-episode${upcoming ? " is-upcoming" : ""}">${esc(upcoming ? daysUntil(airdate) : episodeLabel)}</span>`;
+      return `<article class="watchlist-card is-poster-view${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${cardOpen}><div class="watchlist-thumb">${posterArt}</div><span class="watchlist-poster-shade" aria-hidden="true"></span>${badge}${posterTitle}${progress}${check}</article>`;
     }
     if (view === "cards") {
       const progressInfo = !isMovie ? window.SplitAppLibrary.episodeInfo(item) : null;
@@ -136,7 +178,9 @@
       const remainingEpisodes = Math.max(0, total - done);
       const topLabel = upcoming ? daysUntil(airdate).toUpperCase() : `NEXT · ${code.replace(" | ", " · ")}`;
       const subtitle = upcoming ? (isMovie ? "Movie release" : title) : (isMovie ? "Ready to watch" : `${title} · ${done}/${total || "?"} watched`);
-      const cardArt = landscape ? `<img src="${esc(landscape)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : art;
+      const cardArt = landscape
+        ? (imageMarkup ? imageMarkup(null, landscape, "", fallback, "watchlist-landscape-image") : `<img src="${esc(landscape)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">`)
+        : art;
       return `<article class="watchlist-card is-card-view${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${cardOpen}><div class="watchlist-card-art">${cardArt}</div><div class="watchlist-card-shade"></div><div class="watchlist-card-top"><span>${esc(topLabel)}</span>${!isMovie && !upcoming ? `<small>${remainingEpisodes} eps left</small>` : ""}</div><div class="watchlist-card-copy"><strong>${esc(item.title)}</strong><span>${esc(subtitle)}</span></div>${check}<span class="watchlist-card-progress"><i style="width:${percent}%"></i></span></article>`;
     }
     return `<article class="watchlist-card${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${cardOpen}><div class="watchlist-thumb">${art}</div><div class="watchlist-copy">${tag}<strong>${esc(code)}${upcoming ? "" : remaining}</strong><span>${esc(isMovie && upcoming ? "Movie release" : title)}</span></div>${check}</article>`;
@@ -148,11 +192,14 @@
     const tab = watchlistTab === "upcoming" ? "upcoming" : "watchlist";
     const allRelevant = items.filter(item => item.category === category && (tab === "upcoming" || !isDone(item, roles)));
     const identityOf = item => `${String(item.title || "").normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase()}|${String(item.year || item.releaseDate || "").match(/(?:19|20)\d{2}/)?.[0] || ""}`;
+    const progressCache = new WeakMap();
     const progressOf = item => {
+      const cached = progressCache.get(item); if (cached) return cached;
       const info = item.category === "series" ? window.SplitAppLibrary.episodeInfo(item) : null;
       const watched = Math.max(0, Number(info?.done) || 0, Number(item.progress) || 0, (item.watchedEpisodeIds || []).length);
       const total = Math.max(0, Number(info?.total) || Number(item.goal) || Number(item.facts?.runtimeMinutes) || 0);
-      return { watched, remaining: total ? Math.max(0, total - watched) : Infinity, ratio: total ? Math.min(1, watched / total) : 0, touched: Number(item.lastProgressAt) || stampOf(item) };
+      const value = { watched, remaining: total ? Math.max(0, total - watched) : Infinity, ratio: total ? Math.min(1, watched / total) : 0, touched: Number(item.lastProgressAt) || stampOf(item) };
+      progressCache.set(item, value); return value;
     };
     const progressOrder = (left, right) => {
       const a = progressOf(left), b = progressOf(right);
@@ -161,20 +208,23 @@
     };
     const relevant = category === "series" ? [...allRelevant.reduce((groups, item) => { const key = identityOf(item), rows = groups.get(key) || []; rows.push(item); groups.set(key, rows); return groups; }, new Map()).values()].map(rows => rows.sort(progressOrder)[0]) : allRelevant;
     const sections = [];
-    const movieCards = (rows, upcoming = false) => rows.map(item => {
-      const episode = { id: `movie:${item.id}`, season: 0, number: 0, title: upcoming ? item.releaseDate || item.year || "Upcoming" : "Ready to watch", image: item.localThumbnailData || item.customCover || item.image || "", airdate: item.releaseDate || item.year || "" };
-      return watchlistCard({ item, episode, esc, roles, upcoming, view: watchlistView });
-    });
+    const appendSection = (heading, subset, renderCard) => {
+      if (!subset.length) return;
+      const key = `${kind}|${tab}|${heading}`, limit = watchlistVisible.get(key) || PAGE_BATCH, shown = subset.slice(0, limit);
+      const more = subset.length > limit ? `<button type="button" class="watchlist-browse" data-watchlist-more="${esc(key)}">Show more · ${Math.min(limit, subset.length)} of ${subset.length}</button>` : "";
+      sections.push(`<section class="watchlist-section"><h3>${esc(heading)}</h3>${shown.map(renderCard).join("")}${more}</section>`);
+    };
     if (tab === "upcoming") {
       if (category === "series") {
         const upcoming = relevant.flatMap(item => {
-          const episode = (item.cachedDetails?.sections || []).filter(section => section.kind === "episodes").flatMap(section => section.items || []).filter(row => episodeAirTime(row) > Date.now()).sort((a, b) => episodeAirTime(a) - episodeAirTime(b))[0];
+          const watched = new Set((item.watchedEpisodeIds || []).map(String));
+          const episode = (item.cachedDetails?.sections || []).filter(section => section.kind === "episodes").flatMap(section => section.items || []).filter(row => Boolean(window.SplitAppLibrary.isUpcoming?.(row)) && !watched.has(String(row.id))).sort((a, b) => episodeAirTime(a) - episodeAirTime(b))[0];
           return episode ? [{ item, episode }] : [];
         }).sort((a, b) => episodeAirTime(a.episode) - episodeAirTime(b.episode));
-        if (upcoming.length) sections.push(`<section class="watchlist-section"><h3>Upcoming episodes</h3>${upcoming.map(row => watchlistCard({ ...row, esc, roles, upcoming: true, view: watchlistView })).join("")}</section>`);
+        appendSection("Upcoming episodes", upcoming, row => watchlistCard({ ...row, esc, roles, upcoming: true, view: watchlistView }));
       } else {
         const upcoming = relevant.filter(item => watchlistStatus(item, roles) && Date.parse(item.releaseDate || "") > Date.now()).sort((a, b) => Date.parse(a.releaseDate) - Date.parse(b.releaseDate));
-        if (upcoming.length) sections.push(`<section class="watchlist-section"><h3>Upcoming movies</h3>${movieCards(upcoming, true).join("")}</section>`);
+        appendSection("Upcoming movies", upcoming, item => watchlistCard({ item, episode: { id: `movie:${item.id}`, season: 0, number: 0, title: item.releaseDate || item.year || "Upcoming", image: item.localThumbnailData || item.localPortraitData || item.customCover || item.image || "", airdate: item.releaseDate || item.year || "" }, esc, roles, upcoming: true, view: watchlistView }));
       }
     } else {
       const rows = category === "series" ? relevant.map(item => ({ item, info: window.SplitAppLibrary.episodeInfo(item) })).filter(row => row.info?.next && episodeAirTime(row.info.next) <= Date.now() && !isDone(row.item, roles)) : relevant.filter(item => !isDone(item, roles) && (watchlistStatus(item, roles) || activeStatus(item, roles) || holdStatus(item, roles)));
@@ -189,7 +239,7 @@
       const current = started.filter(row => !rested.has(category === "series" ? row.item.id : row.id));
       const onHold = category === "series" ? rows.filter(row => (Number(row.info.done) || 0) <= 0 && (Number(row.item.progress) || 0) <= 0 && holdStatus(row.item, roles) && !agoLong(row.item)).sort((a, b) => stampOf(b.item) - stampOf(a.item)) : rows.filter(item => (Number(item.progress) || 0) <= 0 && holdStatus(item, roles) && !agoLong(item)).sort((a, b) => stampOf(b) - stampOf(a));
       const asCard = row => category === "series" ? watchlistCard({ item: row.item, episode: row.info.next, esc, roles, view: watchlistView }) : watchlistCard({ item: row, episode: { title: "Ready to watch", image: row.localThumbnailData || row.customCover || row.image || "" }, esc, roles, view: watchlistView });
-      const addSection = (heading, subset) => { if (subset.length) sections.push(`<section class="watchlist-section"><h3>${esc(heading)}</h3>${subset.map(asCard).join("")}</section>`); };
+      const addSection = (heading, subset) => appendSection(heading, subset, asCard);
       const notStarted = [...queued, ...onHold].sort((a, b) => stampOf(category === "series" ? b.item : b) - stampOf(category === "series" ? a.item : a)).slice(0, 5);
       addSection("Watching", current); addSection("Not started yet", notStarted); addSection("Haven't watched for a long time", stale);
     }
@@ -207,6 +257,8 @@
   }
 
   window.SplitAppPages.watchlistCard = watchlistCard;
+  window.SplitAppPages.loadMoreCollection = key => { const query = String(key || collectionQueryKey); collectionVisible.set(query, (collectionVisible.get(query) || PAGE_BATCH) + PAGE_BATCH); return true; };
+  window.SplitAppPages.loadMoreWatchlist = key => { watchlistVisible.set(String(key), (watchlistVisible.get(String(key)) || PAGE_BATCH) + PAGE_BATCH); return true; };
 
   window.SplitAppPages.profile = profilePage;
   window.SplitAppPages.series = context => collectionPage(context, "series");

@@ -2,34 +2,74 @@
 // so a save touches only changed games instead of rewriting one huge JSON blob
 // into localStorage (5 MB cap, synchronous, blocks the UI thread).
 (root => {
-  const DB_NAME = "screenmark_library", VERSION = 3;
+  const DB_NAME = "screenmark_library", VERSION = 6;
   let dbPromise = null;
-  const known = new Map(); // id -> JSON snapshot last written/read
+  const known = new Map(); // id -> compact content signature; avoid retaining another copy of each full record
+  let knownMeta = null; // JSON snapshot of the small library metadata row
+  const isRecord = value => value !== null && typeof value === "object" && !Array.isArray(value);
+  const normalizeHistory = value => Array.isArray(value) ? value.filter(isRecord) : [];
+  const normalizePreferences = value => isRecord(value) ? value : {};
+  const metadataSnapshot = (history, preferences) => JSON.stringify({ history: normalizeHistory(history), preferences: normalizePreferences(preferences) });
+  const itemSnapshot = (item, id) => JSON.stringify({ ...item, id });
+  const itemSignature = (item, id) => {
+    const value = itemSnapshot(item, id);
+    let first = 0x811c9dc5, second = 0x9e3779b9;
+    for (let index = 0; index < value.length; index++) {
+      const code = value.charCodeAt(index);
+      first = Math.imul(first ^ code, 0x01000193);
+      second = Math.imul(second ^ (code + index), 0x85ebca6b);
+    }
+    return `${value.length}:${(first >>> 0).toString(16)}${(second >>> 0).toString(16)}`;
+  };
 
   function open() {
     if (dbPromise) return dbPromise;
-    dbPromise = new Promise((resolve, reject) => {
+    const opening = new Promise((resolve, reject) => {
       if (!root.indexedDB) { reject(new Error("IndexedDB unavailable")); return; }
       const request = indexedDB.open(DB_NAME, VERSION);
+      let settled = false;
       request.onupgradeneeded = () => {
         const db = request.result;
         if (!db.objectStoreNames.contains("items")) {
           const items = db.createObjectStore("items", { keyPath: "id" });
-          items.createIndex("status", "status");
-          items.createIndex("category", "category");
-          items.createIndex("updatedAt", "updatedAt");
-          items.createIndex("createdAt", "createdAt");
+        }
+        // The app currently loads its library as a single in-memory collection;
+        // none of these indexes is queried, so maintaining them only slows writes.
+        const items = request.transaction.objectStore("items");
+        ["status", "category", "updatedAt", "createdAt"].forEach(name => {
+          if (items.indexNames.contains(name)) items.deleteIndex(name);
+        });
+        if (!items.indexNames.contains("sourceCategoryProvider")) {
+          items.createIndex("sourceCategoryProvider", ["metadataSource", "category", "providerId"], { unique: false });
         }
         if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
         // Device-local artwork cache: one small Blob per game/artwork kind, read in one fast batch.
         if (!db.objectStoreNames.contains("thumbs")) db.createObjectStore("thumbs", { keyPath: "key" });
-        if (!db.objectStoreNames.contains("share-cache")) db.createObjectStore("share-cache", { keyPath: "key" });
+        // Version 5 removes the unused PDF/share cache to reclaim old blobs.
+        if (db.objectStoreNames.contains("share-cache")) db.deleteObjectStore("share-cache");
       };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        if (settled) { request.result.close(); return; }
+        settled = true;
+        const connection = request.result;
+        connection.onversionchange = () => {
+          connection.close();
+          if (dbPromise === opening) dbPromise = null;
+          known.clear(); knownMeta = null;
+        };
+        connection.onclose = () => { if (dbPromise === opening) dbPromise = null; };
+        resolve(connection);
+      };
+      request.onerror = () => { if (!settled) { settled = true; reject(request.error); } };
+      request.onblocked = () => {
+        if (settled) return;
+        settled = true;
+        reject(new Error("The library database upgrade is blocked by another open ScreenMark window. Close the other window and retry."));
+      };
     });
-    dbPromise.catch(() => { dbPromise = null; });
-    return dbPromise;
+    dbPromise = opening;
+    opening.catch(() => { if (dbPromise === opening) dbPromise = null; });
+    return opening;
   }
   const done = tx => new Promise((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error); });
   const result = request => new Promise((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
@@ -38,47 +78,71 @@
   async function loadAll() {
     const db = await open();
     const tx = db.transaction(["items", "meta"], "readonly");
-    const [items, meta] = await Promise.all([result(tx.objectStore("items").getAll()), result(tx.objectStore("meta").get("state"))]);
+    const [rows, meta] = await Promise.all([result(tx.objectStore("items").getAll()), result(tx.objectStore("meta").get("state"))]);
+    const items = rows.filter(item => isRecord(item) && item.id != null && String(item.id) !== "");
+    const history = normalizeHistory(meta?.history), preferences = normalizePreferences(meta?.preferences);
+    const metadataNeedsRepair = !Array.isArray(meta?.history) || history.length !== meta.history.length || !isRecord(meta?.preferences);
     known.clear();
-    items.forEach(item => known.set(String(item.id), JSON.stringify(item)));
-    return { items, history: meta?.history || [], preferences: meta?.preferences || {}, empty: !items.length && !meta };
+    items.forEach(item => known.set(String(item.id), itemSignature(item, String(item.id))));
+    knownMeta = metadataNeedsRepair ? null : metadataSnapshot(history, preferences);
+    return { items, history, preferences, empty: !items.length && !meta };
+  }
+
+  // Resolve a linked catalog record without loading and scanning the whole library.
+  async function findByProvider(source, category, providerId) {
+    if (!source || !category || providerId == null || String(providerId) === "") return null;
+    const db = await open();
+    const store = db.transaction("items", "readonly").objectStore("items");
+    const key = [String(source), String(category), String(providerId)];
+    const match = await result(store.index("sourceCategoryProvider").get(key));
+    return isRecord(match) ? match : null;
   }
 
   // Writes only games whose content changed and deletes games that are gone.
   async function save({ items, history, preferences }) {
-    const db = await open();
-    const tx = db.transaction(["items", "meta"], "readwrite");
-    const store = tx.objectStore("items");
-    const next = new Map();
+    history = normalizeHistory(history);
+    preferences = normalizePreferences(preferences);
+    const next = new Map(), writes = [];
     for (const item of items) {
       if (item?.id == null) continue;
-      const id = String(item.id), snapshot = JSON.stringify(item);
-      next.set(id, snapshot);
-      if (known.get(id) !== snapshot) store.put({ ...item, id });
+      const id = String(item.id), signature = itemSignature(item, id);
+      next.set(id, signature);
+      if (known.get(id) !== signature) writes.push({ ...item, id });
     }
-    for (const id of known.keys()) if (!next.has(id)) store.delete(id);
-    tx.objectStore("meta").put({ key: "state", history, preferences });
+    const removed = [...known.keys()].filter(id => !next.has(id));
+    const nextMeta = metadataSnapshot(history, preferences);
+    if (!writes.length && !removed.length && knownMeta === nextMeta) return;
+    const db = await open(), tx = db.transaction(["items", "meta"], "readwrite"), store = tx.objectStore("items");
+    writes.forEach(item => store.put(item));
+    removed.forEach(id => store.delete(id));
+    if (knownMeta !== nextMeta) tx.objectStore("meta").put({ key: "state", history, preferences });
     await done(tx);
     known.clear(); next.forEach((snapshot, id) => known.set(id, snapshot));
+    knownMeta = nextMeta;
   }
 
   // Touches only the given games (plus the small meta record). No scan of the library.
   async function saveSome({ changed = [], removedIds = [], history, preferences }) {
-    const db = await open();
-    const tx = db.transaction(["items", "meta"], "readwrite");
-    const store = tx.objectStore("items");
-    const writes = [];
+    history = normalizeHistory(history);
+    preferences = normalizePreferences(preferences);
+    const nextMeta = metadataSnapshot(history, preferences);
+    const writes = [], removed = new Set(removedIds.map(id => String(id)));
     for (const item of changed) {
       if (item?.id == null) continue;
-      const id = String(item.id), snapshot = JSON.stringify(item);
-      if (known.get(id) === snapshot) continue;
-      store.put({ ...item, id }); writes.push([id, snapshot]);
+      const id = String(item.id), signature = itemSignature(item, id);
+      if (removed.has(id) || known.get(id) === signature) continue;
+      writes.push([{ ...item, id }, signature]);
     }
-    for (const id of removedIds) { store.delete(String(id)); }
-    tx.objectStore("meta").put({ key: "state", history, preferences });
+    if (!writes.length && !removed.size && knownMeta === nextMeta) return;
+    const db = await open();
+    const tx = db.transaction(["items", "meta"], "readwrite"), store = tx.objectStore("items");
+    writes.forEach(([item]) => store.put(item));
+    removed.forEach(id => store.delete(id));
+    if (knownMeta !== nextMeta) tx.objectStore("meta").put({ key: "state", history, preferences });
     await done(tx);
-    writes.forEach(([id, snapshot]) => known.set(id, snapshot));
-    removedIds.forEach(id => known.delete(String(id)));
+    writes.forEach(([item, signature]) => known.set(String(item.id), signature));
+    removed.forEach(id => known.delete(id));
+    knownMeta = nextMeta;
   }
 
   // Thumbnail cache. entries: [[key, sig]] -> returns [[key, blob]] for entries whose stored signature still matches.
@@ -87,10 +151,11 @@
     const store = db.transaction("thumbs", "readonly").objectStore("thumbs");
     const rows = await Promise.all(entries.map(([key]) => result(store.get(key)).catch(() => null)));
     const hits = [];
-    rows.forEach((row, index) => { if (row?.blob && row.sig === entries[index][1]) hits.push([row.key, row.blob]); });
+    rows.forEach((row, index) => { if (typeof Blob !== "undefined" && row?.blob instanceof Blob && row.sig === entries[index][1]) hits.push([row.key, row.blob]); });
     return hits;
   }
   async function putThumbs(entries) {
+    entries = entries.filter(entry => Array.isArray(entry) && entry.length >= 3 && entry[0] != null && typeof Blob !== "undefined" && entry[2] instanceof Blob);
     if (!entries.length) return;
     const db = await open();
     const tx = db.transaction("thumbs", "readwrite");
@@ -101,9 +166,22 @@
   // Which artwork is already cached ([[key, sig]]), so background fill only touches what is missing.
   async function listThumbKeys() {
     const db = await open();
-    const store = db.transaction("thumbs", "readonly").objectStore("thumbs");
-    const rows = await result(store.getAll());
-    return rows.map(row => [row.key, row.sig]);
+    const tx = db.transaction("thumbs", "readonly"), store = tx.objectStore("thumbs"), rows = [];
+    const finished = done(tx);
+    await new Promise((resolve, reject) => {
+      const request = store.openCursor();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) { resolve(); return; }
+        // Cursor through one record at a time; unlike getAll(), this avoids
+        // materializing the entire artwork Blob cache just to read key/signature.
+        rows.push([cursor.key, cursor.value?.sig]);
+        cursor.continue();
+      };
+    });
+    await finished;
+    return rows;
   }
   async function clearThumbs() {
     const db = await open();
@@ -111,19 +189,14 @@
     tx.objectStore("thumbs").clear();
     await done(tx);
   }
-  async function getShareCache(key, sig) {
-    const db = await open(), row = await result(db.transaction("share-cache", "readonly").objectStore("share-cache").get(key));
-    return row?.sig === sig ? row.blob || null : null;
+  async function deleteThumbs(keys) {
+    if (!keys.length) return;
+    const db = await open();
+    const tx = db.transaction("thumbs", "readwrite"), store = tx.objectStore("thumbs");
+    keys.forEach(key => store.delete(key));
+    await done(tx);
   }
-  async function putShareCache(key, sig, blob) {
-    const db = await open(), tx = db.transaction("share-cache", "readwrite");
-    tx.objectStore("share-cache").put({ key, sig, blob, at: Date.now() }); await done(tx);
-  }
-  async function clearShareCache() {
-    const db = await open(), tx = db.transaction("share-cache", "readwrite"); tx.objectStore("share-cache").clear(); await done(tx);
-  }
-
-  const core = Object.freeze({ open, loadAll, save, saveSome, getThumbs, putThumbs, listThumbKeys, clearThumbs, getShareCache, putShareCache, clearShareCache });
+  const core = Object.freeze({ open, loadAll, findByProvider, save, saveSome, getThumbs, putThumbs, listThumbKeys, clearThumbs, deleteThumbs });
   root.SplitAppIDBCore = core;
   if (typeof window === "undefined") return; // inside the data worker: expose the core only
 
@@ -133,6 +206,49 @@
   // Use the same IndexedDB implementation on the page in that preview mode.
   let worker = null, nextId = 1, usable = typeof Worker === "function" && root.location?.protocol !== "file:";
   const pending = new Map();
+  let fallbackReady = Promise.resolve(), fallbackPrimed = false;
+  function primeFallback() {
+    if (fallbackPrimed) return Promise.resolve(null);
+    return core.loadAll().then(data => { fallbackPrimed = true; return data; });
+  }
+  function queueFallback(op, args) {
+    const run = fallbackReady.catch(() => {}).then(async () => {
+      const primed = await primeFallback();
+      return op === "loadAll" && primed ? primed : core[op](...args);
+    });
+    // Keep the queue usable after a transient failure; the caller still receives
+    // the rejection, while the next operation retries initialization in order.
+    fallbackReady = run.catch(() => {});
+    return run;
+  }
+  const failWorker = error => {
+    usable = false;
+    const failedWorker = worker; worker = null;
+    if (failedWorker) {
+      failedWorker.onmessage = failedWorker.onerror = failedWorker.onmessageerror = null;
+      failedWorker.terminate();
+    }
+    const jobs = [...pending.values()]; pending.clear();
+    jobs.forEach(job => clearTimeout(job.timer));
+    // Prime the main-thread diff cache before it accepts future writes. In-flight
+    // worker writes may commit; IndexedDB serializes this read after those writes.
+    // Replaying these operations is safe: writes use stable keys and deletes / clears
+    // are idempotent. Preserve request order so later writes cannot overtake earlier ones.
+    const replay = fallbackReady.catch(() => {}).then(async () => {
+      await primeFallback();
+      for (const job of jobs) {
+        try {
+          const value = await core[job.op](...job.args);
+          job.resolve(value);
+        } catch (fallbackError) {
+          job.reject(fallbackError || error);
+        }
+      }
+    }).catch(loadError => {
+      jobs.forEach(job => job.reject(loadError || error));
+    });
+    fallbackReady = replay.catch(() => {});
+  };
   function ensureWorker() {
     if (!usable) return null;
     if (worker) return worker;
@@ -142,37 +258,39 @@
         const { id, ok, result, error } = event.data || {};
         const job = pending.get(id); if (!job) return;
         pending.delete(id);
+        clearTimeout(job.timer);
         if (ok) job.resolve(result); else job.reject(new Error(error || "Data worker failed"));
       };
-      worker.onerror = () => {
-        // Worker could not start (e.g. file:// preview): retry every pending call in-thread.
-        usable = false; worker = null;
-        const jobs = [...pending.values()]; pending.clear();
-        jobs.forEach(job => core[job.op](...job.args).then(job.resolve, job.reject));
-      };
+      worker.onerror = () => failWorker(new Error("Database worker stopped; retry the operation."));
+      worker.onmessageerror = () => failWorker(new Error("Database worker returned unreadable data; retry the operation."));
     } catch (_) { usable = false; worker = null; }
     return worker;
   }
   function call(op, ...args) {
     const target = ensureWorker();
-    if (!target) return core[op](...args);
+    if (!target) return queueFallback(op, args);
     return new Promise((resolve, reject) => {
       const id = nextId++;
-      pending.set(id, { resolve, reject, op, args });
-      target.postMessage({ id, op, args });
+      const timer = setTimeout(() => {
+        if (!pending.has(id)) return;
+        // A wedged worker must not leave later calls waiting behind it.
+        failWorker(new Error("Database worker timed out; retry the operation."));
+      }, 30000);
+      pending.set(id, { resolve, reject, timer });
+      try { target.postMessage({ id, op, args }); }
+      catch (error) { pending.delete(id); clearTimeout(timer); reject(error); }
     });
   }
   root.SplitAppIDB = Object.freeze({
     open: () => call("open").then(() => undefined),
     loadAll: () => call("loadAll"),
+    findByProvider: (source, category, providerId) => call("findByProvider", source, category, providerId),
     save: data => call("save", data),
     saveSome: data => call("saveSome", data),
     getThumbs: entries => call("getThumbs", entries),
     putThumbs: entries => call("putThumbs", entries),
     listThumbKeys: () => call("listThumbKeys"),
     clearThumbs: () => call("clearThumbs"),
-    getShareCache: (key, sig) => call("getShareCache", key, sig),
-    putShareCache: (key, sig, blob) => call("putShareCache", key, sig, blob),
-    clearShareCache: () => call("clearShareCache")
+    deleteThumbs: keys => call("deleteThumbs", keys)
   });
 })(self);
