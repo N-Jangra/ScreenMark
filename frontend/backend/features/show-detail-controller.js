@@ -88,6 +88,19 @@
     jikanTail = request.catch(() => {});
     return request;
   };
+  const jikanEpisodes = async (animeId, settings) => {
+    const rows = [];
+    for (let page = 1; ; page++) {
+      let response;
+      try { response = await jikanGet(`https://api.jikan.moe/v4/anime/${animeId}/episodes?page=${page}`, settings); }
+      catch (_) { break; }
+      const pageRows = Array.isArray(response?.data) ? response.data : [];
+      if (!pageRows.length) break;
+      rows.push(...pageRows);
+      if (!response?.pagination?.has_next_page) break;
+    }
+    return rows;
+  };
   const animeEpisodeGuide = async (media, title, settings) => {
     const malId = Number(media?.idMal);
     if (!Number.isSafeInteger(malId) || malId <= 0) return [];
@@ -345,7 +358,7 @@
       const title = anime.title_english || anime.title || item.title || "Anime";
       const [characterResponse, episodeResponse] = s.background ? [{ data: [] }, { data: [] }] : await Promise.all([
         jikanGet(`https://api.jikan.moe/v4/anime/${id}/characters`, s).catch(() => ({ data: [] })),
-        item.category === "series" ? jikanGet(`https://api.jikan.moe/v4/anime/${id}/episodes?page=1`, s).catch(() => ({ data: [] })) : Promise.resolve({ data: [] })
+        item.category === "series" ? jikanEpisodes(id, s).then(data => ({ data })) : Promise.resolve({ data: [] })
       ]);
       const characters = (characterResponse.data || []).slice(0, 60);
       const characterItems = characters.map(row => ({ title: row.character?.name || "Character", meta: row.role || "", image: row.character?.images?.webp?.image_url || row.character?.images?.jpg?.image_url || "", url: row.character?.url, ref: row.character?.mal_id ? { type: "character", id: `jikan-character:${row.character.mal_id}`, title: row.character.name, extra: { source: "jikan" } } : null }));
@@ -375,7 +388,9 @@
       if (item.category === "series" && !s.background) {
         try {
           let next = `https://kitsu.io/api/edge/anime/${id}/episodes?page[limit]=20&page[offset]=0&sort=number`;
-          for (let pageIndex = 0; next && pageIndex < 10 && episodeRows.length < 200; pageIndex++) {
+          const visitedPages = new Set();
+          while (next && !visitedPages.has(next)) {
+            visitedPages.add(next);
             const page = await get(next, s);
             episodeRows.push(...(page.data || []));
             const nextUrl = page.links?.next ? new URL(page.links.next, next) : null;
