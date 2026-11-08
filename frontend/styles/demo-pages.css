@@ -647,32 +647,37 @@ body[data-page="discover"] .discover-all-results { display: grid; gap: 15px; }
 body[data-page="discover"] .discover-all-results > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 var(--gutter); }
 body[data-page="discover"] .discover-all-results > header h2 { margin: 0; color: var(--d-t1); font: 800 20px/1.2 var(--d-font); }
 body[data-page="discover"] .discover-all-results > header > span { color: var(--d-t2); font: 600 11px var(--d-font); }
-body[data-page="discover"] .discover-all-results-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); align-items: start; gap: 14px 10px; padding: 0 var(--gutter); }
-body[data-page="discover"] .discover-all-results-grid { width: calc(100% - var(--gutter, 16px) - var(--gutter, 16px) - 14px); margin-left: calc(var(--gutter, 16px) + var(--gutter, 16px) + 14px); }
+body[data-page="discover"] .discover-all-results-grid { display: grid; box-sizing: border-box; grid-template-columns: repeat(3,minmax(0,1fr)); align-items: start; gap: 14px 10px; width: 100%; margin: 0; padding: 0 20px; }
 body[data-page="discover"] .discover-all-results-grid .discover-catalog-card { min-width: 0; width: auto; }
 body[data-page="discover"] .discover-catalog-section > h2::after { width: 4px; height: 16px; order: -1; border-radius: 4px; background: var(--d-gold); content: ""; }
-body[data-page="discover"] .discover-catalog-section .discover-catalog-grid { display: flex; gap: 12px; width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; padding: 0 var(--gutter) 7px; scrollbar-width: none; scroll-snap-type: x mandatory; }
+body[data-page="discover"] .discover-catalog-section .discover-catalog-grid { display: grid; grid-auto-flow: column; grid-auto-columns: clamp(112px, 33vw, 154px); grid-template-columns: none; align-items: start; box-sizing: border-box; gap: 12px; width: 100%; margin: 0; overflow-x: auto; overscroll-behavior-inline: contain; padding: 0 20px 7px; scrollbar-width: none; scroll-snap-type: x mandatory; }
 body[data-page="discover"] .discover-catalog-section .discover-catalog-grid::-webkit-scrollbar { display: none; }
-body[data-page="discover"] .discover-catalog-section .discover-catalog-card { flex: 0 0 clamp(112px, 33vw, 154px); scroll-snap-align: start; }
+body[data-page="discover"] .discover-catalog-section .discover-catalog-card { min-width: 0; scroll-snap-align: start; }
 body[data-page="discover"] .discover-search-sections .discover-source-section { gap: 10px; }
 body[data-page="discover"] .discover-catalog-poster { border-radius: 12px; box-shadow: 0 5px 18px rgba(0,0,0,.3); }
-body[data-page="discover"] .discover-catalog-card h3 { margin: 8px 0 2px; font-size: 12px; }
-body[data-page="discover"] .discover-catalog-card > small { font-size: 10px; }
+body[data-page="discover"] .discover-catalog-card h3 { display: -webkit-box; min-height: 30px; max-height: 30px; margin: 8px 0 2px; overflow: hidden; padding-inline: 6px; font-size: 12px; line-height: 1.25; white-space: normal; text-overflow: clip; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+body[data-page="discover"] .discover-catalog-card > small { display: block; min-height: 16px; padding-inline: 6px; font-size: 10px; line-height: 16px; }
 body[data-page="discover"] .discover-catalog-add { min-height: 32px; margin-top: 7px; border-radius: 9px; font-size: 11px; }
-body[data-page="discover"] .discover-catalog-loading { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); padding: 0 var(--gutter); }
+body[data-page="discover"] .discover-catalog-loading { display: grid; grid-template-columns: none; box-sizing: border-box; padding: 0 20px 7px; }
+body[data-page="discover"] .discover-catalog-loading .discover-catalog-card { scroll-snap-align: start; }
+body[data-page="discover"] .discover-catalog-loading .discover-catalog-card h3 { min-height: 30px; max-height: 30px; margin: 8px 0 2px; padding-inline: 6px; }
+body[data-page="discover"] .discover-catalog-loading .discover-skeleton-title { width: var(--skeleton-width); max-width: calc(100% - 12px); height: 30px; box-sizing: border-box; margin: 8px 6px 2px; }
+body[data-page="discover"] .discover-catalog-loading .discover-skeleton-year { width: 32%; height: 16px; box-sizing: border-box; margin: 0 6px; }
+body[data-page="discover"] .discover-catalog-loading .discover-catalog-genres { min-height: 18px; margin-top: 0; }
 body[data-page="discover"] .discover-empty { margin: 28px var(--gutter); padding: 24px; border: 1px solid var(--d-line); border-radius: 16px; background: var(--d-surface); color: var(--d-t2); }
 body[data-page="discover"] .discover-empty[hidden] { display: none; }
-/* Keep poster rails and their headings aligned with the inset Discover search field. */
+/* Keep headings, poster rails, and search results on the same inset grid. */
 body[data-page="discover"] .discover-catalog-section > h2,
 body[data-page="discover"] .discover-catalog-section.discover-source-section > header { padding-inline: 20px; }
 body[data-page="discover"] .discover-catalog-section.discover-source-section > header h2 { padding-inline: 0; }
-body[data-page="discover"] .discover-catalog-sections:not(.discover-search-sections) > .discover-catalog-section:nth-child(-n/**/+2) .discover-catalog-grid,
-body[data-page="discover"] .discover-search-sections .discover-source-section .discover-catalog-grid { width: calc(100% - var(--gutter, 16px) - var(--gutter, 16px) - 14px); margin-left: calc(var(--gutter, 16px) + var(--gutter, 16px) + 14px); padding-inline: calc(20px + var(--gutter, 16px)); }
-body[data-page="discover"] .discover-genre-shelf .discover-catalog-grid { width: calc(100% - 20px); margin-left: 20px; padding-left: 16px; }
+/* Use one fixed rail inset for Latest, Trending, genre, source, and loading shelves. */
+body[data-page="discover"] .discover-catalog-sections .discover-catalog-section > .discover-catalog-grid { box-sizing: border-box !important; width: 100% !important; margin-inline: 0 !important; padding-left: 34px !important; padding-right: 34px !important; }
+body[data-page="discover"] .discover-catalog-sections .discover-catalog-section > .discover-catalog-grid.discover-catalog-loading { display: grid !important; }
+body[data-page="discover"] .discover-catalog-sections .discover-catalog-section > .discover-catalog-grid > .discover-catalog-card { margin-inline: 0 !important; }
 body[data-page="discover"]:has(.topbar #header-type:not([hidden])) #page-content { padding-top: 0; }
 @media (min-width: 720px) {
   body[data-page="discover"] .discover-page { padding-top: 22px; gap: 15px; }
-  body[data-page="discover"] .discover-catalog-section .discover-catalog-card { flex-basis: 160px; }
+  body[data-page="discover"] .discover-catalog-section .discover-catalog-grid { grid-auto-columns: 160px; }
 
 }
 body[data-page="discover"] .discover-catalog-artwork { position: relative; width: 100%; aspect-ratio: 2 / 3; overflow: visible; }
@@ -1021,8 +1026,8 @@ body[data-page="discover"] .discover-catalog-poster { border: 1px solid var(--d-
 body[data-page="discover"] .discover-catalog-card:active .discover-catalog-poster { border-color: var(--d-gold); transform: translateY(-3px); }
 body[data-page="discover"] .discover-catalog-type { border-radius: 5px; border: 1px solid rgba(255,255,255,.14); background: rgba(9,10,15,.86); color: #F8FAFC; font: 800 8.4px var(--d-mono); letter-spacing: .04em; }
 body[data-page="discover"] .discover-catalog-rating { border-radius: 5px; border: 1px solid var(--d-gold-border); background: rgba(9,10,15,.88); color: var(--d-gold); font: 800 8.4px var(--d-mono); }
-body[data-page="discover"] .discover-catalog-card h3 { padding-inline: 6px; font-size: 12.5px; margin-top: 6px; }
-body[data-page="discover"] .discover-catalog-card > small { padding-inline: 6px; font-size: 11px; font-weight: 600; min-height: 0; }
+body[data-page="discover"] .discover-catalog-card h3 { padding-inline: 6px; font-size: 12.5px; margin-top: 8px; }
+body[data-page="discover"] .discover-catalog-card > small { padding-inline: 6px; font-size: 11px; font-weight: 600; min-height: 16px; line-height: 16px; }
 body[data-page="discover"] .discover-catalog-add { min-height: 38px; margin-top: 8px; border-radius: 9px; border: 1px solid var(--d-gold); background: var(--d-gold); color: var(--d-gold-fg); font: 800 12px var(--d-font); }
 body[data-page="discover"] .discover-catalog-add.is-saved,
 body[data-page="discover"] .discover-catalog-add:disabled { border-color: var(--d-gold-border); background: var(--d-gold-soft); color: var(--accent-text,var(--d-gold)); }
