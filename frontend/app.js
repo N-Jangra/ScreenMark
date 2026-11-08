@@ -864,6 +864,46 @@
       }
     }
   }
+  const nativeImageFallbacks = new Map();
+  const nativeImageFallbackInflight = new Map();
+  const nativeImageFallbackHandlers = new WeakSet();
+  function attachNativeImageFallback(image) {
+    if (!nativeAndroid || nativeImageFallbackHandlers.has(image)) return;
+    nativeImageFallbackHandlers.add(image);
+    image.addEventListener("error", async () => {
+      const source = image.dataset.proxySource || image.currentSrc || image.getAttribute("src") || image.dataset.lazySrc || "";
+      if (!/^https:\/\//i.test(source) || image.dataset.nativeFallbackTried) return;
+      image.dataset.nativeFallbackTried = "true";
+      const nativeHttp = window.CapacitorHttp || window.Capacitor?.Plugins?.CapacitorHttp;
+      if (!nativeHttp?.get) return;
+      try {
+        let objectUrl = nativeImageFallbacks.get(source);
+        if (!objectUrl) {
+          let pending = nativeImageFallbackInflight.get(source);
+          if (!pending) {
+            pending = nativeHttp.get({ url: source, responseType: "blob", connectTimeout: 10000, readTimeout: 15000 }).then(response => {
+              const encoded = typeof response?.data === "string" ? response.data : "";
+              const contentType = Object.entries(response?.headers || {}).find(([key]) => key.toLowerCase() === "content-type")?.[1]?.split(";")[0] || "image/jpeg";
+              if (Number(response?.status) < 200 || Number(response?.status) >= 300 || !/^image\/[a-z0-9.+-]+$/i.test(contentType) || !encoded || encoded.length > 8 * 1024 * 1024) return "";
+              const binary = atob(encoded), bytes = new Uint8Array(binary.length);
+              for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+              return URL.createObjectURL(new Blob([bytes], { type: contentType }));
+            }).finally(() => nativeImageFallbackInflight.delete(source));
+            nativeImageFallbackInflight.set(source, pending);
+          }
+          objectUrl = await pending;
+          if (!objectUrl) return;
+          nativeImageFallbacks.set(source, objectUrl);
+          while (nativeImageFallbacks.size > 24) {
+            const [oldSource, oldUrl] = nativeImageFallbacks.entries().next().value;
+            nativeImageFallbacks.delete(oldSource); URL.revokeObjectURL(oldUrl);
+          }
+        }
+        image.addEventListener("load", () => { image.hidden = false; if (image.nextElementSibling) image.nextElementSibling.hidden = true; }, { once: true });
+        image.src = objectUrl;
+      } catch (_) { /* Preserve the normal image placeholder when native retrieval also fails. */ }
+    });
+  }
   function routeRemoteImages(root = document) {
     const resolveImage = window.SplitAppDiscovery?.imageUrl;
     if (typeof resolveImage !== "function") return;
@@ -871,6 +911,7 @@
     if (root.matches?.("img[src]")) images.push(root);
     images.push(...(root.querySelectorAll?.("img[src]") || []));
     images.forEach(image => {
+      attachNativeImageFallback(image);
       const source = image.getAttribute("src");
       if (!source || image.dataset.proxySource) return;
       if (/^http:\/\//i.test(source)) { image.removeAttribute("src"); image.hidden = true; return; }
@@ -969,6 +1010,7 @@
     if (!deferredTimer) deferredTimer = setTimeout(() => { deferredTimer = 0; drainDeferredImages(); }, 0);
   }
   function observeDeferredImages(root = document) {
+    root?.querySelectorAll?.("img").forEach(attachNativeImageFallback);
     routeRemoteImages(root);
     const images = [...(root?.querySelectorAll?.("img[data-deferred-image]") || [])].filter(image => !image.hasAttribute("src"));
     if (!images.length) return;
