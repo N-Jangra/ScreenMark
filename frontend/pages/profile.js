@@ -3,8 +3,10 @@
   window.SplitAppPages = window.SplitAppPages || {};
   let coverId = "";
   const PAGE_BATCH = 100;
+  const COLLECTION_BATCH = 25;
   const titleCollator = new Intl.Collator(undefined, { sensitivity: "base" });
   const collectionVisible = new Map();
+  const collectionSearchValues = new Map();
   let collectionQueryKey = "";
   const collectionSortCache = new Map();
   let collectionCacheItems = null, collectionCacheRevision, collectionCacheKey = "";
@@ -34,18 +36,84 @@
     const progress = Math.max(0, Number(item.progress) || 0);
     const done = isDone(item, roles);
     const percent = done ? 100 : goal ? Math.min(100, Math.round(progress / goal * 100)) : 0;
-    const progressBar = showProgress ? `<span class="demo-poster-progress"><i class="${percent >= 100 ? "is-done" : ""}" style="width:${percent}%"></i></span>` : "";
+    const progressBar = showProgress ? `<span class="demo-poster-progress"><i class="${percent >= 100 ? "is-done" : ""}" style="width:${percent}%;--w:${percent}%"></i></span>` : "";
     return `<button type="button" class="profile-poster" data-open-details data-id="${esc(item.id)}" aria-label="Open ${esc(item.title)}">${coverMarkup(item, esc, false, imageMarkup)}<span class="profile-poster-title">${esc(item.title)}</span>${progressBar}</button>`;
   };
   const sectionHeader = (title, target, count) => `<header class="profile-section-heading"><h2>${title}${Number.isFinite(count) ? ` <small>${count}</small>` : ""}</h2><button type="button" data-go="${target}" aria-label="See all ${title}"><i data-lucide="chevron-right" aria-hidden="true"></i></button></header>`;
+
+  const DEFAULTS = { Source: "both", Mode: "random", Interval: "visit" };
+  const INTERVALS = { visit: 0, hourly: 36e5, daily: 864e5, weekly: 6048e5, manual: Infinity };
+  const SESSION = String(Date.now());
+  const AVATAR_KEY = "screenmark_profile_avatar";
+  const KINDS = {
+    cover: { prefix: "profileCover", store: "screenmark_profile_cover", landscape: true, title: "Background cover", off: ["none", "No cover (remove)"] },
+    avatar: { prefix: "profileAvatar", store: "screenmark_profile_avatar_pick", landscape: false, title: "Profile photo", off: ["none", "Default icon (remove)"], custom: ["custom", "My own photo"] }
+  };
+  const readJson = key => { try { return JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (_) { return {}; } };
+  const writeJson = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {} };
+  const readAvatar = () => { try { return localStorage.getItem(AVATAR_KEY) || ""; } catch (_) { return ""; } };
+  const pref = (prefs, kind, name) => prefs[KINDS[kind].prefix + name] || (name === "Source" && kind === "avatar" ? "custom" : DEFAULTS[name]);
+  const imageOf = (item, kind) => KINDS[kind].landscape ? landscapeOf(item) : artOf(item);
+  const poolOf = (items, kind, source) => ["none", "custom", "pinned"].includes(source) ? [] : items.filter(item => imageOf(item, kind) && ({
+    both: true, series: item.category === "series", movies: item.category === "movie", favorites: item.favorite,
+    "series-favorites": item.category === "series" && item.favorite, "movie-favorites": item.category === "movie" && item.favorite
+  }[source] ?? true));
+  function pickFor(kind, items, prefs, force = false) {
+    const source = pref(prefs, kind, "Source"), mode = pref(prefs, kind, "Mode"), interval = INTERVALS[pref(prefs, kind, "Interval")] ?? 0;
+    if (source === "pinned") { const pinned = items.find(item => String(item.id) === String(prefs[KINDS[kind].prefix + "Pinned"]) && imageOf(item, kind)); return pinned || null; }
+    const pool = poolOf(items, kind, source);
+    if (!pool.length) return null;
+    const store = KINDS[kind].store, saved = readJson(store), key = `${source}|${mode}`;
+    const current = pool.find(item => String(item.id) === String(saved.id));
+    const same = current && saved.key === key && !force;
+    // "visit" re-picks once per app launch, not on every re-render.
+    if (same && (interval === 0 ? saved.session === SESSION : Date.now() - (saved.at || 0) < interval)) return current;
+    const choice = mode === "newest" ? [...pool].sort((a, b) => stampOf(b) - stampOf(a))[0] : pool[Math.floor(Math.random() * pool.length)];
+    writeJson(store, { id: String(choice.id), at: Date.now(), key, session: SESSION });
+    return choice;
+  }
+  const pickCover = (items, prefs, force) => pickFor("cover", items, prefs, force);
+  const avatarMarkup = (esc, items = [], prefs = {}) => {
+    const source = pref(prefs, "avatar", "Source");
+    if (source === "custom") { const src = readAvatar(); if (src.startsWith("data:image/")) return `<span class="avatar-img" role="img" aria-label="Profile photo" style="background-image:url('${esc(src)}')"></span>`; }
+    else if (source !== "none") { const item = pickFor("avatar", items, prefs); if (item) return `<span class="avatar-img" role="img" aria-label="${esc(item.title)}" style="background-image:url('${esc(artOf(item)).replace(/'/g, "%27")}')"></span>`; }
+    return `<i data-lucide="user-round" aria-hidden="true"></i>`;
+  };
+  const optionLists = kind => {
+    const k = KINDS[kind];
+    return {
+      Source: ["Images from", [k.off, ...(k.custom ? [k.custom] : []), ["pinned", "Picked below"], ["both", "Series and movies"], ["series", "Series only"], ["movies", "Movies only"], ["favorites", "Favorites only (both)"], ["series-favorites", "Series favorites only"], ["movie-favorites", "Movie favorites only"]]],
+      Mode: ["Pick", [["random", "Random"], ["newest", "Most recently updated"]]],
+      Interval: ["Change", [["visit", "Every app launch"], ["hourly", "Every hour"], ["daily", "Every day"], ["weekly", "Every week"], ["manual", "Only when I shuffle"]]]
+    };
+  };
+  let coverTab = "avatar";
+  const pickerLimit = { cover: 18, avatar: 24 };
+  function profileCoverPage(context) {
+    const { items = [], prefs = {}, esc } = context;
+    const library = kind => {
+      const k = KINDS[kind], all = items.filter(item => imageOf(item, kind)).sort((a, b) => stampOf(b) - stampOf(a));
+      const shown = all.slice(0, pickerLimit[kind]), pinned = pref(prefs, kind, "Source") === "pinned" ? String(prefs[k.prefix + "Pinned"] || "") : "";
+      if (!all.length) return "";
+      return `<section class="profile-cover-library"><h3>Choose from your library</h3><div class="profile-pick-grid ${kind}">${shown.map(item => `<button type="button" class="profile-pick-tile${pinned === String(item.id) ? " selected" : ""}" data-cover-pick="${kind}" data-id="${esc(item.id)}" aria-label="Use ${esc(item.title)}" aria-pressed="${pinned === String(item.id)}"><img src="${esc(imageOf(item, kind))}" alt="" loading="lazy" decoding="async" onerror="this.closest('button').hidden=true"></button>`).join("")}</div>${shown.length < all.length ? `<button type="button" class="profile-cover-remove profile-pick-more" data-cover-more="${kind}">Load more (${all.length - shown.length} left)</button>` : ""}</section>`;
+    };
+    const section = kind => {
+      const k = KINDS[kind], source = pref(prefs, kind, "Source"), lists = optionLists(kind), count = poolOf(items, kind, source).length;
+      const group = name => `<section class="profile-cover-setting"><h3>${lists[name][0]}</h3>${lists[name][1].map(([value, label]) => `<label class="profile-cover-option"><input type="radio" name="${k.prefix}${name}" data-pref="${k.prefix}${name}" value="${value}" ${pref(prefs, kind, name) === value ? "checked" : ""}><span>${label}</span></label>`).join("")}</section>`;
+      let preview;
+      if (kind === "cover") { const cover = pickCover(items, prefs); preview = `<div class="profile-cover-preview">${cover ? coverMarkup(cover, esc, true) : `<span class="profile-cover-empty"></span>`}<span class="profile-cover-shade"></span><small>${cover ? esc(cover.title) : "No cover"}</small></div>`; }
+      else preview = `<div class="profile-avatar-editor"><span class="profile-avatar">${avatarMarkup(esc, items, prefs)}</span>${source === "custom" ? `<label class="profile-cover-shuffle"><i data-lucide="image-plus" aria-hidden="true"></i><span>Choose photo</span><input type="file" accept="image/*" data-profile-avatar-file hidden></label>${readAvatar() ? `<button type="button" class="profile-cover-remove" data-profile-avatar-remove>Remove photo</button>` : ""}` : ""}</div>`;
+      const usesPool = !["none", "custom", "pinned"].includes(source);
+      return `<section class="profile-cover-block"><h2>${k.title}</h2>${preview}${usesPool ? `<button type="button" class="profile-cover-shuffle" data-profile-cover-shuffle="${kind}"><i data-lucide="shuffle" aria-hidden="true"></i><span>Shuffle now</span></button>` : ""}${group("Source")}${usesPool ? group("Mode") + group("Interval") : ""}${library(kind)}</section>`;
+    };
+    return `<section class="profile-page profile-cover-page"><header class="profile-list-header"><button type="button" data-go="profile" aria-label="Back to profile"><i data-lucide="chevron-left" aria-hidden="true"></i></button><h2>Edit profile</h2><span></span></header><div class="watchlist-tabs" role="tablist"><button type="button" class="${coverTab === "avatar" ? "active" : ""}" data-cover-tab="avatar" role="tab" aria-selected="${coverTab === "avatar"}">Profile</button><button type="button" class="${coverTab === "cover" ? "active" : ""}" data-cover-tab="cover" role="tab" aria-selected="${coverTab === "cover"}">Background</button></div>${section(coverTab)}</section>`;
+  }
 
   function profilePage(context) {
     const { items = [], roles = {}, esc, imageMarkup } = context;
     const series = items.filter(item => item.category === "series").sort((a, b) => stampOf(b) - stampOf(a));
     const movies = items.filter(item => item.category === "movie").sort((a, b) => stampOf(b) - stampOf(a));
-    const candidates = items.filter(item => landscapeOf(item));
-    if (!candidates.some(item => String(item.id) === coverId)) coverId = candidates.length ? String(candidates[Math.floor(Math.random() * candidates.length)].id) : "";
-    const cover = candidates.find(item => String(item.id) === coverId) || null;
+    const cover = pickCover(items, context.prefs || {});
     let watchedEpisodes = 0, seriesMinutes = 0;
     series.forEach(item => {
       const totalEpisodes = Number(item.facts?.episodeCount) || Number(item.goal) || 0;
@@ -68,39 +136,50 @@
     const timeCard = (label, minutes, icon) => `<a class="profile-stat-card" href="#statistics"><span class="profile-stat-heading"><i data-lucide="${icon}" aria-hidden="true"></i><strong>${label}</strong></span><span class="profile-time-values">${durationMarkup(minutes)}</span></a>`;
     const countCard = (label, count, icon) => `<a class="profile-stat-card profile-stat-count-card" href="#statistics"><span class="profile-stat-heading"><i data-lucide="${icon}" aria-hidden="true"></i><strong>${label}</strong></span><span class="profile-count-value">${Math.round(Number(count) || 0)}</span></a>`;
     const empty = `<div class="profile-empty"><i data-lucide="library" aria-hidden="true"></i><strong>Your profile is ready</strong><span>Add tracked movies and series to build your page.</span><button type="button" data-go="discover">Discover titles</button></div>`;
-    const shelves = `${series.length ? `<section class="profile-shelf">${sectionHeader("Series", "series", series.length)}<div class="profile-poster-rail">${series.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div></section><section class="profile-shelf">${sectionHeader("♥ Series favorites", "series-favorites", favoriteSeries.length)}${favoriteSeries.length ? `<div class="profile-poster-rail">${favoriteSeries.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div>` : `<button type="button" class="profile-favorite-empty" data-go="series-favorites">No series favorites yet <i data-lucide="chevron-right" aria-hidden="true"></i></button>`}</section>` : ""}${movies.length ? `<section class="profile-shelf">${sectionHeader("Movies", "movies", movies.length)}<div class="profile-poster-rail">${movies.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div></section><section class="profile-shelf">${sectionHeader("♥ Movie favorites", "movie-favorites", favoriteMovies.length)}${favoriteMovies.length ? `<div class="profile-poster-rail">${favoriteMovies.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div>` : `<button type="button" class="profile-favorite-empty" data-go="movie-favorites">No movie favorites yet <i data-lucide="chevron-right" aria-hidden="true"></i></button>`}</section>` : ""}`;
-    return `<section class="profile-page"><section class="profile-hero"><div class="profile-cover">${cover ? coverMarkup(cover, esc, true) : `<span class="profile-cover-empty"></span>`}<span class="profile-cover-shade"></span></div><button type="button" class="profile-overflow-trigger" aria-label="More profile options" data-open-profile-menu><i data-lucide="ellipsis" aria-hidden="true"></i></button><div class="profile-identity"><span class="profile-avatar"><i data-lucide="user-round" aria-hidden="true"></i></span><div><h2>My Profile</h2><small>${items.length} tracked ${items.length === 1 ? "title" : "titles"}</small></div><button type="button" class="profile-add-manual" data-profile-add><i data-lucide="plus" aria-hidden="true"></i><span>Add manually</span></button></div></section><dialog class="profile-options-dialog" id="profile-options-dialog" aria-label="Profile options"><header><strong>Profile options</strong><button type="button" data-profile-menu-close aria-label="Close options">×</button></header><nav><a href="#statistics/activity"><i data-lucide="activity" aria-hidden="true"></i><span>Activity</span></a><a href="#timeline"><i data-lucide="history" aria-hidden="true"></i><span>Timeline</span></a><a href="#settings"><i data-lucide="settings" aria-hidden="true"></i><span>Settings</span></a><a href="#settings/metadata-sources"><i data-lucide="database" aria-hidden="true"></i><span>Metadata sources</span></a><a href="#settings/app-info"><i data-lucide="circle-help" aria-hidden="true"></i><span>About ScreenMark</span></a></nav></dialog><section class="profile-stats"><header class="profile-section-heading"><h2>Stats</h2><a href="#statistics" aria-label="Open full statistics"><i data-lucide="chevron-right" aria-hidden="true"></i></a></header><div class="profile-stat-rail">${timeCard("Series time", seriesMinutes, "tv")} ${countCard("Episodes watched", watchedEpisodes, "tv")} ${timeCard("Movie time", movieMinutes, "clapperboard")} ${countCard("Movies watched", watchedMovies, "clapperboard")}</div></section>${shelves}${items.length ? "" : empty}</section>`;
+    const shelves = `${series.length ? `<section class="profile-shelf">${sectionHeader("Series", "series", series.length)}<div class="profile-poster-rail">${series.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div></section><section class="profile-shelf">${sectionHeader("♥ Series favorites", "series-favorites", favoriteSeries.length)}${favoriteSeries.length ? `<div class="profile-poster-rail">${favoriteSeries.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div>` : `<button type="button" class="profile-favorite-empty" data-go="series-favorites"><span class="profile-favorite-plus" aria-hidden="true">+</span><span>Add series favorites</span></button>`}</section>` : ""}${movies.length ? `<section class="profile-shelf">${sectionHeader("Movies", "movies", movies.length)}<div class="profile-poster-rail">${movies.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div></section><section class="profile-shelf">${sectionHeader("♥ Movie favorites", "movie-favorites", favoriteMovies.length)}${favoriteMovies.length ? `<div class="profile-poster-rail">${favoriteMovies.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div>` : `<button type="button" class="profile-favorite-empty" data-go="movie-favorites"><span class="profile-favorite-plus" aria-hidden="true">+</span><span>Add movie favorites</span></button>`}</section>` : ""}`;
+    return `<section class="profile-page"><section class="profile-hero"><div class="profile-cover">${cover ? coverMarkup(cover, esc, true) : `<span class="profile-cover-empty"></span>`}<span class="profile-cover-shade"></span></div><button type="button" class="profile-overflow-trigger" aria-label="More profile options" data-open-profile-menu><i data-lucide="ellipsis" aria-hidden="true"></i></button><div class="profile-identity"><span class="profile-avatar-wrap"><span class="profile-avatar">${avatarMarkup(esc, items, context.prefs || {})}</span><a class="profile-avatar-edit" href="#profile-cover" aria-label="Edit profile photo and cover"><i data-lucide="pencil" aria-hidden="true"></i></a></span><button type="button" class="profile-add-manual" data-profile-add><i data-lucide="plus" aria-hidden="true"></i><span>Add manually</span></button></div></section><dialog class="profile-options-dialog" id="profile-options-dialog" aria-label="Profile options"><header><strong>Profile options</strong><button type="button" data-profile-menu-close aria-label="Close options">×</button></header><nav><a href="#timeline"><i data-lucide="history" aria-hidden="true"></i><span>Timeline</span></a><a href="#setup"><i data-lucide="wand-sparkles" aria-hidden="true"></i><span>Quick setup</span></a><a href="#settings/metadata-sources"><i data-lucide="database" aria-hidden="true"></i><span>Sources</span></a><a href="#settings"><i data-lucide="settings" aria-hidden="true"></i><span>Settings</span></a><a href="#settings/app-info"><i data-lucide="circle-help" aria-hidden="true"></i><span>About</span></a></nav></dialog><section class="profile-stats"><header class="profile-section-heading"><h2>Stats</h2><a href="#statistics" aria-label="Open full statistics"><i data-lucide="chevron-right" aria-hidden="true"></i></a></header><div class="profile-stat-rail">${timeCard("Series time", seriesMinutes, "tv")} ${countCard("Episodes watched", watchedEpisodes, "tv")} ${timeCard("Movie time", movieMinutes, "clapperboard")} ${countCard("Movies watched", watchedMovies, "clapperboard")}</div></section>${shelves}${items.length ? "" : empty}</section>`;
   }
 
   function collectionPage(context, kind, favorites = false) {
     const { items = [], esc, config, roles = {}, profileCollectionSort = "alpha", profileStatusFilter = "all", profileGenreFilter = "all", profileStatusGroups = false } = context;
     const category = kind === "movie" ? "movie" : "series";
     const title = favorites ? `${category === "series" ? "Series" : "Movie"} Favorites` : category === "series" ? "Shows" : "Movies";
+    const searchKey = `${kind}|${favorites}`;
+    const searchText = kind === "movie" ? collectionSearchValues.get(searchKey) || "" : "";
+    const normalizedSearch = searchText.trim().toLocaleLowerCase();
     const revisionKey = `${kind}|${favorites}|${profileCollectionSort}|${context.dataRevision ?? ""}`;
     if (collectionCacheItems !== items || collectionCacheRevision !== context.dataRevision || collectionCacheKey !== revisionKey) {
       collectionSortCache.clear(); collectionCacheItems = items; collectionCacheRevision = context.dataRevision; collectionCacheKey = revisionKey;
     }
     const categoryItems = items.filter(item => item.category === category && (!favorites || item.favorite));
+    // No favorites yet: show every title as a grid with a heart to pick favorites (same filters, search and progress bars).
+    const pickMode = favorites && !categoryItems.length;
+    const poolItems = pickMode ? items.filter(item => item.category === category) : categoryItems;
     const statuses = config.categories.find(row => row.key === category)?.statuses || [];
     const selectedStatus = statuses.includes(profileStatusFilter) ? profileStatusFilter : "all";
     const sortItems = rows => [...rows].sort(profileCollectionSort === "alpha" ? (a, b) => titleCollator.compare(a.title || "", b.title || "") : profileCollectionSort === "watched" ? (a, b) => (Number(b.progress) || 0) - (Number(a.progress) || 0) : profileCollectionSort === "rating" ? (a, b) => (Number(b.facts?.rating) || 0) - (Number(a.facts?.rating) || 0) : (a, b) => stampOf(b) - stampOf(a));
     const genreOf = item => item.genres || item.facts?.genres || item.cachedDetails?.genres || [];
-    const genres = [...new Set(categoryItems.flatMap(genreOf).map(value => String(value).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-    const sortKey = `${kind}|${favorites}|${profileCollectionSort}`;
+    const genres = [...new Set(poolItems.flatMap(genreOf).map(value => String(value).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const sortKey = `${kind}|${favorites}|${pickMode}|${profileCollectionSort}`;
     let sorted = collectionSortCache.get(sortKey);
     if (!sorted || sorted.items !== items || sorted.revision !== context.dataRevision) {
-      sorted = { items, revision: context.dataRevision, rows: sortItems(categoryItems) };
+      sorted = { items, revision: context.dataRevision, rows: sortItems(poolItems) };
       collectionSortCache.set(sortKey, sorted);
     }
-    const filtered = sorted.rows.filter(item => (selectedStatus === "all" || item.status === selectedStatus) && (profileGenreFilter === "all" || genreOf(item).some(value => String(value).toLocaleLowerCase() === profileGenreFilter.toLocaleLowerCase())));
-    const queryKey = `${kind}|${favorites}|${profileCollectionSort}|${selectedStatus}|${profileGenreFilter}|${profileStatusGroups}`;
-    if (queryKey !== collectionQueryKey) { collectionQueryKey = queryKey; collectionVisible.set(queryKey, PAGE_BATCH); }
-    const visibleCount = collectionVisible.get(queryKey) || PAGE_BATCH;
-    const sortChoices = [["recent", "Recently added"], ["alpha", "Alphabetical"], ["rating", "Top rated"], ["watched", "Most watched"]];
+    const matchesSearch = item => !normalizedSearch || String(item.title || "").toLocaleLowerCase().includes(normalizedSearch);
+    const filtered = sorted.rows.filter(item => matchesSearch(item) && (selectedStatus === "all" || item.status === selectedStatus) && (profileGenreFilter === "all" || genreOf(item).some(value => String(value).toLocaleLowerCase() === profileGenreFilter.toLocaleLowerCase())));
+    const queryKey = `${kind}|${favorites}|${pickMode}|${profileCollectionSort}|${selectedStatus}|${profileGenreFilter}|${profileStatusGroups}|${normalizedSearch}`;
+    if (queryKey !== collectionQueryKey) { collectionQueryKey = queryKey; if (!collectionVisible.has(queryKey)) collectionVisible.set(queryKey, COLLECTION_BATCH); }
+    const visibleCount = collectionVisible.get(queryKey) || COLLECTION_BATCH;
+    const sortChoices = [["alpha", "Alphabetical"], ["recent", "Recently added"], ["rating", "Top rated"], ["watched", "Most watched"]];
     const selectedSortLabel = sortChoices.find(([key]) => key === profileCollectionSort)?.[1] || "Recently added";
     const filtersApplied = profileCollectionSort !== "alpha" || selectedStatus !== "all" || profileGenreFilter !== "all";
     const filterDialog = `<dialog class="choice-dialog profile-filter-dialog" id="profile-filter-dialog"><div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">${category === "series" ? "SHOWS" : "MOVIES"}</p><h2>Filters</h2></div><button type="button" class="choice-dialog-close" data-profile-filter-close aria-label="Close">×</button></header><div class="profile-filter-sheet-body"><section><h3>Sort by</h3><div class="profile-filter-chips">${sortChoices.map(([value, label]) => `<button type="button" class="${profileCollectionSort === value ? "active" : ""}" data-profile-sort-choice="${value}" aria-pressed="${profileCollectionSort === value}">${label}</button>`).join("")}</div></section>${genres.length ? `<section><h3>Genres</h3><div class="profile-filter-genres">${genres.map(genre => `<button type="button" class="${profileGenreFilter.toLocaleLowerCase() === genre.toLocaleLowerCase() ? "active" : ""}" data-profile-genre-choice="${esc(genre)}" aria-pressed="${profileGenreFilter.toLocaleLowerCase() === genre.toLocaleLowerCase()}">${esc(genre)}</button>`).join("")}</div></section>` : ""}<section><h3>Status</h3><div class="profile-filter-statuses"><button type="button" data-profile-status-choice="all" aria-pressed="${selectedStatus === "all"}"><span>All</span><i></i></button>${statuses.map(status => `<button type="button" data-profile-status-choice="${esc(status)}" aria-pressed="${status === selectedStatus}"><span>${esc(status)}</span><i></i></button>`).join("")}</div></section></div><footer class="choice-dialog-actions"><button type="button" class="button secondary" data-profile-filter-reset>Reset</button><button type="button" class="button primary" data-profile-filter-close>Done</button></footer></dialog>`;
-    const gridFor = rows => rows.length ? `<div class="profile-collection-grid">${rows.map(item => posterButton(item, esc, context.roles, true)).join("")}</div>` : "";
+    const heart = item => `<button type="button" class="profile-fav-heart" data-action="toggle-favorite" data-id="${esc(item.id)}" aria-label="Add ${esc(item.title)} to favorites" title="Add to favorites"><i data-lucide="heart" aria-hidden="true"></i></button>`;
+    const gridFor = rows => rows.length ? `<div class="profile-collection-grid${pickMode ? " is-picking" : ""}">${rows.map(item => pickMode ? `<div class="profile-pick-wrap">${posterButton(item, esc, context.roles, true)}${heart(item)}</div>` : posterButton(item, esc, context.roles, true)).join("")}</div>` : "";
+    const favoriteCandidateRows = [];
+    const favoriteCandidates = favoriteCandidateRows.slice(0, visibleCount).map(item => `<article class="favorite-picker-row"><button type="button" class="favorite-picker-open" data-open-details data-id="${esc(item.id)}" aria-label="Open ${esc(item.title)}">${coverMarkup(item, esc)}<span><strong>${esc(item.title)}</strong>${item.year ? `<small>${esc(String(item.year).slice(0, 4))}</small>` : ""}</span></button><button type="button" class="favorite-picker-add" data-action="toggle-favorite" data-id="${esc(item.id)}" aria-label="Add ${esc(item.title)} to favorites" title="Add to favorites"><i data-lucide="heart" aria-hidden="true"></i></button></article>`).join("");
+    const searchControl = kind === "movie" ? `<label class="profile-collection-search"><i data-lucide="search" aria-hidden="true"></i><input type="search" data-collection-search="${esc(searchKey)}" value="${esc(searchText)}" placeholder="Search ${favorites ? "movie favorites" : "movies"}" aria-label="Search ${favorites ? "movie favorites" : "movies"}"></label>` : "";
     let content;
     if (profileStatusGroups && selectedStatus === "all") {
       const ordered = [...statuses.filter(status => status !== (roles.done || "Completed")), roles.done || "Completed"].filter(status => statuses.includes(status));
@@ -109,14 +188,18 @@
       const grouped = ordered.map(status => ({ status, rows: groupMap.get(status) })).filter(group => group.rows.length);
       content = grouped.length ? `<div class="profile-status-groups">${grouped.map(group => `<section class="profile-status-group"><h3>${esc(group.status)}</h3>${gridFor(group.rows)}</section>`).join("")}</div>` : "";
     } else content = gridFor(filtered.slice(0, visibleCount));
+    if (pickMode && filtered.length) content = `<div class="favorite-picker-intro"><i data-lucide="heart" aria-hidden="true"></i><div><strong>Add ${category === "series" ? "shows" : "movies"} to favorites</strong><span>Tap the heart on any title in your library.</span></div></div>${content}`;
     if (!filtered.length) content = context.libraryLoading && !items.length
       ? `<div class="profile-collection-grid profile-collection-skeleton" role="status" aria-label="Loading library">${Array.from({ length: 12 }, () => `<span class="profile-collection-skeleton-card" aria-hidden="true"></span>`).join("")}</div>`
-      : `<div class="profile-empty profile-list-empty"><i data-lucide="library" aria-hidden="true"></i><strong>${categoryItems.length ? "No titles match this filter" : favorites ? "No favorites yet" : `No ${title.toLowerCase()} yet`}</strong><span>${categoryItems.length ? "Choose another status or clear the filter." : "Titles you add to your library will appear here."}</span></div>`;
+      : favorites && !categoryItems.length
+        ? `<section class="favorite-picker"><div class="favorite-picker-intro"><i data-lucide="heart" aria-hidden="true"></i><div><strong>Add ${category === "series" ? "a show" : "a movie"} to favorites</strong><span>Choose from titles already in your library.</span></div></div>${favoriteCandidates || `<div class="favorite-picker-none"><span>${favoriteCandidateRows.length || normalizedSearch ? "No titles match your search." : `No ${category === "series" ? "shows" : "movies"} in your library yet.`}</span>${favoriteCandidateRows.length || normalizedSearch ? "" : `<button type="button" data-go="discover">Discover ${category === "series" ? "shows" : "movies"}</button>`}</div>`}</section>`
+        : `<div class="profile-empty profile-list-empty"><i data-lucide="library" aria-hidden="true"></i><strong>${normalizedSearch ? "No titles match your search" : categoryItems.length ? "No titles match this filter" : `No ${title.toLowerCase()} yet`}</strong><span>${normalizedSearch ? "Try a different title." : categoryItems.length ? "Choose another status or clear the filter." : "Titles you add to your library will appear here."}</span></div>`;
     const filterControl = filtersApplied
       ? `<footer class="profile-filter-bar"><button type="button" class="profile-filter-icon" data-open-profile-filters aria-label="Open filters"><i data-lucide="sliders-horizontal" aria-hidden="true"></i></button><button type="button" class="profile-sort-pill" data-open-profile-filters aria-label="Sort by ${esc(selectedSortLabel)}">${esc(selectedSortLabel)} <i data-lucide="chevron-down" aria-hidden="true"></i></button></footer>`
       : `<button type="button" class="profile-filter-pill" data-open-profile-filters><i data-lucide="sliders-horizontal" aria-hidden="true"></i><span>Filters</span></button>`;
-    const more = filtered.length > visibleCount ? `<button type="button" class="watchlist-browse" data-collection-more="${esc(queryKey)}">Show more · ${Math.min(visibleCount, filtered.length)} of ${filtered.length}</button>` : "";
-    return `<section class="profile-page profile-list-page"><header class="profile-list-header"><button type="button" data-go="profile" aria-label="Back to profile"><i data-lucide="chevron-left" aria-hidden="true"></i></button><h2>${title}</h2><div class="profile-list-header-actions"><button class="profile-visibility-toggle${profileStatusGroups ? " is-active" : ""}" type="button" data-profile-groups aria-label="${profileStatusGroups ? "Show all titles in one grid" : "Group titles by status"}" aria-pressed="${profileStatusGroups}"><i data-lucide="eye" aria-hidden="true"></i></button></div></header>${content}${more}${filterControl}${filterDialog}</section>`;
+    const moreTotal = filtered.length;
+    const more = moreTotal > visibleCount ? `<button type="button" class="watchlist-browse" data-collection-more="${esc(queryKey)}">Load more · ${Math.min(visibleCount, moreTotal)} of ${moreTotal}</button>` : "";
+    return `<section class="profile-page profile-list-page"><header class="profile-list-header"><button type="button" data-go="profile" aria-label="Back to profile"><i data-lucide="chevron-left" aria-hidden="true"></i></button><h2>${title}</h2><div class="profile-list-header-actions"><button class="profile-visibility-toggle${profileStatusGroups ? " is-active" : ""}" type="button" data-profile-groups aria-label="${profileStatusGroups ? "Show all titles in one grid" : "Group titles by status"}" aria-pressed="${profileStatusGroups}"><i data-lucide="eye" aria-hidden="true"></i></button></div></header>${searchControl}${content}${more}${filterControl}${filterDialog}</section>`;
   }
 
   const watchlistStatus = (item, roles) => item.status === roles.queued || ["watchlist", "backlog", "queued", "to watch", "to play"].includes(String(item.status || "").toLowerCase());
@@ -243,8 +326,10 @@
       const onHold = category === "series" ? rows.filter(row => (Number(row.info.done) || 0) <= 0 && (Number(row.item.progress) || 0) <= 0 && holdStatus(row.item, roles) && !agoLong(row.item)).sort((a, b) => stampOf(b.item) - stampOf(a.item)) : rows.filter(item => (Number(item.progress) || 0) <= 0 && holdStatus(item, roles) && !agoLong(item)).sort((a, b) => stampOf(b) - stampOf(a));
       const asCard = row => category === "series" ? watchlistCard({ item: row.item, episode: row.info.next, esc, roles, view: watchlistView }) : watchlistCard({ item: row, episode: { title: "Ready to watch", image: row.localThumbnailData || row.customCover || row.image || "" }, esc, roles, view: watchlistView });
       const addSection = (heading, subset) => appendSection(heading, subset, asCard);
-      const notStarted = [...queued, ...onHold].sort((a, b) => stampOf(category === "series" ? b.item : b) - stampOf(category === "series" ? a.item : a)).slice(0, 5);
-      addSection("Watching", current); addSection("Not started yet", notStarted); addSection("Haven't watched for a long time", stale);
+      const itemOf = row => category === "series" ? row.item : row;
+      const notStarted = [...queued, ...onHold].sort((a, b) => stampOf(itemOf(b)) - stampOf(itemOf(a))).slice(0, 30);
+      const watching = [...current].sort((a, b) => progressOf(itemOf(b)).touched - progressOf(itemOf(a)).touched).slice(0, 50);
+      addSection("Watching", watching); addSection("Not started yet", notStarted); addSection("Haven't watched for a long time", stale.slice(0, 20));
     }
     const hasRows = sections.length > 0;
     const empty = `<div class="watchlist-empty"><span class="watchlist-empty-illustration"><i data-lucide="${category === "series" ? "tv" : "popcorn"}" aria-hidden="true"></i></span><h2>${tab === "upcoming" ? `No upcoming ${category === "series" ? "episodes" : "movies"} yet` : "Your watchlist is empty!"}</h2><p>${tab === "upcoming" ? "Upcoming titles with a known release date will appear here." : `Add ${category === "series" ? "shows" : "movies"} you want to watch.`}</p><button type="button" data-go="discover">Discover ${category === "series" ? "shows" : "movies"}</button></div>`;
@@ -263,10 +348,15 @@
   }
 
   window.SplitAppPages.watchlistCard = watchlistCard;
-  window.SplitAppPages.loadMoreCollection = key => { const query = String(key || collectionQueryKey); collectionVisible.set(query, (collectionVisible.get(query) || PAGE_BATCH) + PAGE_BATCH); return true; };
+  window.SplitAppPages.loadMoreCollection = key => { const query = String(key || collectionQueryKey); collectionVisible.set(query, (collectionVisible.get(query) || COLLECTION_BATCH) + COLLECTION_BATCH); return true; };
+  window.SplitAppPages.setCollectionSearch = (key, value) => { collectionSearchValues.set(String(key), String(value || "")); return true; };
   window.SplitAppPages.loadMoreWatchlist = key => { watchlistVisible.set(String(key), (watchlistVisible.get(String(key)) || PAGE_BATCH) + PAGE_BATCH); return true; };
 
   window.SplitAppPages.profile = profilePage;
+  window.SplitAppPages["profile-cover"] = profileCoverPage;
+  window.SplitAppPages.moreCovers = kind => { pickerLimit[kind] = (pickerLimit[kind] || 18) + 24; };
+  window.SplitAppPages.setCoverTab = tab => { coverTab = tab === "cover" ? "cover" : "avatar"; };
+  window.SplitAppPages.shuffleProfileCover = (items, prefs, kind = "cover") => { pickFor(kind === "avatar" ? "avatar" : "cover", items, prefs, true); };
   window.SplitAppPages.series = context => collectionPage(context, "series");
   window.SplitAppPages.movies = context => collectionPage(context, "movie");
   window.SplitAppPages["series-favorites"] = context => collectionPage(context, "series", true);

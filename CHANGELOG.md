@@ -2,6 +2,36 @@
 
 All notable changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [0.1.4] — 2026-11-09
+
+### Added
+
+- Quick setup wizard for fresh installs: pick series you already watched, series you want to watch, movies you already watched and movies you want to watch from trending titles or search. It is also available from Profile ⋮ → Quick setup.
+- Edit profile page (pencil badge on the avatar): choose the profile photo and background cover from library posters/backdrops, your own photo or none, with random/newest picks, per-source filters and change intervals (every launch, hourly, daily, weekly or manual). Library pickers page and lazy-load.
+- Discover Grid / List / Cards view toggle; Cards prefer landscape backdrops (TMDB, AniList, Kitsu, TVmaze background images) with posters as the fallback.
+- Discover suggestion shelves from MyAnimeList (Jikan) and Kitsu, with the contributing source names shown when several sources supply a shelf.
+- Favorites pages with no favorites open a quick-setup style picker that lists the titles already in your local library (series or movies) with local search; picked titles become favorites. The Profile favorites boxes are tall "Add favorites" boxes that open it, and Later returns to Profile.
+- Favorites, Series and Movies collections load more titles automatically as you scroll.
+- Library posters show a shimmer placeholder until the thumbnail is ready, then the progress bars animate up to their values; the animation replays when the status grouping (eye button) or filters change. Reduced motion turns it off.
+
+### Changed
+
+- Discover Shows / Movies tabs are always visible above the search bar, Shows first, styled like the Watchlist tabs.
+- Watchlist tab limits: Watching shows the 50 most recent, Not started yet the 30 most recently added and Haven't watched for a long time the 20 most recent.
+- Profile menu is a compact bottom sheet (Timeline, Quick setup, Sources, Settings, About); the "My Profile" heading and tracked-title count were removed.
+- Nav bar background Solid, Glass and Transparent are now visibly distinct; Transparent starts at 30%.
+- Discover grid text lines up with the posters, shelves share a 20 px inset, and tapping a title opens its details. "You might also like" is a left-aligned swipeable poster rail.
+- Setting a movie to Completed fills its runtime (and Watchlist clears it); vertical episode-rating columns are compact.
+- Statistics → Activity page and its Profile menu entry were removed; Timeline covers it.
+- Opening a saved title refreshes it from its source at most once a day (pull-to-refresh or Refresh forces it), and a refresh now writes only the fields that changed, leaves your status, progress and notes alone, and shows an "Updated from …" note listing what changed.
+
+### Fixed
+
+- Mobile Watchlist swipe between tabs works from anywhere (including over tiles) and cast / crew rails scroll sideways.
+- Quick setup's Next / Skip / Finish button stays pinned to the bottom of the screen.
+- Animation settings now also drive the library poster placeholders and progress bars (Animate progress, Progress style, Loading placeholders, Placeholder animation) and the Profile ⋮ sheet (Sheets and dialogs).
+- Faster first thumbnails on Watchlist pages (visible cards load at high priority and off-screen cards skip rendering).
+
 ## [0.1.3] — 2026-11-08
 
 ### Added

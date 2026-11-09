@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#08090c">
   <meta name="referrer" content="no-referrer">
-  <link rel="icon" href="favicon.ico?v=0.1.3" sizes="any">
-  <link rel="icon" href="favicon-48.png?v=0.1.3" type="image/png" sizes="48x48">
-  <link rel="icon" href="icons/screenmark.svg?v=0.1.3" type="image/svg+xml">
+  <link rel="icon" href="favicon.ico?v=0.1.4" sizes="any">
+  <link rel="icon" href="favicon-48.png?v=0.1.4" type="image/png" sizes="48x48">
+  <link rel="icon" href="icons/screenmark.svg?v=0.1.4" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/app-icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
   <title>ScreenMark</title>
@@ -49,6 +49,7 @@
   <script defer src="pages/timeline.js"></script>
   <script defer src="pages/statistics.js"></script>
   <script defer src="pages/profile.js"></script>
+  <script defer src="pages/setup.js"></script>
   <script defer src="pages/settings.js"></script>
   <script defer src="pages/sync.js"></script>
   <script defer src="app.js"></script>
@@ -102,7 +103,7 @@
     <div class="app-shell">
     <header class="topbar">
       <div id="topbar-title-block"><p class="eyebrow" id="app-kicker"></p><h1 id="page-title">Shows Watchlist</h1></div>
-      <form class="discover-top-search" id="discover-top-search" data-discover-search-form role="search" hidden><span class="discover-search-field"><i class="discover-search-leading" data-lucide="search" aria-hidden="true"></i><input id="discover-query" name="query" type="search" placeholder="Search shows" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search shows or movies" enterkeyhint="search"><button class="discover-search-action discover-search-clear" type="button" data-discover-clear aria-label="Clear search" title="Clear search" hidden><i data-lucide="x" aria-hidden="true"></i></button></span><button class="discover-search-action discover-search-submit" type="submit" data-discover-submit aria-label="Search" title="Search"><i data-lucide="search" aria-hidden="true"></i><span>Search</span></button></form>
+      <form class="discover-top-search" id="discover-top-search" data-discover-search-form role="search" hidden><span class="discover-search-field"><i class="discover-search-leading" data-lucide="search" aria-hidden="true"></i><input id="discover-query" name="query" type="search" placeholder="Search shows" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search shows or movies" enterkeyhint="search"><button class="discover-search-action discover-search-clear" type="button" data-discover-clear aria-label="Clear search" title="Clear search" hidden><i data-lucide="x" aria-hidden="true"></i></button></span><button class="discover-search-action discover-search-submit" type="submit" data-discover-submit aria-label="Search" title="Search"><i data-lucide="search" aria-hidden="true"></i><span>Search</span></button><button class="discover-view-toggle" type="button" data-discover-view-toggle aria-label="Switch view: grid, list or cards" title="Grid / list / cards"><i class="view-icon-grid" data-lucide="layout-grid" aria-hidden="true"></i><i class="view-icon-list" data-lucide="layout-list" aria-hidden="true"></i><i class="view-icon-cards" data-lucide="gallery-vertical" aria-hidden="true"></i></button></form>
       <div class="ios-pills segmented header-type" id="header-type" role="group" aria-label="Filter by type" hidden></div>
     </header>
     <main id="page-content" tabindex="-1"></main>

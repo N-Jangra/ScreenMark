@@ -2,7 +2,7 @@
   "use strict";
 
   const config = window.APP_CONFIG;
-  const titles = { discover: "Discover", details: "Details", add: "Add title", timeline: "Timeline", statistics: "Statistics", profile: "Profile", series: "Series", movies: "Movies", "series-favorites": "Series Favorites", "movie-favorites": "Movie Favorites", "series-watchlist": "Shows Watchlist", "movie-watchlist": "Movies Watchlist", settings: "Settings", sync: "Metadata Sync" };
+  const titles = { discover: "Discover", details: "Details", add: "Add title", timeline: "Timeline", statistics: "Statistics", profile: "Profile", setup: "Quick setup", "profile-cover": "Profile cover", series: "Series", movies: "Movies", "series-favorites": "Series Favorites", "movie-favorites": "Movie Favorites", "series-watchlist": "Shows Watchlist", "movie-watchlist": "Movies Watchlist", settings: "Settings", sync: "Metadata Sync" };
   const hasPage = name => Object.prototype.hasOwnProperty.call(titles, name);
   const navItems = [
     { key: "series-watchlist", label: "Shows", icon: "tv" },
@@ -13,10 +13,10 @@
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
     theme: "system", textSize: "normal", dateFormat: "auto", imageStorage: "all", reduceMotion: false, animationSpeed: "fast", pageTransition: "slide", sheetAnimation: "slide", pressEffect: "shrink", progressAnimation: true, progressStyle: "smooth", skeletonShimmer: true, placeholderAnimation: "shimmer", mainColor: "default", accentColorDefaultVersion: 2,
-    showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, navIcons: { discover: "bookmark", "series-watchlist": "tv", "movie-watchlist": "clapperboard", profile: "user-round" },
+    profileCoverSource: "both", profileCoverMode: "random", profileCoverInterval: "visit", profileAvatarSource: "custom", profileAvatarMode: "random", profileAvatarInterval: "visit", profileAvatarPinned: "", profileCoverPinned: "", showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, navIcons: { discover: "bookmark", "series-watchlist": "tv", "movie-watchlist": "clapperboard", profile: "user-round" },
     navBar: { order: navKeys, visible: { "series-watchlist": true, "movie-watchlist": true, discover: true, profile: true } },
     metadataSourceOrder: ["tvmaze", "imdb", "omdb", "tvdb", "tmdb", "rottentomatoes", "anilist", "kitsu", "jikan"], customSources: [],
-    dashboardDefaultCategory: "series", cardCorners: "rounded",
+    dashboardDefaultCategory: "series",
     automaticCompletion: "automatic", defaultStatus: "",
     metadataSyncWorkers: 2, syncRequestDelay: 0, syncScope: "needed",
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30,
@@ -71,6 +71,7 @@
   delete prefs.recentlyAddedLimit;
   delete prefs.appDisplayName;
   delete prefs.bottomBarCorners;
+  delete prefs.cardCorners;
   prefs.apiKeys = { ...prefsDefaults.apiKeys, ...(isRecord(storedPreferences.apiKeys) ? storedPreferences.apiKeys : {}) };
   prefs.sourceOptions = { ...(isRecord(storedPreferences.sourceOptions) ? storedPreferences.sourceOptions : {}) };
   prefs.metadataSources = { ...prefsDefaults.metadataSources, ...(isRecord(storedPreferences.metadataSources) ? storedPreferences.metadataSources : {}) };
@@ -141,7 +142,7 @@
   const legacyDashboardSettingsRoute = initialRoute[0] === "settings" && initialRoute[1] === "dashboard";
   let settingsGroup = page === "settings" ? (legacyExploreRoute ? "metadata-sources" : (legacyDashboardSettingsRoute || initialRoute[1] === "nav-layout") ? null : initialRoute[1] === "manage-backups" ? "backups" : initialRoute[1] || null) : null;
   let settingsParam = initialRoute[0] === "settings" ? new URLSearchParams(initialHashQuery).get("id") || "" : "", settingsFrom = "", renderedSettingsGroup;
-  const statsSections = ["activity"];
+  const statsSections = [];
   const normalizeStatsSection = section => section === "playtime" ? "watchtime" : section === "breakdown" ? "library" : section;
   let statsSubpage = page === "statistics" && statsSections.includes(initialRoute[1]) ? normalizeStatsSection(initialRoute[1]) : "";
   let renderedRoute = null, inAppNav = false, statsRange = "week", statsCategory = "series", statsActivityDate = "", addCategory = "", discoverCategoryChoice = "";
@@ -521,7 +522,6 @@
     root.dataset.perf = weakDevice ? "low" : lowEnd ? "mid" : "high";
     root.dataset.lowend = String(lowEnd);
     root.dataset.nativeAndroid = String(nativeAndroid);
-    document.body.dataset.corners = prefs.cardCorners;
     document.body.dataset.barStyle = prefs.bottomBarStyle;
     document.body.dataset.barLabels = prefs.bottomBarLabels;
     document.body.dataset.sidebar = prefs.showSidebar ? "shown" : "hidden";
@@ -531,6 +531,7 @@
     window.SplitAppDates?.setFormat(prefs.dateFormat); window.SplitAppBackend?.setImageStorage?.(prefs.imageStorage);
     $("#bottom-bar").dataset.bg = prefs.bottomBarBackground;
     document.body.dataset.barBackground = prefs.bottomBarBackground;
+    try { document.body.dataset.discoverView = (["list", "cards"].includes(localStorage.getItem(`${storageKey}_discover_view`)) ? localStorage.getItem(`${storageKey}_discover_view`) : "grid"); } catch (_) { document.body.dataset.discoverView = "grid"; }
     document.body.style.setProperty("--accent", accentColor);
     document.body.style.setProperty("--legacy-accent", accentColor);
     document.body.style.setProperty("--legacy-glow", `color-mix(in srgb, ${accentColor} 15%, transparent)`);
@@ -568,7 +569,7 @@
   function activeNavigationKey() {
     if (page === "series-watchlist" || page === "movie-watchlist") return page;
     if (["series", "movies", "series-favorites", "movie-favorites"].includes(page)) return "profile";
-    if (page === "timeline" || page === "statistics") return "profile";
+    if (page === "timeline" || page === "statistics" || page === "profile-cover") return "profile";
     if (page === "details") {
       if (detailReturnPage === "series-watchlist" || detailReturnPage === "movie-watchlist") return detailReturnPage;
       if (["profile", "series", "movies", "series-favorites", "movie-favorites", "timeline", "statistics"].includes(detailReturnPage)) return "profile";
@@ -613,6 +614,10 @@
     if (!back) rememberScroll();
     if (next === "explore") next = "settings/metadata-sources";
     if (next === "dashboard" || next === "search") next = "discover";
+    if (favoritesNeedSetup(String(next).split("/")[0]) && !back) {
+      setupState.mode = String(next).startsWith("movie") ? "favorites-movie" : "favorites-series"; setupStarted = false; next = "setup";
+    }
+    if (String(next).split("/")[0] !== "setup") setupState.mode = "";
     const [nextPage, nextSection] = String(next).split("/");
     page = hasPage(nextPage) ? nextPage : "discover";
     if (page !== "discover") { discoverAbortController?.abort(); discoverAbortController = null; suggestionsAbortController?.abort(); suggestionsAbortController = null; suggestionsPendingKey = ""; suggestionsRequest++; }
@@ -694,7 +699,7 @@
     }
     const parentForRef = detailRef?.type === "episode" ? itemById(String(detailItemId)) : null;
     const refItem = parentForRef?.category === "series" && (parentForRef.cachedDetails?.sections || []).some(section => section.kind === "episodes" && (section.items || []).some(row => String(row.id) === String(detailRef.id) || String(row.ref?.id) === String(detailRef.id))) ? parentForRef : null;
-    return { statsSubpage, statsCategory, statsActivityDate, statsRange, profileCollectionSort, profileStatusFilter, profileGenreFilter, profileStatusGroups, libraryLoading: !libraryRestoreComplete, watchlistTab, watchlistView: currentWatchlistView(), metadataSyncState, metadataSyncCounts: page === "sync" ? syncCounts() : null, changeLog, history, logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, itemById, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, logEntries, roles, trackedStatuses, statusIcon, discoverCategory: currentDiscoverCategory(), discoverQuery, addMetadataQuery, settingsGroup, settingsParam, settingsFrom, discoverSource, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: itemById(String(entryDraftId)) || null, addReturnPage, navItems, metadataSourceFilter, titleIdentity,
+    return { setup: setupState, statsSubpage, statsCategory, statsActivityDate, statsRange, profileCollectionSort, profileStatusFilter, profileGenreFilter, profileStatusGroups, libraryLoading: !libraryRestoreComplete, watchlistTab, watchlistView: currentWatchlistView(), metadataSyncState, metadataSyncCounts: page === "sync" ? syncCounts() : null, changeLog, history, logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, itemById, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, logEntries, roles, trackedStatuses, statusIcon, discoverCategory: currentDiscoverCategory(), discoverQuery, addMetadataQuery, settingsGroup, settingsParam, settingsFrom, discoverSource, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: itemById(String(entryDraftId)) || null, addReturnPage, navItems, metadataSourceFilter, titleIdentity,
       detailData, detailError, detailLoading, detailReturnPage, detailRef, detailRefOffset, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, detailCastOnline, refItem, category, labelCategory, defaultStatus, esc, imageMarkup, safeLucideName };
   }
   // ---- Device artwork cache (IndexedDB blobs) ----
@@ -1043,8 +1048,8 @@
     if (page === "discover") {
       const source = discoverSource ? window.SplitAppSources.list().find(row => row.key === discoverSource) : null;
       const categories = config.categories.filter(row => !source || source.categories.includes(row.key));
-      headerType.hidden = categories.length < 2 || !(discoverSearchFocused || Boolean(discoverQuery.trim()));
-      headerType.innerHTML = categories.map(row => {
+      headerType.hidden = categories.length < 2;
+      headerType.innerHTML = [...categories].sort((a, b) => (a.key === "series" ? 0 : 1) - (b.key === "series" ? 0 : 1)).map(row => {
         const label = row.key === "movie" ? "Movies" : row.key === "series" ? "Shows" : row.label;
         const selected = currentDiscoverCategory() === row.key;
         return `<button type="button" class="lens-tab${selected ? " on" : ""}" data-discover-category="${esc(row.key)}" aria-pressed="${selected}">${esc(label)}</button>`;
@@ -1079,8 +1084,18 @@
     }
     document.getElementById("collection-toolbar")?.remove();
     disposeContentResources(content);
+    if (page === "setup" && !setupStarted) beginSetup(); else if (page !== "setup") setupStarted = false;
     content.innerHTML = window.SplitAppPages[page](pageContext());
+    if (page === "setup") { const grid = $("#setup-grid"); if (grid) routeRemoteImages(grid); }
+    if (["series", "movies", "series-favorites", "movie-favorites"].includes(page)) trackPosterLoading(content);
     if (page === "details") prioritizeVisibleDetailImages(content);
+    if (page === "series-watchlist" || page === "movie-watchlist") {
+      // Above-the-fold thumbnails: fetch immediately at high priority instead of waiting for lazy-load heuristics.
+      content.querySelectorAll(".watchlist-card img[loading=lazy]").forEach((img, index) => {
+        if (index >= 8) return;
+        img.loading = "eager"; img.fetchPriority = "high";
+      });
+    }
     if (enterRoute) requestAnimationFrame(() => { if (renderedRoute === route) content.classList.add("page-route-enter"); });
     const collectionToolbar = content.querySelector(".profile-filter-bar, .profile-filter-pill");
     if (collectionToolbar) {
@@ -1230,7 +1245,7 @@
       event.preventDefault(); event.stopPropagation();
       if (action === "edit") { detailEditMode = true; render(); }
       else if (action === "progress") updateProgress(button.dataset.id);
-      else if (action === "refresh-details") loadDetails();
+      else if (action === "refresh-details") loadDetails(null, true);
       else if (action === "delete-detail") requestDeleteDetails(button.dataset.id);
       else if (action === "cancel-detail-edit") { detailEditMode = false; render(); }
       else if (action === "open-library-item") openDetails(button.dataset.id);
@@ -1706,8 +1721,62 @@
     routeRemoteImages(box);
     empty.hidden = results.length > 0;
     box._results = visible;
+    enrichCardBackdrops(box);
     window.lucide?.createIcons({ root: box, attrs: { "aria-hidden": "true" } });
     return true;
+  }
+  // Cards view wants landscape art. TVmaze only lists posters in search/schedule results, so fetch its
+  // "background" image for the cards that are actually on screen (cached, spaced to respect its rate limit).
+  const backdropCache = new Map(); let backdropQueue = Promise.resolve(), backdropObserver = null;
+  async function tvmazeBackdrop(showId) {
+    if (backdropCache.has(showId)) return backdropCache.get(showId);
+    let url = "";
+    try {
+      const response = await fetch(`https://api.tvmaze.com/shows/${encodeURIComponent(showId)}/images`);
+      if (response.ok) { const rows = await response.json(); const bg = (Array.isArray(rows) ? rows : []).find(row => row.type === "background"); url = bg?.resolutions?.original?.url || ""; }
+    } catch (_) {}
+    backdropCache.set(showId, url); return url;
+  }
+  function enrichCardBackdrops(box = $("#discover-results")) {
+    backdropObserver?.disconnect(); backdropObserver = null;
+    if (!box || !window.IntersectionObserver) return;
+    const cards = [...box.querySelectorAll(".discover-catalog-card:not(.has-backdrop)")].filter(card => card.querySelector("[data-discover-add]"));
+    if (!cards.length) return;
+    backdropObserver = new IntersectionObserver(entries => entries.forEach(entry => {
+      if (!entry.isIntersecting || document.body.dataset.discoverView !== "cards") return;
+      const card = entry.target; backdropObserver?.unobserve(card);
+      const result = box._results?.[Number(card.querySelector("[data-discover-add]")?.dataset.discoverAdd)];
+      if (!result || result.source !== "tvmaze" || !result.providerId || result.backdrop) return;
+      backdropQueue = backdropQueue.then(async () => {
+        const url = await tvmazeBackdrop(result.providerId);
+        if (!url || !card.isConnected) return;
+        result.backdrop = url;
+        const poster = card.querySelector(".discover-catalog-poster"); if (!poster) return;
+        const img = document.createElement("img"); img.className = "discover-catalog-backdrop"; img.alt = ""; img.decoding = "async"; img.src = url;
+        img.onerror = () => { img.remove(); card.classList.remove("has-backdrop"); };
+        img.onload = () => card.classList.add("has-backdrop");
+        poster.append(img);
+        await new Promise(resolve => setTimeout(resolve, 150));
+      });
+    }), { rootMargin: "300px 0px" });
+    cards.forEach(card => backdropObserver.observe(card));
+  }
+  // Library posters: shimmer placeholder until the thumbnail is ready, then the progress bar animates up to its value.
+  let posterLoadingBound = false;
+  const markPosterLoaded = img => img.closest?.(".profile-collection-grid .profile-poster")?.classList.add("is-loaded");
+  function trackPosterLoading(root) {
+    if (!posterLoadingBound) {
+      posterLoadingBound = true;
+      const handler = event => { if (event.target?.tagName === "IMG") markPosterLoaded(event.target); };
+      document.addEventListener("load", handler, true); document.addEventListener("error", handler, true);
+    }
+    const posters = [...root.querySelectorAll(".profile-collection-grid .profile-poster")];
+    posters.forEach(poster => {
+      const img = poster.querySelector("img");
+      if (!img || (img.complete && img.naturalWidth > 0)) { requestAnimationFrame(() => requestAnimationFrame(() => poster.classList.add("is-loaded"))); }
+    });
+    // Slow network or missing art: never leave a bar stuck at zero.
+    setTimeout(() => posters.forEach(poster => { if (poster.isConnected) poster.classList.add("is-loaded"); }), 4000);
   }
   function discoverCatalogCard(result, index) {
     const category = result.category || currentDiscoverCategory();
@@ -1765,10 +1834,94 @@
       addShelf(label, matches);
     });
     const genreShelves = new Set(["Comedy", "Action", "Horror", "Romance", "Slice of Life", "Sci-Fi", "Fantasy", "Adventure"]);
-    box.innerHTML = shelves.length ? `<div class="discover-catalog-sections">${shelves.map(shelf => `<section class="discover-catalog-section${genreShelves.has(shelf.title) ? " discover-genre-shelf" : ""}"><h2>${esc(shelf.title)}</h2><div class="discover-catalog-grid">${shelf.items.map(row => discoverCatalogCard(row, all.indexOf(row))).join("")}</div></section>`).join("")}</div>` : `<p class="discover-catalog-empty">No titles match these filters.</p>`;
+    const sourceNames = new Map((window.SplitAppSources?.list?.() || []).map(row => [row.key, row.name]));
+    const multiSource = new Set(all.map(row => row.source).filter(Boolean)).size > 1;
+    const shelfSources = shelf => { if (!multiSource) return ""; const names = [...new Set(shelf.items.map(row => sourceNames.get(row.source) || row.source).filter(Boolean))]; return names.length ? `<small class="discover-shelf-sources">${esc(names.join(" · "))}</small>` : ""; };
+    box.innerHTML = shelves.length ? `<div class="discover-catalog-sections">${shelves.map(shelf => `<section class="discover-catalog-section${genreShelves.has(shelf.title) ? " discover-genre-shelf" : ""}"><h2>${esc(shelf.title)}${shelfSources(shelf)}</h2><div class="discover-catalog-grid">${shelf.items.map(row => discoverCatalogCard(row, all.indexOf(row))).join("")}</div></section>`).join("")}</div>` : `<p class="discover-catalog-empty">No titles match these filters.</p>`;
     routeRemoteImages(box);
     box._results = all;
+    enrichCardBackdrops(box);
     return all.length;
+  }
+  // ---- Quick setup wizard ----
+  const SETUP_DONE_KEY = `${storageKey}_setup_done`;
+  const setupState = { mode: "", step: 0, query: "", rows: [], loading: false, error: "", selected: new Map(), picks: [new Map(), new Map(), new Map(), new Map()] };
+  let setupStarted = false, setupRequest = 0, setupSearchTimer = 0; const setupTrending = {};
+  const setupDone = () => { try { return localStorage.getItem(SETUP_DONE_KEY) === "1"; } catch (_) { return true; } };
+  const markSetupDone = () => { try { localStorage.setItem(SETUP_DONE_KEY, "1"); } catch (_) {} };
+  function beginSetup() {
+    setupStarted = true; if (page !== "setup") setupState.mode = ""; setupState.step = 0; setupState.query = ""; setupState.picks.forEach(map => map.clear());
+    setupState.selected = setupState.picks[0]; loadSetupRows();
+  }
+  async function loadSetupRows() {
+    const request = ++setupRequest, step = window.SplitAppSetup.stepsFor(setupState)[setupState.step], query = setupState.query.trim();
+    setupState.selected = setupState.picks[setupState.step];
+    const setGrid = () => { const grid = $("#setup-grid"); if (grid && page === "setup") { grid.innerHTML = window.SplitAppSetup.grid(setupState, esc); routeRemoteImages(grid); } };
+    setupState.error = "";
+    if (setupState.mode) {
+      // Favorites picker: list what is already in the local library (no network).
+      const needle = query.toLocaleLowerCase();
+      setupState.rows = items.filter(item => item.category === step.category && !item.favorite && (!needle || String(item.title || "").toLocaleLowerCase().includes(needle)))
+        .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")))
+        .map(item => ({ source: "local", providerId: String(item.id), localId: String(item.id), title: item.title, year: item.year, image: item.customCover || item.localThumbnailData || item.localPortraitData || item.image || "" }));
+      setupState.loading = false; setGrid(); return;
+    }
+    if (!query && setupTrending[step.category]) { setupState.rows = setupTrending[step.category]; setupState.loading = false; setGrid(); return; }
+    if (prefs.metadataMode === "offline") { setupState.rows = []; setupState.loading = false; setupState.error = "Quick setup needs an internet connection."; setGrid(); return; }
+    setupState.loading = true; setGrid();
+    try {
+      let rows;
+      if (query) rows = await window.SplitAppDiscovery.search(query, step.category, detailSettings());
+      else {
+        const sections = await window.SplitAppDiscovery.trending(step.category, detailSettings());
+        const seen = new Set(); rows = sections.flatMap(section => section.items || []);
+        rows = rows.filter(row => { const key = `${String(row.title).toLowerCase()}|${String(row.year || "").slice(0, 4)}`; return row.title && row.image && !seen.has(key) && seen.add(key); }).slice(0, 60);
+        if (rows.length) setupTrending[step.category] = rows;
+      }
+      if (request !== setupRequest) return;
+      setupState.rows = (rows || []).filter(row => row.image).slice(0, 60);
+    } catch (error) {
+      if (request !== setupRequest) return;
+      setupState.rows = []; setupState.error = "Could not load titles. Check your connection and try again.";
+    }
+    setupState.loading = false; setGrid();
+  }
+  function applySetupPicks() {
+    let added = 0;
+    window.SplitAppSetup.stepsFor(setupState).forEach((step, index) => {
+      setupState.picks[index].forEach(result => {
+        if (step.status === "favorite") {
+          if (result.localId) { const own = itemById(result.localId); if (own && !own.favorite) { own.favorite = true; own.updatedAt = Date.now(); persist({ ids: [own.id] }); added++; } return; }
+          const before = items.length, item = addDiscoverResult(result, "Favorites", { status: roles.queued, quiet: true, favorite: true });
+          if (items.length > before) added++;
+          else if (item && !item.favorite) { item.favorite = true; item.updatedAt = Date.now(); persist({ ids: [item.id] }); added++; }
+          return;
+        }
+        const status = step.status === "done" ? roles.done : roles.queued;
+        const before = items.length;
+        const item = addDiscoverResult(result, "Quick setup", { status, quiet: true });
+        if (items.length > before) added++;
+        else if (item && step.status === "done" && item.status !== roles.done) { item.status = roles.done; item.updatedAt = Date.now(); persist({ ids: [item.id] }); }
+      });
+    });
+    return added;
+  }
+  const favoritesSetupSkipped = new Set();
+  // Empty favorites page: offer the quick-setup style picker first (skippable).
+  function favoritesNeedSetup(target) {
+    if (target !== "series-favorites" && target !== "movie-favorites") return false;
+    if (favoritesSetupSkipped.has(target) || !libraryRestoreComplete) return false;
+    const category = target === "movie-favorites" ? "movie" : "series";
+    return !items.some(item => item.category === category && item.favorite);
+  }
+  function finishSetup(save = true) {
+    const mode = setupState.mode, target = mode === "favorites-movie" ? "movie-favorites" : "series-favorites";
+    const added = save ? applySetupPicks() : 0;
+    setupStarted = false; setupState.mode = "";
+    if (mode) { if (added) { favoritesSetupSkipped.add(target); toast(`Added ${added} ${added === 1 ? "favorite" : "favorites"}.`); goto(target, true); } else goto("profile"); return; }
+    markSetupDone();
+    if (added) toast(`Added ${added} ${added === 1 ? "title" : "titles"} to your library.`);
+    goto("series-watchlist");
   }
   let suggestionsCache = null, suggestionsRequest = 0, suggestionsPendingKey = "", suggestionsAbortController = null;
   async function loadDiscoverSuggestions() {
@@ -1888,14 +2041,14 @@
   function sameDiscoverTitle(item, result, category) {
     return Boolean(item && result && item.category === (category || result.category) && titleIdentity(item) === titleIdentity({ ...result, category: category || result.category, metadataSource: result.metadataSource || result.source }));
   }
-  function addDiscoverResult(result, origin = "Discover") {
+  function addDiscoverResult(result, origin = "Discover", options = {}) {
     if (!result) return null;
     const existing = itemByTitleIdentity(titleIdentity({ ...result, metadataSource: result.metadataSource || result.source }));
     if (existing) {
-      toast("That entry is already in your library."); return existing;
+      if (!options.quiet) toast("That entry is already in your library."); return existing;
     }
-    const item = stripLocalScores({ ...result, metadataSource: result.source, id: crypto.randomUUID(), status: prefs.defaultStatus || defaultStatus(result.category), progress: 0, createdAt: Date.now(), updatedAt: Date.now() });
-    items.unshift(item); itemIndexItems = null; recordLibraryChange("added", `Added ${item.title} from ${origin}.`, [item.id]); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist({ ids: [item.id] }); toast("Added to your library."); hydrateSavedItem(item); return item;
+    const item = stripLocalScores({ ...result, metadataSource: result.source, id: crypto.randomUUID(), status: options.status || prefs.defaultStatus || defaultStatus(result.category), ...(options.favorite ? { favorite: true } : {}), progress: 0, createdAt: Date.now(), updatedAt: Date.now() });
+    items.unshift(item); itemIndexItems = null; recordLibraryChange("added", `Added ${item.title} from ${origin}.`, [item.id]); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist({ ids: [item.id] }); if (!options.quiet) toast("Added to your library."); hydrateSavedItem(item); return item;
   }
   // Keep the best value per fact across providers (a later source never blanks out earlier data).
   function mergeFacts(previous = {}, next = {}) {
@@ -1906,8 +2059,12 @@
     }
     return merged;
   }
+  // What changed on the last refresh of each saved title (not persisted): field names, used for the "Updated" note.
+  const metadataChanges = new Map();
+  const stableJson = value => JSON.stringify(value, (key, entry) => key === "fetchedAt" || key === "localImageData" ? undefined : entry);
   function applyLoadedMetadata(item, loaded, { cacheDetails = true, replaceFacts = false } = {}) {
     if (!item || !loaded || typeof loaded !== "object") throw new Error("Metadata source returned an invalid detail record.");
+    const changes = [];
     let cachedDetails = loaded;
     if (cacheDetails && item.cachedDetails && !replaceFacts) {
       const sections = [...(loaded.sections || [])];
@@ -1921,17 +2078,26 @@
       }
       if (sections.length !== (loaded.sections || []).length) cachedDetails = { ...loaded, sections };
     }
-    if (cacheDetails) item.cachedDetails = cachedDetails;
-    if (cacheDetails && page === "details" && String(detailItemId) === String(item.id)) detailData = cachedDetails;
+    // Only write what actually changed; everything else keeps its stored value.
+    if (cacheDetails) {
+      const oldSections = new Map((item.cachedDetails?.sections || []).map(section => [`${section.kind}:${section.title}`, stableJson(section)]));
+      (cachedDetails.sections || []).forEach(section => { if (oldSections.get(`${section.kind}:${section.title}`) !== stableJson(section)) changes.push(String(section.title || section.kind || "details").toLowerCase()); });
+      if (!item.cachedDetails || stableJson(item.cachedDetails) !== stableJson(cachedDetails)) item.cachedDetails = cachedDetails;
+      if (page === "details" && String(detailItemId) === String(item.id)) detailData = item.cachedDetails;
+    }
     item.metadataFetchedAt = Number(loaded.fetchedAt || loaded.facts?.fetchedAt) || Date.now();
-    item.facts = replaceFacts ? { ...(loaded.facts || {}) } : mergeFacts(item.facts, loaded.facts);
+    const nextFacts = replaceFacts ? { ...(loaded.facts || {}) } : mergeFacts(item.facts, loaded.facts);
+    const changedFacts = Object.keys(nextFacts).filter(key => key !== "fetchedAt" && stableJson(nextFacts[key]) !== stableJson((item.facts || {})[key]));
+    if (changedFacts.length) { item.facts = nextFacts; changes.push(changedFacts.length === 1 ? changedFacts[0] : `${changedFacts.length} facts`); }
     delete item.relinkFresh;
     if (!Number(item.goal)) item.goal = category(item.category)?.unit === "minutes" ? Number(loaded.facts?.runtimeMinutes) || 0 : Number(loaded.goal) || Number(loaded.facts?.episodeCount) || 0;
-    item.description = loaded.description || item.description;
-    item.year = loaded.year || item.year;
-    item.image = item.customCover || loaded.portraitImage || loaded.image || item.image;
-    item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop;
-    item.updatedAt = Date.now();
+    const set = (field, value, label) => { if (value && value !== item[field]) { item[field] = value; changes.push(label); } };
+    set("description", loaded.description, "description");
+    set("year", loaded.year, "year");
+    set("image", item.customCover ? "" : (loaded.portraitImage || loaded.image), "poster");
+    set("backdrop", loaded.landscapeImage || loaded.backgroundImage, "backdrop");
+    if (changes.length) item.updatedAt = Date.now();
+    metadataChanges.set(String(item.id), [...new Set(changes)]);
     reconcileEpisodes(item);
     return item;
   }
@@ -2008,7 +2174,8 @@
     persist({ meta: true }); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast("Custom source deleted.");
   }
   function detailSettings() { return { metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions, offlineFallback: prefs.offlineFallback }; }
-  async function loadDetails(targetId = null) {
+  const DETAIL_REFRESH_MS = 24 * 60 * 60 * 1000;
+  async function loadDetails(targetId = null, force = false) {
     detailAbortController?.abort();
     const controller = typeof AbortController === "function" ? new AbortController() : null;
     detailAbortController = controller;
@@ -2034,6 +2201,10 @@
         : `${source?.name || "This metadata source"} is disabled and no saved details are available.`;
       render(); return;
     }
+    // Saved titles refresh from their source at most once a day when opened; pull-to-refresh or Refresh forces it.
+    if (!force && !detailPreview && useCached && !item.relinkFresh && Date.now() - metadataStamp(item) < DETAIL_REFRESH_MS && ((item.cachedDetails.sections || []).length || Object.keys(item.cachedDetails.facts || {}).length)) {
+      detailLoading = false; if (detailAbortController === controller) detailAbortController = null; render(); return;
+    }
     detailLoading = true; render();
     try {
       const loaded = await window.SplitAppDetails.load(item, { ...detailSettings(), ...(controller ? { signal: controller.signal } : {}) });
@@ -2041,8 +2212,11 @@
         detailData = loaded;
         if (detailPreview) { detailPreview.image ||= loaded.portraitImage || loaded.image || ""; detailPreview.year ||= loaded.year || ""; detailPreview.description ||= loaded.description || ""; detailPreview.title = loaded.title || detailPreview.title; }
         if (!detailPreview) {
+          const hadCache = Boolean(item.cachedDetails);
           applyLoadedMetadata(item, loaded, { replaceFacts: Boolean(item.relinkFresh) });
           persist({ ids: [item.id] });
+          const changes = metadataChanges.get(String(item.id));
+          if (hadCache && changes?.length) toast(`Updated from ${item.metadataSource}: ${changes.slice(0, 4).join(", ")}${changes.length > 4 ? "…" : ""}.`);
         }
       }
     }
@@ -2527,6 +2701,13 @@
       if (!allowed.includes(status)) return;
     } else if (item.category === "movie" && ![roles.queued, roles.dropped, roles.done].includes(status)) return;
     item.status = status; item.updatedAt = Date.now();
+    // Completed movie = fully watched: fill the runtime so the bar, percentage and "left" time update too.
+    if (item.category === "movie" && status === roles.done) {
+      const runtime = Number(item.goal) || Number(item.facts?.runtimeMinutes) || Number(item.facts?.totalMinutes) || 0;
+      if (runtime) { item.goal = Number(item.goal) || runtime; item.progress = runtime; item.lastProgressAt = Date.now(); }
+    }
+    // Back to Watchlist = not watched yet: clear the progress.
+    if (item.category === "movie" && status === roles.queued) { item.progress = 0; delete item.lastProgressAt; }
     if (trackedStatuses.includes(status)) history.unshift({ itemId: item.id, title: item.title, action: status, status, at: Date.now() });
     persist({ ids: [item.id] });
   }
@@ -2632,11 +2813,12 @@
   function setPreference(key, value) {
     prefs[key] = value;
     if (key === "bottomBarBackground" && value === "solid") prefs.bottomBarTransparency = 100;
+    if (key === "bottomBarBackground" && value === "transparent" && Number(prefs.bottomBarTransparency) >= 100) prefs.bottomBarTransparency = 30;
     persist({ meta: true }); applyPreferences();
     if (key === "metadataMode") { window.dispatchEvent(new Event("screenmark:sync-resume")); maybeAutoMetadataSync(); }
     if (key === "metadataRefreshInterval") scheduleAutomaticMetadataCheck();
     if (key === "backgroundBackups" || key === "backupSchedule" || key === "backupRetention") syncBackupSchedule();
-    if (["cardCorners", "theme"].includes(key)) render();
+    if (key === "theme") render();
   }
   function openSettingPicker(trigger) {
     let options = [];
@@ -2668,7 +2850,6 @@
       bottomBarBackground: { solid: "square", glass: "panels-top-left", transparent: "panels-top-bottom" },
       bottomBarStyle: { "icon-color": "palette", underline: "underline", pill: "pill", minimal: "minus" },
       bottomBarLabels: { "icons-labels": "list", "icons-only": "layout-grid", "labels-only": "text" },
-      cardCorners: { rounded: "circle", soft: "squircle", square: "square" },
       automaticCompletion: { automatic: "refresh-cw", ask: "message-circle-question", manual: "hand" },
       defaultStatus: Object.fromEntries(config.categories[0].statuses.map(status => [status, statusIcon(status)])),
       backupSchedule: { never: "calendar-x", daily: "calendar-days" },
@@ -2953,6 +3134,7 @@
       if (item) {
         setItemStatus(item, detailStatus.dataset.detailStatusBtn);
         detailStatus.parentElement.querySelectorAll("[data-detail-status-btn]").forEach(button => button.classList.toggle("active", button === detailStatus));
+        if (item.category === "movie") render();
       }
       return;
     }
@@ -3066,7 +3248,7 @@
           toast(`${key === "imdb" ? "IMDb" : "Rotten Tomatoes"} session ready.`);
           if (page === "discover" && discoverSource === key && discoverQuery.trim()) submitDiscover();
           else if (page === "details" && detailRef && (detailRef.extra?.source === key || itemById(detailItemId)?.metadataSource === key)) loadDetailRef();
-          else if (page === "details" && detailItemId && itemById(detailItemId)?.metadataSource === key) loadDetails(detailItemId);
+          else if (page === "details" && detailItemId && itemById(detailItemId)?.metadataSource === key) loadDetails(detailItemId, true);
         } catch (error) { toast(error?.message || "Could not open the provider."); }
       })();
       return;
@@ -3142,8 +3324,32 @@
       try { localStorage.setItem(`${storageKey}_watchlist_views`, JSON.stringify(watchlistViews)); } catch (_) {}
       render(); syncPageNavigation(); return;
     }
+    const setupToggle = eventClosest(event, "[data-setup-toggle]");
+    if (setupToggle) {
+      const row = setupState.rows[Number(setupToggle.dataset.setupToggle)]; if (!row) return;
+      const key = `${row.source}:${row.providerId}`, picks = setupState.picks[setupState.step];
+      const on = !picks.has(key); if (on) picks.set(key, row); else picks.delete(key);
+      setupToggle.classList.toggle("selected", on); setupToggle.setAttribute("aria-pressed", String(on));
+      const next = $("[data-setup-next]"); if (next) next.textContent = window.SplitAppSetup.footerLabel(setupState);
+      return;
+    }
+    if (eventClosest(event, "[data-setup-next]")) {
+      if (setupState.step >= window.SplitAppSetup.stepsFor(setupState).length - 1) { finishSetup(true); return; }
+      setupState.step++; setupState.query = ""; render(); loadSetupRows(); window.scrollTo({ top: 0 }); return;
+    }
+    if (eventClosest(event, "[data-setup-back]")) { if (setupState.step > 0) { setupState.step--; setupState.query = ""; render(); loadSetupRows(); window.scrollTo({ top: 0 }); } return; }
+    if (eventClosest(event, "[data-setup-skip]")) { finishSetup(false); return; }
+    const coverPick = eventClosest(event, "[data-cover-pick]");
+    if (coverPick) { const prefix = coverPick.dataset.coverPick === "avatar" ? "profileAvatar" : "profileCover"; prefs[prefix + "Pinned"] = coverPick.dataset.id; setPreference(prefix + "Source", "pinned"); render(); return; }
+    const coverMore = eventClosest(event, "[data-cover-more]");
+    if (coverMore) { window.SplitAppPages.moreCovers(coverMore.dataset.coverMore); render(); return; }
+    const coverTabButton = eventClosest(event, "[data-cover-tab]");
+    if (coverTabButton) { window.SplitAppPages.setCoverTab(coverTabButton.dataset.coverTab); render(); return; }
+    if (eventClosest(event, "[data-profile-avatar-remove]")) { try { localStorage.removeItem("screenmark_profile_avatar"); } catch (_) {} render(); return; }
+    if (eventClosest(event, "[data-profile-cover-shuffle]")) { window.SplitAppPages.shuffleProfileCover(items, prefs, eventClosest(event, "[data-profile-cover-shuffle]").dataset.profileCoverShuffle); render(); return; }
     if (eventClosest(event, "[data-open-profile-menu]")) { showPopup($("#profile-options-dialog")); return; }
     if (eventClosest(event, "[data-profile-add]")) { openItem(); return; }
+    if (event.target?.id === "profile-options-dialog") { closePopup(event.target); return; }
     if (eventClosest(event, "[data-profile-menu-close]")) { closePopup($("#profile-options-dialog")); return; }
     if (eventClosest(event, "#profile-options-dialog a")) closePopup($("#profile-options-dialog"), { preserveHistory: true });
     if (eventClosest(event, "[data-open-timeline-filters]")) { showPopup($("#timeline-filter-dialog")); return; }
@@ -3245,6 +3451,8 @@
       }
       return;
     }
+    const cardText = eventClosest(event, ".discover-catalog-card h3, .discover-catalog-card > small, .discover-catalog-card > .discover-catalog-genres");
+    if (cardText) { cardText.closest(".discover-catalog-card")?.querySelector("[data-discover-details]")?.click(); return; }
     const sourceDetails = eventClosest(event, "[data-discover-details]"); if (sourceDetails) { openDiscoverDetails($("#discover-results")._results?.[Number(sourceDetails.dataset.discoverDetails)]); return; }
     if (eventClosest(event, "[data-open-profile-filters]")) { showPopup($("#profile-filter-dialog")); return; }
     if (eventClosest(event, "[data-profile-filter-close]")) { closePopup($("#profile-filter-dialog")); return; }
@@ -3262,7 +3470,7 @@
       refreshDiscoverSavedActions(); return;
     }
   });
-  const watchlistSwipeIgnoredTarget = target => target?.closest?.("button, a, input, select, textarea, dialog, .watchlist-view-toggle");
+  const watchlistSwipeIgnoredTarget = target => target?.closest?.("input, select, textarea, dialog, .watchlist-view-toggle");
   const watchlistSwipeStart = (x, y, target, id) => {
     if ((page !== "series-watchlist" && page !== "movie-watchlist") || watchlistSwipeIgnoredTarget(target)) { watchlistSwipe = null; return; }
     if (!target?.closest?.(".watchlist-page")) { watchlistSwipe = null; return; }
@@ -3321,10 +3529,25 @@
       list?.querySelectorAll(".setting-picker-option").forEach(option => { option.classList.remove("active"); option.setAttribute("aria-pressed", "false"); });
       return;
     }
+    if (input.matches("[data-profile-avatar-file]")) {
+      const file = input.files?.[0]; input.value = "";
+      if (!file || !file.type.startsWith("image/")) return;
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => {
+        const size = 256, canvas = document.createElement("canvas"); canvas.width = canvas.height = size;
+        const scale = Math.max(size / img.width, size / img.height), w = img.width * scale, h = img.height * scale;
+        canvas.getContext("2d").drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        URL.revokeObjectURL(url);
+        try { localStorage.setItem("screenmark_profile_avatar", canvas.toDataURL("image/jpeg", .86)); } catch (_) { toast("Could not save photo."); }
+        render();
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); toast("Could not read that image."); };
+      img.src = url; return;
+    }
     if (input.matches("[data-pref]")) {
       const key = input.dataset.pref; let value = input.type === "checkbox" ? input.checked : input.value;
       if (input.type === "number" || input.type === "range") value = Number(value);
-      setPreference(key, value); if (input.type === "range") input.nextElementSibling.value = `${value}%`;
+      setPreference(key, value); if (/^profile(Cover|Avatar)/.test(key)) { render(); return; } if (input.type === "range") input.nextElementSibling.value = `${value}%`;
     }
     if (input.matches("[data-api-key]")) { prefs.apiKeys[input.dataset.apiKey] = input.value.trim(); persist({ meta: true }); }
     if (input.matches("[data-source]")) { window.SplitAppSources.setEnabled(prefs, input.dataset.source, input.checked); persist({ meta: true }); }
@@ -3393,7 +3616,22 @@
     prefs.metadataSourceOrder = [...list.querySelectorAll("[data-source-row]")].map(entry => entry.dataset.sourceRow);
     persist({ meta: true }); render();
   });
+  document.addEventListener("click", event => {
+    if (!eventClosest(event, "[data-discover-view-toggle]")) return;
+    const next = ({ grid: "list", list: "cards", cards: "grid" })[document.body.dataset.discoverView] || "list";
+    document.body.dataset.discoverView = next;
+    try { localStorage.setItem(`${storageKey}_discover_view`, next); } catch (_) {}
+    if (next === "cards") enrichCardBackdrops();
+  });
   document.addEventListener("input", event => {
+    if (event.target.matches?.("[data-collection-search]")) {
+      window.SplitAppPages.setCollectionSearch?.(event.target.dataset.collectionSearch, event.target.value);
+      render(); return;
+    }
+    if (event.target.matches?.("[data-setup-search]")) {
+      setupState.query = event.target.value; clearTimeout(setupSearchTimer);
+      setupSearchTimer = setTimeout(loadSetupRows, 350); return;
+    }
     if (event.target.id === "discover-query") { discoverQuery = event.target.value; const clearButton = $("[data-discover-clear]"); if (clearButton) clearButton.hidden = !discoverQuery.trim(); syncDiscoverTypeTabs(); return; }
     if (event.target.matches("[data-log-search]")) { if (settingsGroup === "history") historyQuery = event.target.value; else logQuery = event.target.value; const list = $(".logcat-list"); if (list) { const query = (settingsGroup === "history" ? historyQuery : logQuery).toLowerCase(); list.querySelectorAll(".logcat-entry").forEach(row => { row.hidden = !row.textContent.toLowerCase().includes(query); }); } return; }
     if (event.target.matches("[data-detail-notes]")) {
@@ -3516,7 +3754,7 @@
       busy = true; setContentPull(62); show("loading", "Refreshing…", 62);
       let completedText = "Updated";
       try {
-        if (page === "details") await (detailRef ? loadDetailRef() : loadDetails());
+        if (page === "details") await (detailRef ? loadDetailRef() : loadDetails(null, true));
         else if (page === "discover") {
           discoverQuery = $("#discover-query")?.value || discoverQuery;
           if (discoverQuery.trim()) await discover();
@@ -3594,7 +3832,7 @@
     if (!headerType || page !== "discover") return;
     const source = discoverSource ? window.SplitAppSources.list().find(row => row.key === discoverSource) : null;
     const hasBothCategories = config.categories.filter(row => !source || source.categories.includes(row.key)).length > 1;
-    headerType.hidden = !hasBothCategories || !(discoverSearchFocused || Boolean(discoverQuery.trim()));
+    headerType.hidden = !hasBothCategories;
   }
   document.addEventListener("focusin", event => {
     if (event.target.id !== "discover-query") return;
@@ -3617,6 +3855,7 @@
     if (next === "settings" && route[1] === "dashboard") { goto("settings", false); historyPush(true); return; }
     if (next === "settings" && route[1] === "nav-layout") { goto("settings", false); historyPush(true); return; }
     if (!hasPage(next)) return;
+    if (favoritesNeedSetup(next)) { setupState.mode = next === "movie-favorites" ? "favorites-movie" : "favorites-series"; setupStarted = false; goto("setup", false); historyPush(true); return; }
     if (next === "series-watchlist" || next === "movie-watchlist") watchlistTab = "watchlist";
     if (next !== "discover") { discoverQuery = ""; discoverAbortController?.abort(); discoverAbortController = null; discoverRequestId++; }
     if (next !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
@@ -3795,6 +4034,13 @@
   }
   const finishStartup = success => {
     libraryRestoreComplete = true;
+    // Fresh install (empty library, wizard never finished): open Quick setup first.
+    const folderBlocked = !success && nativeFolderStorage && storageFolderGate;
+    if (!folderBlocked && success && favoritesNeedSetup(page)) { setupState.mode = page === "movie-favorites" ? "favorites-movie" : "favorites-series"; setupStarted = false; page = "setup"; historyPush(true); }
+    if (!folderBlocked && !items.length && !setupDone() && page !== "setup") {
+      page = "setup"; historyPush(true);
+      if (!success) { applyPreferences(); render(); syncPageNavigation(); }
+    }
     if (!success) {
       if (nativeFolderStorage && storageFolderGate) storageFolderGate.hidden = false;
       window.ScreenMarkSplash?.ready?.();
@@ -3802,7 +4048,7 @@
     }
     if (storageFolderGate) storageFolderGate.hidden = true;
     applySeriesInactivityTransitions();
-    applyPreferences(); render(); syncBackupSchedule();
+    applyPreferences(); render(); syncPageNavigation(); syncBackupSchedule();
     if (page === "details" && detailItemId && !detailPreview) loadDetails();
     window.ScreenMarkSplash?.ready?.();
   };
