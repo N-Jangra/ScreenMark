@@ -2594,6 +2594,13 @@
       if (!allowed.includes(status)) return;
     } else if (item.category === "movie" && ![roles.queued, roles.dropped, roles.done].includes(status)) return;
     item.status = status; item.updatedAt = Date.now();
+    // Completed movie = fully watched: fill the runtime so the bar, percentage and "left" time update too.
+    if (item.category === "movie" && status === roles.done) {
+      const runtime = Number(item.goal) || Number(item.facts?.runtimeMinutes) || Number(item.facts?.totalMinutes) || 0;
+      if (runtime) { item.goal = Number(item.goal) || runtime; item.progress = runtime; item.lastProgressAt = Date.now(); }
+    }
+    // Back to Watchlist = not watched yet: clear the progress.
+    if (item.category === "movie" && status === roles.queued) { item.progress = 0; delete item.lastProgressAt; }
     if (trackedStatuses.includes(status)) history.unshift({ itemId: item.id, title: item.title, action: status, status, at: Date.now() });
     persist({ ids: [item.id] });
   }
@@ -3020,6 +3027,7 @@
       if (item) {
         setItemStatus(item, detailStatus.dataset.detailStatusBtn);
         detailStatus.parentElement.querySelectorAll("[data-detail-status-btn]").forEach(button => button.classList.toggle("active", button === detailStatus));
+        if (item.category === "movie") render();
       }
       return;
     }
@@ -3336,6 +3344,8 @@
       }
       return;
     }
+    const cardText = eventClosest(event, ".discover-catalog-card h3, .discover-catalog-card > small, .discover-catalog-card > .discover-catalog-genres");
+    if (cardText) { cardText.closest(".discover-catalog-card")?.querySelector("[data-discover-details]")?.click(); return; }
     const sourceDetails = eventClosest(event, "[data-discover-details]"); if (sourceDetails) { openDiscoverDetails($("#discover-results")._results?.[Number(sourceDetails.dataset.discoverDetails)]); return; }
     if (eventClosest(event, "[data-open-profile-filters]")) { showPopup($("#profile-filter-dialog")); return; }
     if (eventClosest(event, "[data-profile-filter-close]")) { closePopup($("#profile-filter-dialog")); return; }
