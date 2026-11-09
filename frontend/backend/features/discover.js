@@ -286,8 +286,8 @@
     if (!response?.data && response?.errors?.length) throw new Error(`AniList: ${response.errors.map(error => error.message).filter(Boolean).join("; ") || "request failed"}`);
     return response?.data || {};
   };
-  const anilistRows = (rows, category) => (rows || []).map(row => result("anilist", category, row.id, row.title?.english || row.title?.romaji, { year: row.startDate?.year, image: row.coverImage?.large || row.coverImage?.medium, description: textFromHtml(row.description), rating: row.averageScore ? row.averageScore / 10 : 0, genres: row.genres || [], goal: category === "movie" ? 0 : (row.episodes || 0), url: row.siteUrl, subtitle: [row.startDate?.year, row.format, row.averageScore ? `★ ${(row.averageScore / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") }));
-  const ANILIST_FIELDS = "id title{romaji english} coverImage{large medium} description startDate{year} averageScore episodes format genres siteUrl";
+  const anilistRows = (rows, category) => (rows || []).map(row => result("anilist", category, row.id, row.title?.english || row.title?.romaji, { year: row.startDate?.year, image: row.coverImage?.large || row.coverImage?.medium, backdrop: row.bannerImage || "", description: textFromHtml(row.description), rating: row.averageScore ? row.averageScore / 10 : 0, genres: row.genres || [], goal: category === "movie" ? 0 : (row.episodes || 0), url: row.siteUrl, subtitle: [row.startDate?.year, row.format, row.averageScore ? `★ ${(row.averageScore / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") }));
+  const ANILIST_FIELDS = "id title{romaji english} coverImage{large medium} bannerImage description startDate{year} averageScore episodes format genres siteUrl";
   const searchers = {
     tvmaze: async (query, category, settings) => {
       const data = await requestJson(`https://api.tvmaze.com/search/shows?q=${encode(query)}`, settings);
@@ -314,7 +314,7 @@
       return (response.data || []).map(row => {
         const attributes = row.attributes || {}, poster = attributes.posterImage || {};
         const title = attributes.titles?.en || attributes.titles?.en_jp || attributes.canonicalTitle || "Untitled";
-        return result("kitsu", category, row.id, title, { year: String(attributes.startDate || "").slice(0, 4), image: poster.large || poster.medium || poster.small || "", description: textFromHtml(attributes.synopsis || attributes.description), rating: Number(attributes.averageRating) / 10 || 0, goal: category === "series" ? Number(attributes.episodeCount) || 0 : 0, genres: [], url: `https://kitsu.io/anime/${attributes.slug || row.id}`, subtitle: [attributes.startDate?.slice(0, 4), attributes.subtype, attributes.averageRating ? `★ ${(Number(attributes.averageRating) / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") });
+        return result("kitsu", category, row.id, title, { year: String(attributes.startDate || "").slice(0, 4), image: poster.large || poster.medium || poster.small || "", backdrop: attributes.coverImage?.large || attributes.coverImage?.original || "", description: textFromHtml(attributes.synopsis || attributes.description), rating: Number(attributes.averageRating) / 10 || 0, goal: category === "series" ? Number(attributes.episodeCount) || 0 : 0, genres: [], url: `https://kitsu.io/anime/${attributes.slug || row.id}`, subtitle: [attributes.startDate?.slice(0, 4), attributes.subtype, attributes.averageRating ? `★ ${(Number(attributes.averageRating) / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") });
       });
     },
     omdb: async (query, category, settings) => {
@@ -326,7 +326,7 @@
     },
     tmdb: async (query, category, settings) => {
       const data = await tmdbGet(`/search/${category === "movie" ? "movie" : "tv"}?query=${encode(query)}&include_adult=false`, settings);
-      return (data.results || []).map(row => result("tmdb", category, row.id, row.title || row.name, { year: String(row.release_date || row.first_air_date || "").slice(0, 4), image: row.poster_path ? `https://image.tmdb.org/t/p/w342${row.poster_path}` : "", description: row.overview, rating: row.vote_average ? Math.round(row.vote_average * 10) / 10 : 0, url: `https://www.themoviedb.org/${category === "movie" ? "movie" : "tv"}/${row.id}`, subtitle: String(row.release_date || row.first_air_date || "").slice(0, 4) }));
+      return (data.results || []).map(row => result("tmdb", category, row.id, row.title || row.name, { year: String(row.release_date || row.first_air_date || "").slice(0, 4), image: row.poster_path ? `https://image.tmdb.org/t/p/w342${row.poster_path}` : "", backdrop: row.backdrop_path ? `https://image.tmdb.org/t/p/w780${row.backdrop_path}` : "", description: row.overview, rating: row.vote_average ? Math.round(row.vote_average * 10) / 10 : 0, url: `https://www.themoviedb.org/${category === "movie" ? "movie" : "tv"}/${row.id}`, subtitle: String(row.release_date || row.first_air_date || "").slice(0, 4) }));
     },
     tvdb: async (query, category, settings) => {
       const data = await tvdbGet(`/search?query=${encode(query)}&type=${category === "movie" ? "movie" : "series"}`, settings);
@@ -462,7 +462,7 @@
       const tmdbRows = (rows, title) => ({ source: "tmdb", title, items: (rows || []).slice(0, 24).map(row => {
         const release = row.release_date || row.first_air_date || "";
         return result("tmdb", category, row.id, row.title || row.name, {
-          year: release.slice(0, 4), image: row.poster_path ? `https://image.tmdb.org/t/p/w342${row.poster_path}` : "",
+          year: release.slice(0, 4), image: row.poster_path ? `https://image.tmdb.org/t/p/w342${row.poster_path}` : "", backdrop: row.backdrop_path ? `https://image.tmdb.org/t/p/w780${row.backdrop_path}` : "",
           description: row.overview || "", rating: Number(row.vote_average) || 0,
           genres: (row.genre_ids || []).map(id => genreNames.get(id)).filter(Boolean),
           url: `https://www.themoviedb.org/${kind === "movie" ? "movie" : "tv"}/${row.id}`, subtitle: release.slice(0, 4)
@@ -493,7 +493,7 @@
       const subtype = category === "movie" ? "movie" : "TV";
       const rows = response => (response.data || []).map(row => {
         const attributes = row.attributes || {}, poster = attributes.posterImage || {};
-        return result("kitsu", category, row.id, attributes.titles?.en || attributes.titles?.en_jp || attributes.canonicalTitle || "Untitled", { year: String(attributes.startDate || "").slice(0, 4), image: poster.large || poster.medium || poster.small || "", description: textFromHtml(attributes.synopsis || attributes.description), rating: Number(attributes.averageRating) / 10 || 0, goal: category === "series" ? Number(attributes.episodeCount) || 0 : 0, genres: [], url: `https://kitsu.io/anime/${attributes.slug || row.id}`, subtitle: [attributes.startDate?.slice(0, 4), attributes.subtype, attributes.averageRating ? `★ ${(Number(attributes.averageRating) / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") });
+        return result("kitsu", category, row.id, attributes.titles?.en || attributes.titles?.en_jp || attributes.canonicalTitle || "Untitled", { year: String(attributes.startDate || "").slice(0, 4), image: poster.large || poster.medium || poster.small || "", backdrop: attributes.coverImage?.large || attributes.coverImage?.original || "", description: textFromHtml(attributes.synopsis || attributes.description), rating: Number(attributes.averageRating) / 10 || 0, goal: category === "series" ? Number(attributes.episodeCount) || 0 : 0, genres: [], url: `https://kitsu.io/anime/${attributes.slug || row.id}`, subtitle: [attributes.startDate?.slice(0, 4), attributes.subtype, attributes.averageRating ? `★ ${(Number(attributes.averageRating) / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") });
       }).filter(row => row.title && row.image);
       const base = `https://kitsu.io/api/edge/anime?filter[subtype]=${encode(subtype)}&page[limit]=24`;
       const [current, popular] = await Promise.all([
