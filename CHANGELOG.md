@@ -12,6 +12,7 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 - Discover suggestion shelves from MyAnimeList (Jikan) and Kitsu, with the contributing source names shown when several sources supply a shelf.
 - Favorites pages with no favorites open a quick-setup style picker that lists the titles already in your local library (series or movies) with local search; picked titles become favorites. The Profile favorites boxes are tall "Add favorites" boxes that open it, and Later returns to Profile.
 - Favorites, Series and Movies collections load more titles automatically as you scroll.
+- Library posters show a shimmer placeholder until the thumbnail is ready, then the progress bars animate up to their values; the animation replays when the status grouping (eye button) or filters change. Reduced motion turns it off.
 
 ### Changed
 
