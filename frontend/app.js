@@ -1245,7 +1245,7 @@
       event.preventDefault(); event.stopPropagation();
       if (action === "edit") { detailEditMode = true; render(); }
       else if (action === "progress") updateProgress(button.dataset.id);
-      else if (action === "refresh-details") loadDetails();
+      else if (action === "refresh-details") loadDetails(null, true);
       else if (action === "delete-detail") requestDeleteDetails(button.dataset.id);
       else if (action === "cancel-detail-edit") { detailEditMode = false; render(); }
       else if (action === "open-library-item") openDetails(button.dataset.id);
@@ -2059,8 +2059,12 @@
     }
     return merged;
   }
+  // What changed on the last refresh of each saved title (not persisted): field names, used for the "Updated" note.
+  const metadataChanges = new Map();
+  const stableJson = value => JSON.stringify(value, (key, entry) => key === "fetchedAt" || key === "localImageData" ? undefined : entry);
   function applyLoadedMetadata(item, loaded, { cacheDetails = true, replaceFacts = false } = {}) {
     if (!item || !loaded || typeof loaded !== "object") throw new Error("Metadata source returned an invalid detail record.");
+    const changes = [];
     let cachedDetails = loaded;
     if (cacheDetails && item.cachedDetails && !replaceFacts) {
       const sections = [...(loaded.sections || [])];
@@ -2074,17 +2078,26 @@
       }
       if (sections.length !== (loaded.sections || []).length) cachedDetails = { ...loaded, sections };
     }
-    if (cacheDetails) item.cachedDetails = cachedDetails;
-    if (cacheDetails && page === "details" && String(detailItemId) === String(item.id)) detailData = cachedDetails;
+    // Only write what actually changed; everything else keeps its stored value.
+    if (cacheDetails) {
+      const oldSections = new Map((item.cachedDetails?.sections || []).map(section => [`${section.kind}:${section.title}`, stableJson(section)]));
+      (cachedDetails.sections || []).forEach(section => { if (oldSections.get(`${section.kind}:${section.title}`) !== stableJson(section)) changes.push(String(section.title || section.kind || "details").toLowerCase()); });
+      if (!item.cachedDetails || stableJson(item.cachedDetails) !== stableJson(cachedDetails)) item.cachedDetails = cachedDetails;
+      if (page === "details" && String(detailItemId) === String(item.id)) detailData = item.cachedDetails;
+    }
     item.metadataFetchedAt = Number(loaded.fetchedAt || loaded.facts?.fetchedAt) || Date.now();
-    item.facts = replaceFacts ? { ...(loaded.facts || {}) } : mergeFacts(item.facts, loaded.facts);
+    const nextFacts = replaceFacts ? { ...(loaded.facts || {}) } : mergeFacts(item.facts, loaded.facts);
+    const changedFacts = Object.keys(nextFacts).filter(key => key !== "fetchedAt" && stableJson(nextFacts[key]) !== stableJson((item.facts || {})[key]));
+    if (changedFacts.length) { item.facts = nextFacts; changes.push(changedFacts.length === 1 ? changedFacts[0] : `${changedFacts.length} facts`); }
     delete item.relinkFresh;
     if (!Number(item.goal)) item.goal = category(item.category)?.unit === "minutes" ? Number(loaded.facts?.runtimeMinutes) || 0 : Number(loaded.goal) || Number(loaded.facts?.episodeCount) || 0;
-    item.description = loaded.description || item.description;
-    item.year = loaded.year || item.year;
-    item.image = item.customCover || loaded.portraitImage || loaded.image || item.image;
-    item.backdrop = loaded.landscapeImage || loaded.backgroundImage || item.backdrop;
-    item.updatedAt = Date.now();
+    const set = (field, value, label) => { if (value && value !== item[field]) { item[field] = value; changes.push(label); } };
+    set("description", loaded.description, "description");
+    set("year", loaded.year, "year");
+    set("image", item.customCover ? "" : (loaded.portraitImage || loaded.image), "poster");
+    set("backdrop", loaded.landscapeImage || loaded.backgroundImage, "backdrop");
+    if (changes.length) item.updatedAt = Date.now();
+    metadataChanges.set(String(item.id), [...new Set(changes)]);
     reconcileEpisodes(item);
     return item;
   }
@@ -2161,7 +2174,8 @@
     persist({ meta: true }); settingsParam = ""; settingsGroup = "metadata-sources"; goto("settings", false); window.history.replaceState({ page, settingsGroup }, "", "#settings/metadata-sources"); toast("Custom source deleted.");
   }
   function detailSettings() { return { metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions, offlineFallback: prefs.offlineFallback }; }
-  async function loadDetails(targetId = null) {
+  const DETAIL_REFRESH_MS = 24 * 60 * 60 * 1000;
+  async function loadDetails(targetId = null, force = false) {
     detailAbortController?.abort();
     const controller = typeof AbortController === "function" ? new AbortController() : null;
     detailAbortController = controller;
@@ -2187,6 +2201,10 @@
         : `${source?.name || "This metadata source"} is disabled and no saved details are available.`;
       render(); return;
     }
+    // Saved titles refresh from their source at most once a day when opened; pull-to-refresh or Refresh forces it.
+    if (!force && !detailPreview && useCached && !item.relinkFresh && Date.now() - metadataStamp(item) < DETAIL_REFRESH_MS && ((item.cachedDetails.sections || []).length || Object.keys(item.cachedDetails.facts || {}).length)) {
+      detailLoading = false; if (detailAbortController === controller) detailAbortController = null; render(); return;
+    }
     detailLoading = true; render();
     try {
       const loaded = await window.SplitAppDetails.load(item, { ...detailSettings(), ...(controller ? { signal: controller.signal } : {}) });
@@ -2194,8 +2212,11 @@
         detailData = loaded;
         if (detailPreview) { detailPreview.image ||= loaded.portraitImage || loaded.image || ""; detailPreview.year ||= loaded.year || ""; detailPreview.description ||= loaded.description || ""; detailPreview.title = loaded.title || detailPreview.title; }
         if (!detailPreview) {
+          const hadCache = Boolean(item.cachedDetails);
           applyLoadedMetadata(item, loaded, { replaceFacts: Boolean(item.relinkFresh) });
           persist({ ids: [item.id] });
+          const changes = metadataChanges.get(String(item.id));
+          if (hadCache && changes?.length) toast(`Updated from ${item.metadataSource}: ${changes.slice(0, 4).join(", ")}${changes.length > 4 ? "…" : ""}.`);
         }
       }
     }
@@ -3227,7 +3248,7 @@
           toast(`${key === "imdb" ? "IMDb" : "Rotten Tomatoes"} session ready.`);
           if (page === "discover" && discoverSource === key && discoverQuery.trim()) submitDiscover();
           else if (page === "details" && detailRef && (detailRef.extra?.source === key || itemById(detailItemId)?.metadataSource === key)) loadDetailRef();
-          else if (page === "details" && detailItemId && itemById(detailItemId)?.metadataSource === key) loadDetails(detailItemId);
+          else if (page === "details" && detailItemId && itemById(detailItemId)?.metadataSource === key) loadDetails(detailItemId, true);
         } catch (error) { toast(error?.message || "Could not open the provider."); }
       })();
       return;
@@ -3733,7 +3754,7 @@
       busy = true; setContentPull(62); show("loading", "Refreshing…", 62);
       let completedText = "Updated";
       try {
-        if (page === "details") await (detailRef ? loadDetailRef() : loadDetails());
+        if (page === "details") await (detailRef ? loadDetailRef() : loadDetails(null, true));
         else if (page === "discover") {
           discoverQuery = $("#discover-query")?.value || discoverQuery;
           if (discoverQuery.trim()) await discover();
