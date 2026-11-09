@@ -5,7 +5,7 @@
     const { config, prefs, editingItem, addMetadataQuery = "", addCategory = "", esc } = context;
     const game = config.categories.find(row => row.key === (editingItem?.category || addCategory)) || config.categories[0];
     const statuses = game.statuses;
-    const selectedStatus = editingItem?.status || prefs.defaultStatus || statuses[0];
+    const selectedStatus = editingItem?.status || (statuses.includes(prefs.defaultStatus) ? prefs.defaultStatus : statuses[0]);
     const statusOptions = statuses.map(status => `<button type="button" class="entry-status-option${status === selectedStatus ? " active" : ""}" data-entry-status="${esc(status)}" aria-pressed="${status === selectedStatus}">${esc(status)}</button>`).join("");
     const title = editingItem ? "Edit title" : "Add title";
     const image = editingItem?.localThumbnailData || editingItem?.image || "";

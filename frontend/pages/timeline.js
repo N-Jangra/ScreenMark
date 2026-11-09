@@ -7,7 +7,6 @@
     const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7)).getTime();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const visibleStatuses = new Set(trackedStatuses);
-    const historyEntryIndex = new Map(history.map((entry, index) => [entry, index]));
     const yearOptions = [...new Set(history.map(entry => new Date(entry.at || 0).getFullYear()).filter(year => year > 1970))].sort((a, b) => b - a);
     const stamp = new Map();
     const timeOf = entry => { let v = stamp.get(entry); if (v === undefined) { v = Number(entry.at) || Date.parse(entry.at) || 0; stamp.set(entry, v); } return v; };
