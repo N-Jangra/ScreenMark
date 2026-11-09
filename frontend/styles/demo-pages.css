@@ -1870,3 +1870,9 @@ body[data-discover-view="cards"][data-page="discover"] .discover-catalog-add { p
 .discover-catalog-backdrop { display: none; }
 body[data-discover-view="cards"][data-page="discover"] .discover-catalog-card.has-backdrop .discover-catalog-poster > img:not(.discover-catalog-backdrop) { display: none; }
 body[data-discover-view="cards"][data-page="discover"] .discover-catalog-card.has-backdrop .discover-catalog-backdrop { position: relative; z-index: 0; display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+
+/* Profile hero: no name heading, edit pencil sits on the avatar */
+.profile-avatar-wrap { position: relative; display: block; flex: none; }
+.profile-avatar-edit { position: absolute; right: -4px; bottom: -2px; z-index: 2; display: grid; place-items: center; width: 28px; height: 28px; border: 2px solid var(--d-bg); border-radius: 50%; background: var(--d-gold); color: var(--d-gold-fg); text-decoration: none; }
+.profile-avatar-edit svg { width: 14px; height: 14px; }
+.profile-identity .profile-add-manual { margin-left: auto; }
