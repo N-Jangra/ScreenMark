@@ -531,7 +531,7 @@
     window.SplitAppDates?.setFormat(prefs.dateFormat); window.SplitAppBackend?.setImageStorage?.(prefs.imageStorage);
     $("#bottom-bar").dataset.bg = prefs.bottomBarBackground;
     document.body.dataset.barBackground = prefs.bottomBarBackground;
-    try { document.body.dataset.discoverView = localStorage.getItem(`${storageKey}_discover_view`) === "list" ? "list" : "grid"; } catch (_) { document.body.dataset.discoverView = "grid"; }
+    try { document.body.dataset.discoverView = (["list", "cards"].includes(localStorage.getItem(`${storageKey}_discover_view`)) ? localStorage.getItem(`${storageKey}_discover_view`) : "grid"); } catch (_) { document.body.dataset.discoverView = "grid"; }
     document.body.style.setProperty("--accent", accentColor);
     document.body.style.setProperty("--legacy-accent", accentColor);
     document.body.style.setProperty("--legacy-glow", `color-mix(in srgb, ${accentColor} 15%, transparent)`);
@@ -614,6 +614,10 @@
     if (!back) rememberScroll();
     if (next === "explore") next = "settings/metadata-sources";
     if (next === "dashboard" || next === "search") next = "discover";
+    if (favoritesNeedSetup(String(next).split("/")[0]) && !back) {
+      setupState.mode = String(next).startsWith("movie") ? "favorites-movie" : "favorites-series"; setupStarted = false; next = "setup";
+    }
+    if (String(next).split("/")[0] !== "setup") setupState.mode = "";
     const [nextPage, nextSection] = String(next).split("/");
     page = hasPage(nextPage) ? nextPage : "discover";
     if (page !== "discover") { discoverAbortController?.abort(); discoverAbortController = null; suggestionsAbortController?.abort(); suggestionsAbortController = null; suggestionsPendingKey = ""; suggestionsRequest++; }
@@ -1716,8 +1720,45 @@
     routeRemoteImages(box);
     empty.hidden = results.length > 0;
     box._results = visible;
+    enrichCardBackdrops(box);
     window.lucide?.createIcons({ root: box, attrs: { "aria-hidden": "true" } });
     return true;
+  }
+  // Cards view wants landscape art. TVmaze only lists posters in search/schedule results, so fetch its
+  // "background" image for the cards that are actually on screen (cached, spaced to respect its rate limit).
+  const backdropCache = new Map(); let backdropQueue = Promise.resolve(), backdropObserver = null;
+  async function tvmazeBackdrop(showId) {
+    if (backdropCache.has(showId)) return backdropCache.get(showId);
+    let url = "";
+    try {
+      const response = await fetch(`https://api.tvmaze.com/shows/${encodeURIComponent(showId)}/images`);
+      if (response.ok) { const rows = await response.json(); const bg = (Array.isArray(rows) ? rows : []).find(row => row.type === "background"); url = bg?.resolutions?.original?.url || ""; }
+    } catch (_) {}
+    backdropCache.set(showId, url); return url;
+  }
+  function enrichCardBackdrops(box = $("#discover-results")) {
+    backdropObserver?.disconnect(); backdropObserver = null;
+    if (!box || !window.IntersectionObserver) return;
+    const cards = [...box.querySelectorAll(".discover-catalog-card:not(.has-backdrop)")].filter(card => card.querySelector("[data-discover-add]"));
+    if (!cards.length) return;
+    backdropObserver = new IntersectionObserver(entries => entries.forEach(entry => {
+      if (!entry.isIntersecting || document.body.dataset.discoverView !== "cards") return;
+      const card = entry.target; backdropObserver?.unobserve(card);
+      const result = box._results?.[Number(card.querySelector("[data-discover-add]")?.dataset.discoverAdd)];
+      if (!result || result.source !== "tvmaze" || !result.providerId || result.backdrop) return;
+      backdropQueue = backdropQueue.then(async () => {
+        const url = await tvmazeBackdrop(result.providerId);
+        if (!url || !card.isConnected) return;
+        result.backdrop = url;
+        const poster = card.querySelector(".discover-catalog-poster"); if (!poster) return;
+        const img = document.createElement("img"); img.className = "discover-catalog-backdrop"; img.alt = ""; img.decoding = "async"; img.src = url;
+        img.onerror = () => { img.remove(); card.classList.remove("has-backdrop"); };
+        img.onload = () => card.classList.add("has-backdrop");
+        poster.append(img);
+        await new Promise(resolve => setTimeout(resolve, 150));
+      });
+    }), { rootMargin: "300px 0px" });
+    cards.forEach(card => backdropObserver.observe(card));
   }
   function discoverCatalogCard(result, index) {
     const category = result.category || currentDiscoverCategory();
@@ -1781,20 +1822,21 @@
     box.innerHTML = shelves.length ? `<div class="discover-catalog-sections">${shelves.map(shelf => `<section class="discover-catalog-section${genreShelves.has(shelf.title) ? " discover-genre-shelf" : ""}"><h2>${esc(shelf.title)}${shelfSources(shelf)}</h2><div class="discover-catalog-grid">${shelf.items.map(row => discoverCatalogCard(row, all.indexOf(row))).join("")}</div></section>`).join("")}</div>` : `<p class="discover-catalog-empty">No titles match these filters.</p>`;
     routeRemoteImages(box);
     box._results = all;
+    enrichCardBackdrops(box);
     return all.length;
   }
   // ---- Quick setup wizard ----
   const SETUP_DONE_KEY = `${storageKey}_setup_done`;
-  const setupState = { step: 0, query: "", rows: [], loading: false, error: "", selected: new Map(), picks: [new Map(), new Map(), new Map(), new Map()] };
+  const setupState = { mode: "", step: 0, query: "", rows: [], loading: false, error: "", selected: new Map(), picks: [new Map(), new Map(), new Map(), new Map()] };
   let setupStarted = false, setupRequest = 0, setupSearchTimer = 0; const setupTrending = {};
   const setupDone = () => { try { return localStorage.getItem(SETUP_DONE_KEY) === "1"; } catch (_) { return true; } };
   const markSetupDone = () => { try { localStorage.setItem(SETUP_DONE_KEY, "1"); } catch (_) {} };
   function beginSetup() {
-    setupStarted = true; setupState.step = 0; setupState.query = ""; setupState.picks.forEach(map => map.clear());
+    setupStarted = true; if (page !== "setup") setupState.mode = ""; setupState.step = 0; setupState.query = ""; setupState.picks.forEach(map => map.clear());
     setupState.selected = setupState.picks[0]; loadSetupRows();
   }
   async function loadSetupRows() {
-    const request = ++setupRequest, step = window.SplitAppSetup.steps[setupState.step], query = setupState.query.trim();
+    const request = ++setupRequest, step = window.SplitAppSetup.stepsFor(setupState)[setupState.step], query = setupState.query.trim();
     setupState.selected = setupState.picks[setupState.step];
     const setGrid = () => { const grid = $("#setup-grid"); if (grid && page === "setup") { grid.innerHTML = window.SplitAppSetup.grid(setupState, esc); routeRemoteImages(grid); } };
     setupState.error = "";
@@ -1820,8 +1862,14 @@
   }
   function applySetupPicks() {
     let added = 0;
-    window.SplitAppSetup.steps.forEach((step, index) => {
+    window.SplitAppSetup.stepsFor(setupState).forEach((step, index) => {
       setupState.picks[index].forEach(result => {
+        if (step.status === "favorite") {
+          const before = items.length, item = addDiscoverResult(result, "Favorites", { status: roles.queued, quiet: true, favorite: true });
+          if (items.length > before) added++;
+          else if (item && !item.favorite) { item.favorite = true; item.updatedAt = Date.now(); persist({ ids: [item.id] }); added++; }
+          return;
+        }
         const status = step.status === "done" ? roles.done : roles.queued;
         const before = items.length;
         const item = addDiscoverResult(result, "Quick setup", { status, quiet: true });
@@ -1831,9 +1879,20 @@
     });
     return added;
   }
+  const favoritesSetupSkipped = new Set();
+  // Empty favorites page: offer the quick-setup style picker first (skippable).
+  function favoritesNeedSetup(target) {
+    if (target !== "series-favorites" && target !== "movie-favorites") return false;
+    if (favoritesSetupSkipped.has(target) || !libraryRestoreComplete) return false;
+    const category = target === "movie-favorites" ? "movie" : "series";
+    return !items.some(item => item.category === category && item.favorite);
+  }
   function finishSetup(save = true) {
+    const mode = setupState.mode, target = mode === "favorites-movie" ? "movie-favorites" : "series-favorites";
     const added = save ? applySetupPicks() : 0;
-    markSetupDone(); setupStarted = false;
+    setupStarted = false; setupState.mode = "";
+    if (mode) { if (added) { favoritesSetupSkipped.add(target); toast(`Added ${added} ${added === 1 ? "favorite" : "favorites"}.`); goto(target, true); } else goto("profile"); return; }
+    markSetupDone();
     if (added) toast(`Added ${added} ${added === 1 ? "title" : "titles"} to your library.`);
     goto("series-watchlist");
   }
@@ -1961,7 +2020,7 @@
     if (existing) {
       if (!options.quiet) toast("That entry is already in your library."); return existing;
     }
-    const item = stripLocalScores({ ...result, metadataSource: result.source, id: crypto.randomUUID(), status: options.status || prefs.defaultStatus || defaultStatus(result.category), progress: 0, createdAt: Date.now(), updatedAt: Date.now() });
+    const item = stripLocalScores({ ...result, metadataSource: result.source, id: crypto.randomUUID(), status: options.status || prefs.defaultStatus || defaultStatus(result.category), ...(options.favorite ? { favorite: true } : {}), progress: 0, createdAt: Date.now(), updatedAt: Date.now() });
     items.unshift(item); itemIndexItems = null; recordLibraryChange("added", `Added ${item.title} from ${origin}.`, [item.id]); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist({ ids: [item.id] }); if (!options.quiet) toast("Added to your library."); hydrateSavedItem(item); return item;
   }
   // Keep the best value per fact across providers (a later source never blanks out earlier data).
@@ -3227,7 +3286,7 @@
       return;
     }
     if (eventClosest(event, "[data-setup-next]")) {
-      if (setupState.step >= window.SplitAppSetup.steps.length - 1) { finishSetup(true); return; }
+      if (setupState.step >= window.SplitAppSetup.stepsFor(setupState).length - 1) { finishSetup(true); return; }
       setupState.step++; setupState.query = ""; render(); loadSetupRows(); window.scrollTo({ top: 0 }); return;
     }
     if (eventClosest(event, "[data-setup-back]")) { if (setupState.step > 0) { setupState.step--; setupState.query = ""; render(); loadSetupRows(); window.scrollTo({ top: 0 }); } return; }
@@ -3511,11 +3570,16 @@
   });
   document.addEventListener("click", event => {
     if (!eventClosest(event, "[data-discover-view-toggle]")) return;
-    const next = document.body.dataset.discoverView === "list" ? "grid" : "list";
+    const next = ({ grid: "list", list: "cards", cards: "grid" })[document.body.dataset.discoverView] || "list";
     document.body.dataset.discoverView = next;
     try { localStorage.setItem(`${storageKey}_discover_view`, next); } catch (_) {}
+    if (next === "cards") enrichCardBackdrops();
   });
   document.addEventListener("input", event => {
+    if (event.target.matches?.("[data-collection-search]")) {
+      window.SplitAppPages.setCollectionSearch?.(event.target.dataset.collectionSearch, event.target.value);
+      render(); return;
+    }
     if (event.target.matches?.("[data-setup-search]")) {
       setupState.query = event.target.value; clearTimeout(setupSearchTimer);
       setupSearchTimer = setTimeout(loadSetupRows, 350); return;
@@ -3743,6 +3807,7 @@
     if (next === "settings" && route[1] === "dashboard") { goto("settings", false); historyPush(true); return; }
     if (next === "settings" && route[1] === "nav-layout") { goto("settings", false); historyPush(true); return; }
     if (!hasPage(next)) return;
+    if (favoritesNeedSetup(next)) { setupState.mode = next === "movie-favorites" ? "favorites-movie" : "favorites-series"; setupStarted = false; goto("setup", false); historyPush(true); return; }
     if (next === "series-watchlist" || next === "movie-watchlist") watchlistTab = "watchlist";
     if (next !== "discover") { discoverQuery = ""; discoverAbortController?.abort(); discoverAbortController = null; discoverRequestId++; }
     if (next !== "add") { addMetadataQuery = ""; addMetadataRequestId++; entryDraftId = null; }
@@ -3923,6 +3988,7 @@
     libraryRestoreComplete = true;
     // Fresh install (empty library, wizard never finished): open Quick setup first.
     const folderBlocked = !success && nativeFolderStorage && storageFolderGate;
+    if (!folderBlocked && success && favoritesNeedSetup(page)) { setupState.mode = page === "movie-favorites" ? "favorites-movie" : "favorites-series"; setupStarted = false; page = "setup"; historyPush(true); }
     if (!folderBlocked && !items.length && !setupDone() && page !== "setup") {
       page = "setup"; historyPush(true);
       if (!success) { applyPreferences(); render(); syncPageNavigation(); }
