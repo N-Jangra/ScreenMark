@@ -48,7 +48,7 @@ button:active,[role=button]:active,a.demo-poster-open:active,.ios-pill:active{tr
 html[data-lowend=true]{--speed:min(var(--speed,180ms),120ms)}
 html[data-lowend=true] *{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 html[data-lowend=true] .item-card,html[data-lowend=true] .ios-card,html[data-lowend=true] .detail-section,html[data-lowend=true] .detail-hero{box-shadow:none!important}
-html[data-lowend=true] .topbar,html[data-lowend=true] .bottom-bar,html[data-lowend=true] .detail-page-heading,html[data-lowend=true] .add-entry-heading,html[data-lowend=true] .choice-dialog-header,html[data-lowend=true] .app-sidebar{background:var(--surface)!important}
+html[data-lowend=true] .topbar,html[data-lowend=true] .detail-page-heading,html[data-lowend=true] .add-entry-heading,html[data-lowend=true] .choice-dialog-header,html[data-lowend=true] .app-sidebar{background:var(--surface)!important}
 html[data-lowend=true] .nav-button.active .nav-icon{animation:none}
 html[data-lowend=true] .ios-hero-bg::after{backdrop-filter:none}
 html[data-lowend=true] body[data-nav-dir] #page-content.page-route-enter{animation-duration:110ms}
@@ -102,3 +102,7 @@ html[data-lowend="true"] #page-content.page-route-enter :is(.item-card,.discover
 html[data-lowend="true"] :is(.nav-button.active .nav-icon,.discover-suggest-loading span,.discover-catalog-loading span,[class*=skeleton],[class*=shimmer]){animation:none!important}
 html[data-lowend="true"] :is(.item-card,.discover-card,.demo-poster-tile,.demo-up-next-card,.detail-section,.detail-card,.season-card,.series-guide-card,.ep-checkin-card,.stats-overview-tile,.stats-destination,.stats-panel,.timeline-day-card,.timeline-month-group,.timeline-item,.episode-row,.season-panel,.stats-activity-panel,.stats-activity-entry,.add-main-card,.add-metadata-section){transition-duration:120ms!important;transition-property:transform,border-color,background-color,color!important}
 @media(pointer:coarse){html[data-lowend="true"] :is(.chip-row,.timeline-filters,.detail-toolbar,.detail-carousel,.season-poster-deck,.tracking-episode-rail,.discover-rail,.discover-source-strip,.discover-genre-row,.detail-gallery,.icon-picker-carousel,.timeline-month-days,.detail-status-pills){scroll-behavior:auto!important}}
+
+/* The bottom bar follows the user's Bar background choice on every device: the low-end profile used to force it solid
+   (Android always uses it), so Glass and Transparent did nothing on phones. Glass keeps a light blur there. */
+html[data-lowend=true] .bottom-bar[data-bg="glass"]{backdrop-filter:blur(14px) saturate(160%)!important;-webkit-backdrop-filter:blur(14px) saturate(160%)!important}
