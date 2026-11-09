@@ -475,6 +475,34 @@
       const noun = category === "movie" ? "anime movies" : "anime";
       return [{ source: "anilist", title: `Trending ${noun}`, items: trendingNow }, { source: "anilist", title: `Popular ${noun}`, items: popular }];
     });
+    if (want("jikan")) jobs.push(async () => {
+      const type = category === "movie" ? "movie" : "tv";
+      const rows = data => (data.data || []).map(row => result("jikan", category, row.mal_id, row.title_english || row.title || row.title_japanese, {
+        year: row.year || String(row.aired?.from || "").slice(0, 4), image: row.images?.webp?.large_image_url || row.images?.jpg?.large_image_url || "",
+        description: textFromHtml(row.synopsis), rating: row.score || 0, genres: (row.genres || []).map(genre => genre.name).filter(Boolean), goal: category === "series" ? Number(row.episodes) || 0 : 0,
+        url: row.url || `https://myanimelist.net/anime/${row.mal_id}`, subtitle: [row.year || String(row.aired?.from || "").slice(0, 4), row.type, row.score ? `★ ${Number(row.score).toFixed(1)}` : ""].filter(Boolean).join(" · ")
+      })).filter(row => row.title && row.image);
+      const noun = category === "movie" ? "anime movies" : "anime";
+      const [top, popular] = await Promise.all([
+        sourceJson("jikan", `https://api.jikan.moe/v4/top/anime?type=${type}&filter=${category === "movie" ? "bypopularity" : "airing"}&limit=24&sfw=true`, settings).catch(() => ({})),
+        category === "movie" ? Promise.resolve({}) : new Promise(resolve => setTimeout(resolve, 450)).then(() => sourceJson("jikan", `https://api.jikan.moe/v4/seasons/now?filter=tv&limit=24&sfw=true`, settings)).catch(() => ({}))
+      ]);
+      return [{ source: "jikan", title: `Trending ${noun}`, items: rows(top) }, ...(category === "movie" ? [] : [{ source: "jikan", title: "Latest anime", items: rows(popular) }])];
+    });
+    if (want("kitsu")) jobs.push(async () => {
+      const subtype = category === "movie" ? "movie" : "TV";
+      const rows = response => (response.data || []).map(row => {
+        const attributes = row.attributes || {}, poster = attributes.posterImage || {};
+        return result("kitsu", category, row.id, attributes.titles?.en || attributes.titles?.en_jp || attributes.canonicalTitle || "Untitled", { year: String(attributes.startDate || "").slice(0, 4), image: poster.large || poster.medium || poster.small || "", description: textFromHtml(attributes.synopsis || attributes.description), rating: Number(attributes.averageRating) / 10 || 0, goal: category === "series" ? Number(attributes.episodeCount) || 0 : 0, genres: [], url: `https://kitsu.io/anime/${attributes.slug || row.id}`, subtitle: [attributes.startDate?.slice(0, 4), attributes.subtype, attributes.averageRating ? `★ ${(Number(attributes.averageRating) / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") });
+      }).filter(row => row.title && row.image);
+      const base = `https://kitsu.io/api/edge/anime?filter[subtype]=${encode(subtype)}&page[limit]=24`;
+      const [current, popular] = await Promise.all([
+        sourceJson("kitsu", `${base}&filter[status]=current&sort=-userCount`, settings).catch(() => ({})),
+        sourceJson("kitsu", `${base}&sort=-userCount`, settings).catch(() => ({}))
+      ]);
+      const noun = category === "movie" ? "anime movies" : "anime";
+      return [{ source: "kitsu", title: `Trending ${noun}`, items: category === "movie" ? rows(popular) : rows(current) }, { source: "kitsu", title: `Popular ${noun}`, items: rows(popular) }];
+    });
     metadata.available(category, settings).filter(source => source.custom && source.config.suggestionsUrl && (!sourceKey || sourceKey === source.key)).forEach(source => jobs.push(async () => {
       const config = source.config;
       const data = await customRequest(config, fillTemplate(config.suggestionsUrl, { apikey: config.apiKey }), settings);
@@ -513,7 +541,7 @@
     const settled = await Promise.allSettled(keys.map(key => trendingOne(key, settings, sourceKey)));
     const sections = settled.flatMap(entry => entry.status === "fulfilled" ? entry.value : []);
     // Series rows first (TV schedules), then movies; keep the first of any duplicated heading.
-    const seen = new Set(); const merged = sections.filter(section => !seen.has(section.title) && seen.add(section.title));
+    const seen = new Set(); const merged = sections.filter(section => { const id = `${section.source}|${section.title}`; return !seen.has(id) && seen.add(id); });
     if (!merged.length && settled.every(entry => entry.status === "rejected")) throw settled[0].reason;
     return merged;
   }
