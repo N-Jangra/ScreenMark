@@ -29,6 +29,7 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 
 - Mobile Watchlist swipe between tabs works from anywhere (including over tiles) and cast / crew rails scroll sideways.
 - Quick setup's Next / Skip / Finish button stays pinned to the bottom of the screen.
+- Animation settings now also drive the library poster placeholders and progress bars (Animate progress, Progress style, Loading placeholders, Placeholder animation) and the Profile ⋮ sheet (Sheets and dialogs).
 - Faster first thumbnails on Watchlist pages (visible cards load at high priority and off-screen cards skip rendering).
 
 ## [0.1.3] — 2026-11-08
