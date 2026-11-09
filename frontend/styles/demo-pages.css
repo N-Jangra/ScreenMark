@@ -1936,3 +1936,7 @@ body .demo-cast-section .detail-carousel.expanded > * { flex: initial; width: au
 body[data-bar-style="underline"] .bottom-bar .nav-button { position: relative; }
 body[data-bar-style="underline"] .bottom-bar .nav-button.active { color: var(--accent-text, var(--accent)); }
 body[data-bar-style="underline"] .bottom-bar .nav-button.active::after { content: ""; position: absolute; right: 24%; bottom: 3px; left: 24%; height: 3px; border-radius: 3px; background: var(--accent); }
+
+/* Search placeholders keep the layout of the results that replace them (three-column grid for a single source). */
+body[data-page="discover"] .discover-all-results-grid.discover-catalog-loading { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 14px 10px; padding: 0 20px; overflow: visible; }
+body[data-page="discover"] .discover-search-loading > header > span { color: var(--d-t2); font: 600 11px var(--d-font); }

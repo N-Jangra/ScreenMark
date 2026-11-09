@@ -68,3 +68,24 @@ test("Discover search bar keeps its controls visible, sized, and focused on narr
   assert.match(discoverCss, /\.discover-top-search \.discover-search-action:focus-visible \{ outline:/);
   assert.match(discoverCss, /\.discover-top-search \.discover-search-submit \{ display: inline-flex;[^}]*min-width: 96px;/);
 });
+
+test("search placeholders mirror the search results layout (per-source shelves, or one grid for a single source)", () => {
+  const vm = require("node:vm");
+  const source = fs.readFileSync(path.join(__dirname, "../frontend/pages/discover.js"), "utf8");
+  const window = {};
+  vm.runInContext(source, vm.createContext({ window, String, Array, Object }));
+  const shelves = window.SplitAppDiscoverCards.loading({ searchShelves: ["TVmaze", "TMDB"] });
+  assert.match(shelves, /discover-search-sections/);
+  assert.equal((shelves.match(/discover-source-section/g) || []).length, 2);
+  assert.match(shelves, /<h2>TVmaze<\/h2>/);
+  assert.equal((shelves.match(/<article class="discover-catalog-card">/g) || []).length, 12);
+  const single = window.SplitAppDiscoverCards.loading({ searchSource: "Kitsu" });
+  assert.match(single, /discover-all-results-grid discover-catalog-loading/);
+  assert.match(single, /<h2>Kitsu<\/h2>/);
+  assert.equal((single.match(/<article class="discover-catalog-card">/g) || []).length, 9);
+  const main = window.SplitAppDiscoverCards.loading({ sections: [["Latest", 3], ["Trending", 3]] });
+  assert.match(main, /discover-catalog-loading-sections/);
+  const css = fs.readFileSync(path.join(__dirname, "../frontend/styles/demo-pages.css"), "utf8");
+  assert.match(css, /\.discover-all-results-grid\.discover-catalog-loading \{ display: grid !important; grid-template-columns: repeat\(3/);
+  assert.match(fs.readFileSync(path.join(__dirname, "../frontend/app.js"), "utf8"), /loading\(searchSourceName \? \{ searchSource: searchSourceName \} : \{ searchShelves:/);
+});

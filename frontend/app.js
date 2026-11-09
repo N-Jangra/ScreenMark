@@ -2075,7 +2075,14 @@
     if (prefs.metadataMode === "offline") { message.textContent = "Online metadata is disabled in Settings."; initialBox?.setAttribute("aria-busy", "false"); return; }
     if (!navigator.onLine) { message.textContent = "You are offline. Reconnect and try again."; initialBox?.setAttribute("aria-busy", "false"); return; }
     if (message?.isConnected) message.textContent = "Searching connected sources…";
-    if (initialBox?.isConnected) { initialBox.setAttribute("aria-busy", "true"); initialBox.innerHTML = window.SplitAppDiscoverCards.loading(); }
+    if (initialBox?.isConnected) {
+      initialBox.setAttribute("aria-busy", "true");
+      // Same shape as the results that replace it: a single source gets one grid, all sources get one shelf per source.
+      const sourceList = window.SplitAppSources.list(), usable = row => window.SplitAppSources.isEnabled(row.key, prefs) && !(row.keyRequired && !prefs.apiKeys?.[row.key]?.trim());
+      const searchSourceName = sourceKey ? sourceList.find(row => row.key === sourceKey)?.name || sourceKey : "";
+      const shelfNames = sourceList.filter(row => usable(row) && row.categories.includes(key)).slice(0, 3).map(row => row.name);
+      initialBox.innerHTML = window.SplitAppDiscoverCards.loading(searchSourceName ? { searchSource: searchSourceName } : { searchShelves: shelfNames.length ? shelfNames : ["Results"] });
+    }
     try {
       const results = sourceKey ? await exploreSourceSearch(query, sourceKey, controller?.signal) : await discoverSearch(query, key, controller?.signal);
       if (requestId !== discoverRequestId || page !== "discover" || discoverSource !== sourceKey) return;
