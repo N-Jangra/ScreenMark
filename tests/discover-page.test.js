@@ -63,8 +63,8 @@ test("Discover input, keyboard action and Search button share the native form su
 });
 
 test("Discover search bar keeps its controls visible, sized, and focused on narrow screens", () => {
-  assert.match(discoverCss, /\.discover-top-search \{[^}]*display: flex;[^}]*flex-wrap: nowrap;[^}]*min-width: 0;/s);
-  assert.match(discoverCss, /\.discover-top-search:focus-within \{[^}]*border-color:/s);
-  assert.match(discoverCss, /\.discover-top-search > input \{ flex: 1 1 auto; width: 0; min-width: 0; \}/);
-  assert.match(discoverCss, /\.discover-search-submit \{ display: inline-flex;[^}]*min-width: 78px;/);
+  assert.match(discoverCss, /\.topbar \.discover-top-search \{[^}]*display: grid;[^}]*grid-template-columns: minmax\(0,1fr\) auto;[^}]*min-width: 0;/s);
+  assert.match(discoverCss, /\.discover-top-search\[hidden\] \{ display: none; \}/);
+  assert.match(discoverCss, /\.discover-top-search \.discover-search-action:focus-visible \{ outline:/);
+  assert.match(discoverCss, /\.discover-top-search \.discover-search-submit \{ display: inline-flex;[^}]*min-width: 96px;/);
 });

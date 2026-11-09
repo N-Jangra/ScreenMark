@@ -69,6 +69,8 @@ test("future episode detail and tracking checks are disabled", () => {
     detailData: item.cachedDetails, detailLoading: false, detailError: "", detailEditMode: false, category: () => ({ unit: "episodes", step: 1 }), labelCategory: key => key,
     prefs: {}, roles: { queued: "Watchlist", active: "In Progress", hold: "On Hold", done: "Completed", dropped: "Dropped" }, esc
   });
-  assert.match(html, /data-episode-id="future-1"[^>]*disabled/);
-  assert.match(html, /Future has not aired yet/);
+  // Unaired episodes get a countdown instead of a check button, so they cannot be marked watched.
+  assert.match(html, /class="episode-countdown"/);
+  assert.doesNotMatch(html, /data-episode-id="future-1"/);
+  assert.doesNotMatch(html, /data-episode-toggle="future-1"/);
 });
