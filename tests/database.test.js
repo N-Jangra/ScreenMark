@@ -48,8 +48,8 @@ test("creates current stores, migrates old indexes and removes the retired share
   old.close();
   await core.open();
   const db = await core.open();
-  assert.equal(db.version, 6);
-  assert.deepEqual(Array.from(db.objectStoreNames).sort(), ["items", "meta", "thumbs"]);
+  assert.equal(db.version, 7);
+  assert.deepEqual(Array.from(db.objectStoreNames).sort(), ["images", "items", "meta", "thumbs"]);
   const items = db.transaction("items").objectStore("items");
   assert.deepEqual(Array.from(items.indexNames), ["sourceCategoryProvider"]);
   db.close();
@@ -179,4 +179,27 @@ test("public IndexedDB facade supports all operations when workers are unavailab
   await db.deleteThumbs(["fallback"]);
   assert.deepEqual(plain(await db.listThumbKeys()), []);
   await db.clearThumbs();
+});
+
+test("artwork catalog indexes posters, backgrounds and screenshots per title and follows updates and deletes", async () => {
+  const { core } = makeCore();
+  const show = { id: "s1", title: "Show", category: "series", metadataSource: "tvmaze", providerId: "9", image: "https://img/p.jpg", backdrop: "https://img/b.jpg", cachedDetails: { sections: [{ kind: "gallery", title: "Screenshots (2)", items: [{ title: "One", image: "https://img/s1.jpg" }, { title: "Two", image: "https://img/s2.jpg" }] }, { kind: "gallery", title: "Logos", items: [{ image: "https://img/l.png" }] }] } };
+  await core.save({ items: [show], history: [], preferences: {} });
+  assert.deepEqual(plain(await core.imageCounts("s1")), { poster: 1, background: 1, screenshot: 2, logo: 1 });
+  assert.deepEqual((await core.listImages("s1", "screenshot")).map(row => row.url), ["https://img/s1.jpg", "https://img/s2.jpg"]);
+  await core.saveSome({ changed: [{ ...show, cachedDetails: { sections: [] } }], history: [], preferences: {} });
+  assert.deepEqual(plain(await core.imageCounts("s1")), { poster: 1, background: 1 });
+  await core.saveSome({ removedIds: ["s1"], history: [], preferences: {} });
+  assert.deepEqual(plain(await core.imageCounts("s1")), {});
+});
+
+test("artwork catalog is untouched by saves that do not change a title's pictures and updates when they do", async () => {
+  const { core } = makeCore();
+  const show = { id: "p1", title: "Show", category: "series", image: "https://img/p.jpg", progress: 0, cachedDetails: { sections: [{ kind: "gallery", title: "Screenshots", items: [{ image: "https://img/a.jpg" }] }] } };
+  await core.save({ items: [show], history: [], preferences: {} });
+  const before = await core.listImages("p1");
+  await core.saveSome({ changed: [{ ...show, progress: 3 }], history: [], preferences: {} });
+  assert.deepEqual(plain(await core.listImages("p1")), plain(before));
+  await core.saveSome({ changed: [{ ...show, progress: 3, cachedDetails: { sections: [{ kind: "gallery", title: "Screenshots", items: [{ image: "https://img/a.jpg" }, { image: "https://img/b.jpg" }] }] } }], history: [], preferences: {} });
+  assert.equal((await core.listImages("p1", "screenshot")).length, 2);
 });
