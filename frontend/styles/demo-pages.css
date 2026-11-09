@@ -1778,3 +1778,14 @@ body[data-discover-view="list"][data-page="discover"] .discover-catalog-card h3 
 
 /* Discover shelves: same 20px inset as the headings, and snapping respects it (cards no longer stick to the screen edge) */
 body[data-page="discover"] .discover-catalog-sections .discover-catalog-section > .discover-catalog-grid { padding-left: 20px !important; padding-right: 20px !important; scroll-padding-inline: 20px; scroll-snap-type: x proximity; }
+body[data-page="discover"] .discover-catalog-card :is(h3, small, .discover-catalog-genres) { cursor: pointer; }
+
+/* "You might also like" stays a swipeable poster rail (outranks the generic 2-column list rules above) */
+body .demo-cinema-page .detail-section.demo-related-section:not(.demo-cast-section) .detail-carousel { display: flex; flex-flow: row nowrap; align-items: stretch; gap: 9px; width: 100%; min-width: 0; max-width: 100%; padding: 0 14px 7px 1px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; touch-action: auto; -webkit-overflow-scrolling: touch; scroll-padding-inline: 1px 14px; scroll-snap-type: x proximity; scrollbar-width: none; }
+body .demo-cinema-page .detail-section.demo-related-section:not(.demo-cast-section) .detail-carousel::-webkit-scrollbar { display: none; }
+body .demo-cinema-page .detail-section.demo-related-section:not(.demo-cast-section) .detail-carousel-card { display: flex; flex: 0 0 128px; flex-direction: column; align-items: stretch; width: 128px; min-width: 128px; padding: 0; overflow: hidden; border: 1px solid var(--d-line2); border-radius: 10px; background: var(--d-surface); scroll-snap-align: start; }
+body .demo-cinema-page .detail-section.demo-related-section:not(.demo-cast-section) .detail-carousel-art { width: 100%; height: 170px; border: 0; border-radius: 0; }
+body .demo-cinema-page .detail-section.demo-related-section:not(.demo-cast-section) .detail-carousel-card strong { display: -webkit-box; align-self: stretch; width: 100%; min-height: 2.4em; box-sizing: border-box; padding: 7px 6px 0; overflow: hidden; color: var(--d-t1); font: 700 10px/1.2 var(--d-font); text-align: center; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+body .demo-cinema-page .detail-section.demo-related-section:not(.demo-cast-section) .detail-carousel-card small { align-self: stretch; width: 100%; box-sizing: border-box; padding: 2px 7px 7px; color: var(--d-t2); font-size: 9px; text-align: left; }
+body .demo-cinema-page .detail-section.demo-related-section:not(.demo-cast-section) .detail-carousel-card :is(strong, small) { text-align: left; justify-self: start; align-self: stretch; display: block; }
+body .demo-cinema-page .detail-section.demo-related-section:not(.demo-cast-section) .detail-carousel-card strong { display: -webkit-box; }
