@@ -1886,3 +1886,16 @@ body[data-discover-view="cards"][data-page="discover"] .discover-catalog-card.ha
 .profile-collection-grid .profile-poster.is-loaded .demo-poster-progress i { width: var(--w, 0%) !important; }
 @keyframes poster-shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .profile-collection-grid .profile-poster:not(.is-loaded)::before { animation: none; } .profile-collection-grid .demo-poster-progress i { transition: none; } }
+
+/* Animation settings reach the new library poster loading */
+body[data-progress-anim="false"] .profile-collection-grid .demo-poster-progress i { transition: none; }
+body[data-progress-style="snappy"] .profile-collection-grid .demo-poster-progress i { transition-duration: .35s; transition-timing-function: ease-out; }
+body[data-progress-style="spring"] .profile-collection-grid .demo-poster-progress i { transition-duration: 1s; transition-timing-function: cubic-bezier(.34, 1.56, .64, 1); }
+body[data-shimmer="false"] .profile-collection-grid .profile-poster:not(.is-loaded)::before { animation: none; }
+html[data-lowend="false"] body[data-placeholder-anim="pulse"] .profile-collection-grid .profile-poster:not(.is-loaded)::before { background: var(--d-elev); animation: sp-pulse 1.35s ease-in-out infinite; }
+html[data-lowend="true"] .profile-collection-grid .profile-poster:not(.is-loaded)::before { animation: none; }
+
+/* Profile ⋮ sheet follows "Sheets and dialogs" */
+body[data-sheet-anim="slide"] .profile-options-dialog[open] { animation: sp-sheet-up calc(var(--speed, 180ms) * 1.5) var(--ease-out, ease-out) both; }
+body[data-sheet-anim="fade"] .profile-options-dialog[open] { animation: sp-fade calc(var(--speed, 180ms) * 1.2) ease both; }
+body[data-sheet-anim="scale"] .profile-options-dialog[open] { animation: sp-pop calc(var(--speed, 180ms) * 1.4) var(--ease-out, ease-out) both; }
