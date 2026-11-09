@@ -13,7 +13,7 @@
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
     theme: "system", textSize: "normal", dateFormat: "auto", imageStorage: "all", reduceMotion: false, animationSpeed: "fast", pageTransition: "slide", sheetAnimation: "slide", pressEffect: "shrink", progressAnimation: true, progressStyle: "smooth", skeletonShimmer: true, placeholderAnimation: "shimmer", mainColor: "default", accentColorDefaultVersion: 2,
-    profileCoverSource: "both", profileCoverMode: "random", profileCoverInterval: "visit", profileAvatarSource: "custom", profileAvatarMode: "random", profileAvatarInterval: "visit", profileAvatarPinned: "", profileCoverPinned: "", showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, navIcons: { discover: "bookmark", "series-watchlist": "tv", "movie-watchlist": "clapperboard", profile: "user-round" },
+    profileCoverSource: "both", profileCoverMode: "random", profileCoverInterval: "visit", profileAvatarSource: "custom", profileAvatarMode: "random", profileAvatarInterval: "visit", profileAvatarPinned: "", profileCoverPinned: "", profileAvatarPinnedImage: "", profileCoverPinnedImage: "", showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, navIcons: { discover: "bookmark", "series-watchlist": "tv", "movie-watchlist": "clapperboard", profile: "user-round" },
     navBar: { order: navKeys, visible: { "series-watchlist": true, "movie-watchlist": true, discover: true, profile: true } },
     metadataSourceOrder: ["tvmaze", "imdb", "omdb", "tvdb", "tmdb", "rottentomatoes", "anilist", "kitsu", "jikan"], customSources: [],
     dashboardDefaultCategory: "series",
@@ -153,8 +153,6 @@
   let addMetadataQuery = "";
   let timelineFilter = "all", timelineSearch = "", timelineMonth = "", timelineYear = "", timelineFrom = "", timelineTo = "";
   let profileCollectionSort = "alpha", profileStatusFilter = "all", profileGenreFilter = "all", profileStatusGroups = false;
-  let profileCollectionCacheRevision = -1;
-  let discoverSearchFocused = false;
   let watchlistTab = "watchlist";
   let watchlistViews = { series: "list", movie: "list" };
   let watchlistSwipe = null;
@@ -255,14 +253,24 @@
     return target?.closest(selector) || null;
   };
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  // Grid and list posters do not need the full-size artwork: ask the image host for a smaller rendition (the original is kept as a
+  // one-time fallback if the host does not have it). Detail pages keep full size.
+  function smallArt(url) {
+    const value = String(url || "");
+    if (/^https:\/\/image\.tmdb\.org\/t\/p\/(?:original|w1280|w780|w500)\//.test(value)) return value.replace(/\/t\/p\/[^/]+\//, "/t/p/w342/");
+    if (/^https:\/\/static\.tvmaze\.com\/uploads\/images\/original_untouched\//.test(value)) return value.replace("/original_untouched/", "/medium_portrait/");
+    return value;
+  }
   function imageMarkup(item, source, alt = "", fallback = "", className = "") {
     const useLocalThumb = Boolean(item?.id && item.thumbnailPath && !item.localThumbnailData && !item.localPortraitData && !item.customCover);
     if (!source && !useLocalThumb) return fallback;
+    const sized = className === "detail-image" || !item ? source : smallArt(source); // landscape / hero art (no item) keeps full size
+    const fullAttr = sized && sized !== source ? ` data-full-src="${esc(source)}"` : "";
     const imageSource = useLocalThumb
-      ? `data-deferred-image data-local-item-id="${esc(item.id)}" data-lazy-src="${esc(source || "")}"`
-      : `src="${esc(source)}"`;
+      ? `data-deferred-image data-local-item-id="${esc(item.id)}" data-lazy-src="${esc(sized || "")}"${fullAttr}`
+      : `src="${esc(sized)}"${fullAttr}`;
     const placeholder = useLocalThumb ? fallback : fallback.replace(/^(<[a-z][\w-]*)(?=[\s>])/i, "$1 hidden");
-    return `<img ${imageSource}${useLocalThumb ? " hidden" : ""}${className ? ` class="${esc(className)}"` : ""} alt="${esc(alt)}" loading="lazy" decoding="async" onerror="this.hidden=true;if(this.nextElementSibling)this.nextElementSibling.hidden=false">${placeholder}`;
+    return `<img ${imageSource}${useLocalThumb ? " hidden" : ""}${className ? ` class="${esc(className)}"` : ""} alt="${esc(alt)}" loading="lazy" decoding="async" onerror="if(this.dataset.fullSrc&&!this.dataset.fullTried){this.dataset.fullTried=1;this.src=this.dataset.fullSrc;return}this.hidden=true;if(this.nextElementSibling)this.nextElementSibling.hidden=false">${placeholder}`;
   }
   window.SplitAppImageMarkup = imageMarkup;
   const category = key => config.categories.find(item => item.key === key) || config.categories[0];
@@ -273,6 +281,24 @@
   const statusIcon = status => ({ [roles.queued]: "bookmark", [roles.active]: "circle-play", [roles.hold]: "circle-pause", [roles.dropped]: "circle-x", [roles.done]: "circle-check" })[status] || "circle";
   const defaultStatus = key => category(key)?.statuses?.[0] || roles.queued;
   const seriesProgressComplete = (item, info, progress = Number(item?.progress) || 0) => info?.total ? progress >= info.total : Number(item?.goal) > 0 && progress >= Number(item.goal);
+  // Settings → Tracking → Automatic Completion governs series too: Automatic completes at once, Ask prompts, Manual leaves the status alone.
+  const completionPrompts = new Set();
+  function finishSeriesIfComplete(item, info) {
+    if (!seriesProgressComplete(item, info, item.progress)) return false;
+    const mode = prefs.automaticCompletion || "automatic";
+    if (mode === "automatic") { item.status = roles.done; return true; }
+    if (mode === "ask" && item.status !== roles.done && !completionPrompts.has(item.id)) {
+      completionPrompts.add(item.id);
+      appConfirm(`Mark “${item.title}” completed?`, { title: "Completed?", confirmLabel: "Mark completed" }).then(ok => {
+        completionPrompts.delete(item.id);
+        if (!ok || item.status === roles.done || !seriesProgressComplete(item, window.SplitAppLibrary.episodeInfo(item), item.progress)) return;
+        item.status = roles.done; item.updatedAt = Date.now();
+        history.unshift({ itemId: item.id, title: item.title, action: roles.done, status: roles.done, at: Date.now() });
+        persist({ ids: [item.id] }); render();
+      });
+    }
+    return false;
+  }
   const latestEpisodeActivityByItem = () => {
     const latest = new Map();
     history.forEach(entry => {
@@ -431,20 +457,38 @@
       finish();
     }
   }
+  // Log and history rows are cached in memory and written once per burst: adding 30 titles used to parse and
+  // re-serialize up to 2000 stored rows 30 times.
+  const rowStores = {};
+  function rowStore(suffix, limit) {
+    const key = `${storageKey}_${suffix}`;
+    if (!rowStores[suffix]) {
+      let rows = [];
+      try { const saved = JSON.parse(localStorage.getItem(key) || "[]"); if (Array.isArray(saved)) rows = saved; } catch (_) {}
+      rowStores[suffix] = { key, rows, limit, timer: 0 };
+    }
+    return rowStores[suffix];
+  }
+  function flushRowStores() {
+    Object.values(rowStores).forEach(store => { if (!store.timer) return; clearTimeout(store.timer); store.timer = 0; try { localStorage.setItem(store.key, JSON.stringify(store.rows)); } catch (_) {} });
+  }
+  function pushRow(suffix, limit, entry) {
+    const store = rowStore(suffix, limit);
+    store.rows.unshift(entry); if (store.rows.length > limit) store.rows.length = limit;
+    if (!store.timer) store.timer = setTimeout(() => { store.timer = 0; try { localStorage.setItem(store.key, JSON.stringify(store.rows)); } catch (_) {} }, 600);
+  }
+  window.addEventListener("pagehide", flushRowStores);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) flushRowStores(); });
   function recordLog(level, message) {
     try {
-      const key = `${storageKey}_log`;
-      const entries = JSON.parse(localStorage.getItem(key) || "[]");
       const entry = { level, message: String(message), at: new Date().toISOString() };
-      entries.unshift(entry);
-      localStorage.setItem(key, JSON.stringify(entries.slice(0, 200)));
+      pushRow("log", 200, entry);
       window.SplitAppBackend?.appendJournal?.("logcat", entry);
     } catch (_) {}
   }
   function recordLibraryChange(action, detail, ids = []) {
-    const key = `${storageKey}_history`;
     const entry = { at: Date.now(), action, detail: String(detail || "").slice(0, 400), ids: ids.slice(0, 60).map(String) };
-    try { const rows = JSON.parse(localStorage.getItem(key) || "[]"); rows.unshift(entry); localStorage.setItem(key, JSON.stringify(rows.slice(0, 2000))); } catch (_) {}
+    try { pushRow("history", 2000, entry); } catch (_) {}
     window.SplitAppBackend?.appendJournal?.("history", entry);
     saveLibrarySnapshot();
   }
@@ -459,7 +503,7 @@
       const previous = JSON.parse(localStorage.getItem(librarySnapshotKey) || "null");
       if (previous && items.length) {
         const current = new Set(items.map(item => String(item.id)));
-        const changes = JSON.parse(localStorage.getItem(`${storageKey}_history`) || "[]");
+        const changes = rowStore("history", 2000).rows;
         const explained = new Set(changes.flatMap(entry => entry.ids || []).map(String));
         const lost = Object.entries(previous).filter(([id]) => !current.has(String(id)) && !explained.has(String(id)));
         if (lost.length) {
@@ -685,22 +729,24 @@
     const activeDetailSource = activeDetailItem?.metadataSource || activeDetailItem?.source || "";
     const detailCastOnline = Boolean(prefs.metadataMode !== "offline" && navigator.onLine && activeDetailSource && window.SplitAppSources?.isEnabled?.(activeDetailSource, prefs));
     let logEntries = [];
-    try { const savedLogs = JSON.parse(localStorage.getItem(`${storageKey}_log`) || "[]"); if (Array.isArray(savedLogs)) logEntries = savedLogs; } catch (_) {}
+    // Only the Logcat / History settings pages read these stores; parsing up to 200 rows on every render was wasted work.
+    const needsLogs = page === "settings" && settingsGroup === "logcat", needsHistory = page === "settings" && settingsGroup === "history";
+    if (needsLogs) logEntries = rowStore("log", 200).rows;
     if (settingsGroup === "logcat" && !logJournalLoaded) {
       logJournalLoaded = true;
-      window.SplitAppBackend?.readJournal?.("logcat").then(rows => { if (page === "settings" && settingsGroup === "logcat" && Array.isArray(rows)) { logEntries = rows; try { localStorage.setItem(`${storageKey}_log`, JSON.stringify(rows.slice(0, 200))); } catch (_) {} render(); } }).catch(() => {});
+      window.SplitAppBackend?.readJournal?.("logcat").then(rows => { if (page === "settings" && settingsGroup === "logcat" && Array.isArray(rows)) { logEntries = rows; { const store = rowStore("log", 200); store.rows = rows.slice(0, 200); try { localStorage.setItem(store.key, JSON.stringify(store.rows)); } catch (_) {} } render(); } }).catch(() => {});
     }
     let changeLog = [];
-    try { const saved = JSON.parse(localStorage.getItem(`${storageKey}_history`) || "[]"); if (Array.isArray(saved)) changeLog = saved; } catch (_) {}
+    if (needsHistory) changeLog = rowStore("history", 2000).rows;
     if (settingsGroup === "history" && !historyJournalLoaded) {
       historyJournalLoaded = true;
       const readRevision = historyJournalRevision;
-      window.SplitAppBackend?.readJournal?.("history").then(rows => { if (readRevision === historyJournalRevision && page === "settings" && settingsGroup === "history" && Array.isArray(rows)) { const local = changeLog; const keys = row => `${row.action}|${row.at}|${row.detail || ""}`; changeLog = [...new Map([...rows, ...local].map(row => [keys(row), row])).values()].sort((a, b) => (Number(b.at) || Date.parse(b.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0)); try { localStorage.setItem(`${storageKey}_history`, JSON.stringify(changeLog.slice(0, 2000))); } catch (_) {} render(); } }).catch(() => {});
+      window.SplitAppBackend?.readJournal?.("history").then(rows => { if (readRevision === historyJournalRevision && page === "settings" && settingsGroup === "history" && Array.isArray(rows)) { const local = changeLog; const keys = row => `${row.action}|${row.at}|${row.detail || ""}`; changeLog = [...new Map([...rows, ...local].map(row => [keys(row), row])).values()].sort((a, b) => (Number(b.at) || Date.parse(b.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0)); { const store = rowStore("history", 2000); store.rows = changeLog.slice(0, 2000); try { localStorage.setItem(store.key, JSON.stringify(store.rows)); } catch (_) {} } render(); } }).catch(() => {});
     }
     const parentForRef = detailRef?.type === "episode" ? itemById(String(detailItemId)) : null;
     const refItem = parentForRef?.category === "series" && (parentForRef.cachedDetails?.sections || []).some(section => section.kind === "episodes" && (section.items || []).some(row => String(row.id) === String(detailRef.id) || String(row.ref?.id) === String(detailRef.id))) ? parentForRef : null;
-    return { setup: setupState, statsSubpage, statsCategory, statsActivityDate, statsRange, profileCollectionSort, profileStatusFilter, profileGenreFilter, profileStatusGroups, libraryLoading: !libraryRestoreComplete, watchlistTab, watchlistView: currentWatchlistView(), metadataSyncState, metadataSyncCounts: page === "sync" ? syncCounts() : null, changeLog, history, logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, itemById, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, logEntries, roles, trackedStatuses, statusIcon, discoverCategory: currentDiscoverCategory(), discoverQuery, addMetadataQuery, settingsGroup, settingsParam, settingsFrom, discoverSource, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: itemById(String(entryDraftId)) || null, addReturnPage, navItems, metadataSourceFilter, titleIdentity,
-      detailData, detailError, detailLoading, detailReturnPage, detailRef, detailRefOffset, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, detailCastOnline, refItem, category, labelCategory, defaultStatus, esc, imageMarkup, safeLucideName };
+    return { setup: setupState, statsSubpage, statsCategory, statsActivityDate, statsRange, profileCollectionSort, profileStatusFilter, profileGenreFilter, profileStatusGroups, libraryLoading: !libraryRestoreComplete, watchlistTab, watchlistView: currentWatchlistView(), setupDownloads: [...setupDownloads.values()], metadataSyncState, metadataSyncCounts: page === "sync" ? syncCounts() : null, changeLog, history, logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, itemById, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, logEntries, roles, trackedStatuses, statusIcon, discoverCategory: currentDiscoverCategory(), discoverQuery, addMetadataQuery, settingsGroup, settingsParam, settingsFrom, discoverSource, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: itemById(String(entryDraftId)) || null, addReturnPage, navItems, metadataSourceFilter, titleIdentity,
+      detailData, detailError, detailLoading, detailReturnPage, detailRef, detailRefOffset, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, detailCastOnline, detailCastSections: castCache.get(castKeyNow()) || [], detailCastLoading: castState.loading && castState.key === castKeyNow(), detailCastError: castState.key === castKeyNow() ? castState.error : "", refItem, category, labelCategory, defaultStatus, esc, imageMarkup, safeLucideName };
   }
   // ---- Device artwork cache (IndexedDB blobs) ----
   // Order for every cover: on-device cache -> online (instant, HTTP-cached) -> saved-folder files.
@@ -795,6 +841,28 @@
       go();
     });
   }
+  // After a restore the poster bytes are already in memory: write them straight into the device artwork cache
+  // (one batched IndexedDB write) instead of re-reading every file from the storage folder one by one.
+  // Blobs are held until the folder write assigns each title its thumbnail signature; a cache row written
+  // earlier would carry an empty signature and be ignored (and cleaned up as stale).
+  const primedThumbs = new Map();
+  async function primeThumbCache(list) {
+    let ready = 0;
+    for (let offset = 0; offset < list.length; offset += 24) {
+      for (const item of list.slice(offset, offset + 24)) {
+        if (primedThumbs.size >= 300) break; // bound memory on very large restores; the rest load from the folder
+        const blob = await dataUrlToBlob(item.localThumbnailData || item.localPortraitData);
+        if (blob) { primedThumbs.set(String(item.id), blob); ready++; }
+      }
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    return ready;
+  }
+  let thumbRefillTimer = 0;
+  window.addEventListener("screenmark:folder-written", () => {
+    if (!primedThumbs.size && !nativeAndroid) return;
+    clearTimeout(thumbRefillTimer); thumbRefillTimer = setTimeout(() => fillThumbCache(), 1200);
+  });
   let thumbFillRunning = false;
   async function fillThumbCache() {
     if (thumbFillRunning || !nativeAndroid || !window.SplitAppIDB?.listThumbKeys) return;
@@ -812,7 +880,13 @@
       }
       const have = new Map(savedKeys.filter(([key]) => liveKeys.has(key)));
       const missing = items.filter(item => item.thumbnailPath && have.get(thumbKeyOf(item)) !== thumbSigOf(item));
-      const batchSize = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 2 ? 2 : 4;
+      const batchSize = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 2 ? 3 : 8;
+      // Restored titles: reuse the in-memory poster instead of re-reading it from the storage folder.
+      const primedEntries = [];
+      for (const item of missing) { const blob = primedThumbs.get(String(item.id)); if (blob) { primedEntries.push([thumbKeyOf(item), thumbSigOf(item), blob]); primedThumbs.delete(String(item.id)); } }
+      if (primedEntries.length) { try { await window.SplitAppIDB.putThumbs(primedEntries); } catch (_) {} thumbUrlCache.clear(); }
+      const primedKeys = new Set(primedEntries.map(entry => entry[0]));
+      missing.splice(0, missing.length, ...missing.filter(item => !primedKeys.has(thumbKeyOf(item))));
       for (let offset = 0; offset < missing.length; offset += batchSize) {
         if (document.hidden) {
           await new Promise(resolve => {
@@ -1085,10 +1159,17 @@
     document.getElementById("collection-toolbar")?.remove();
     disposeContentResources(content);
     if (page === "setup" && !setupStarted) beginSetup(); else if (page !== "setup") setupStarted = false;
+    if (typeof window.SplitAppPages[page] !== "function") {
+      // A page module failed to register: log it and fall back instead of leaving a blank, crashed screen.
+      recordLog("error", `Page "${page}" is not available (its script did not load).`);
+      const fallback = ["series-watchlist", "discover", "profile"].find(name => typeof window.SplitAppPages[name] === "function");
+      if (!fallback || fallback === page) { content.innerHTML = `<section class="settings-page"><p class="app-info">This page could not be loaded. Restart ScreenMark.</p></section>`; return; }
+      page = fallback; setupStarted = false;
+    }
     content.innerHTML = window.SplitAppPages[page](pageContext());
     if (page === "setup") { const grid = $("#setup-grid"); if (grid) routeRemoteImages(grid); }
     if (["series", "movies", "series-favorites", "movie-favorites"].includes(page)) trackPosterLoading(content);
-    if (page === "details") prioritizeVisibleDetailImages(content);
+    if (page === "details") { prioritizeVisibleDetailImages(content); if (detailTab === "cast" && !detailRef && content.querySelector("[data-cast-lazy]")) Promise.resolve().then(() => loadDetailCast()); }
     if (page === "series-watchlist" || page === "movie-watchlist") {
       // Above-the-fold thumbnails: fetch immediately at high priority instead of waiting for lazy-load heuristics.
       content.querySelectorAll(".watchlist-card img[loading=lazy]").forEach((img, index) => {
@@ -1477,14 +1558,14 @@
     await Promise.all(names.map(name => caches.delete(name)));
   }
   async function clearLogcat() {
-    localStorage.removeItem(`${storageKey}_log`);
+    localStorage.removeItem(`${storageKey}_log`); rowStore("log", 200).rows = [];
     await window.SplitAppBackend?.clearJournal?.("logcat");
   }
   async function clearLibraryHistory() {
     historyJournalRevision += 1;
     historyJournalLoaded = true;
     history = [];
-    localStorage.removeItem(`${storageKey}_history`);
+    localStorage.removeItem(`${storageKey}_history`); rowStore("history", 2000).rows = [];
     await Promise.all([persist({ meta: true, replaceHistory: true }), window.SplitAppBackend?.clearJournal?.("history")]);
   }
   async function runStorageAction(action) {
@@ -1504,7 +1585,7 @@
     if (action === "factory-reset") {
       if (!(await appConfirm("Factory reset ScreenMark? This removes your library, settings, and app cache from this device.", { title: "Factory reset", confirmLabel: "Reset", danger: true }))) return;
       await clearAppCaches("temporary");
-      localStorage.removeItem(`${storageKey}_log`);
+      localStorage.removeItem(`${storageKey}_log`); rowStore("log", 200).rows = [];
       try { await window.Capacitor?.Plugins?.EncryptedStore?.clearState?.(); } catch (_) {}
       items = []; itemIndexItems = null; history = [];
       Object.keys(prefs).forEach(key => delete prefs[key]);
@@ -1654,7 +1735,7 @@
     item.updatedAt = Date.now();
     const previousStatus = item.status;
     if (item.category === "series" && step > 0) { item.lastProgressAt = item.updatedAt; item.status = roles.active; }
-    if (item.category === "series" && seriesProgressComplete(item, window.SplitAppLibrary.episodeInfo(item), item.progress)) item.status = roles.done;
+    if (item.category === "series") finishSeriesIfComplete(item, window.SplitAppLibrary.episodeInfo(item));
     if (item.category !== "series" && item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic") item.status = roles.done;
     if (item.category !== "series" && item.goal && item.progress >= item.goal && prefs.automaticCompletion === "ask" && await appConfirm(`Mark “${item.title}” completed?`, { title: "Completed?", confirmLabel: "Mark completed" })) item.status = roles.done;
     if (item.status !== previousStatus && trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
@@ -1705,7 +1786,6 @@
   }
 
   function paintDiscoverResults(results, sourceKey) {
-    const key = currentDiscoverCategory();
     const sourceName = window.SplitAppSources.list().find(source => source.key === sourceKey)?.name;
     const currentMessage = $("#discover-message"), box = $("#discover-results"), empty = $("#discover-empty");
     if (!currentMessage || !box || !empty) return false;
@@ -1773,10 +1853,12 @@
     const posters = [...root.querySelectorAll(".profile-collection-grid .profile-poster")];
     posters.forEach(poster => {
       const img = poster.querySelector("img");
-      if (!img || (img.complete && img.naturalWidth > 0)) { requestAnimationFrame(() => requestAnimationFrame(() => poster.classList.add("is-loaded"))); }
+      // No picture to wait for (placeholder shown, nothing deferred) or already decoded: show the progress bar now.
+      const nothingToWaitFor = !img || (img.complete && img.naturalWidth > 0) || (img.hidden && !img.hasAttribute("data-deferred-image") && !img.getAttribute("src"));
+      if (nothingToWaitFor) { requestAnimationFrame(() => poster.classList.add("is-loaded")); }
     });
-    // Slow network or missing art: never leave a bar stuck at zero.
-    setTimeout(() => posters.forEach(poster => { if (poster.isConnected) poster.classList.add("is-loaded"); }), 4000);
+    // Slow network or missing art: never leave a bar stuck at zero (this used to wait 4 s).
+    setTimeout(() => posters.forEach(poster => { if (poster.isConnected) poster.classList.add("is-loaded"); }), 1500);
   }
   function discoverCatalogCard(result, index) {
     const category = result.category || currentDiscoverCategory();
@@ -1856,7 +1938,7 @@
   async function loadSetupRows() {
     const request = ++setupRequest, step = window.SplitAppSetup.stepsFor(setupState)[setupState.step], query = setupState.query.trim();
     setupState.selected = setupState.picks[setupState.step];
-    const setGrid = () => { const grid = $("#setup-grid"); if (grid && page === "setup") { grid.innerHTML = window.SplitAppSetup.grid(setupState, esc); routeRemoteImages(grid); } };
+    const setGrid = () => { const grid = $("#setup-grid"); if (grid && page === "setup") { grid.innerHTML = window.SplitAppSetup.grid(setupState, esc); routeRemoteImages(grid); window.lucide?.createIcons?.({ root: grid, attrs: { "aria-hidden": "true" } }); } };
     setupState.error = "";
     if (setupState.mode) {
       // Favorites picker: list what is already in the local library (no network).
@@ -1921,7 +2003,8 @@
     if (mode) { if (added) { favoritesSetupSkipped.add(target); toast(`Added ${added} ${added === 1 ? "favorite" : "favorites"}.`); goto(target, true); } else goto("profile"); return; }
     markSetupDone();
     if (added) toast(`Added ${added} ${added === 1 ? "title" : "titles"} to your library.`);
-    goto("series-watchlist");
+    // A big pick list downloads for a while: show the progress and per-title status on the sync page.
+    goto(added > 8 ? "sync" : "series-watchlist");
   }
   let suggestionsCache = null, suggestionsRequest = 0, suggestionsPendingKey = "", suggestionsAbortController = null;
   async function loadDiscoverSuggestions() {
@@ -1996,7 +2079,6 @@
     try {
       const results = sourceKey ? await exploreSourceSearch(query, sourceKey, controller?.signal) : await discoverSearch(query, key, controller?.signal);
       if (requestId !== discoverRequestId || page !== "discover" || discoverSource !== sourceKey) return;
-      const sourceName = window.SplitAppSources.list().find(source => source.key === sourceKey)?.name;
       if (!paintDiscoverResults(results, sourceKey)) return;
       discoverCache = { source: sourceKey, query, results };
     } catch (error) {
@@ -2038,16 +2120,13 @@
     const year = String(item?.year || item?.releaseDate || "").match(/(?:19|20)\d{2}/)?.[0] || "";
     return [item?.category || "", item?.metadataSource || item?.source || "manual", normalize(item?.title), year].join("\u0000");
   };
-  function sameDiscoverTitle(item, result, category) {
-    return Boolean(item && result && item.category === (category || result.category) && titleIdentity(item) === titleIdentity({ ...result, category: category || result.category, metadataSource: result.metadataSource || result.source }));
-  }
   function addDiscoverResult(result, origin = "Discover", options = {}) {
     if (!result) return null;
-    const existing = itemByTitleIdentity(titleIdentity({ ...result, metadataSource: result.metadataSource || result.source }));
+    const existing = (result.source && result.providerId ? itemByProvider(result.source, result.category, result.providerId) : null) || itemByTitleIdentity(titleIdentity({ ...result, metadataSource: result.metadataSource || result.source }));
     if (existing) {
       if (!options.quiet) toast("That entry is already in your library."); return existing;
     }
-    const item = stripLocalScores({ ...result, metadataSource: result.source, id: crypto.randomUUID(), status: options.status || prefs.defaultStatus || defaultStatus(result.category), ...(options.favorite ? { favorite: true } : {}), progress: 0, createdAt: Date.now(), updatedAt: Date.now() });
+    const item = stripLocalScores({ ...result, metadataSource: result.source, id: crypto.randomUUID(), status: options.status || ((category(result.category)?.statuses || []).includes(prefs.defaultStatus) && [roles.queued, roles.done].includes(prefs.defaultStatus) ? prefs.defaultStatus : defaultStatus(result.category)), ...(options.favorite ? { favorite: true } : {}), progress: 0, createdAt: Date.now(), updatedAt: Date.now() });
     items.unshift(item); itemIndexItems = null; recordLibraryChange("added", `Added ${item.title} from ${origin}.`, [item.id]); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist({ ids: [item.id] }); if (!options.quiet) toast("Added to your library."); hydrateSavedItem(item); return item;
   }
   // Keep the best value per fact across providers (a later source never blanks out earlier data).
@@ -2149,6 +2228,7 @@
       const metadataSources = { ...prefs.metadataSources, [sourceKey]: true };
       const results = await window.SplitAppDiscovery.searchSource(query, category, { ...detailSettings(), metadataSources }, sourceKey);
       output.dataset.state = "ok";
+      if (results.some(row => row.via)) { output.textContent = `${source.name} cannot be reached directly from this network, so titles are loaded through ${results[0].via} instead (found ${results.length} for “${query}”).`; return; }
       output.textContent = results.length ? `Connection successful. Found ${results.length} ${results.length === 1 ? "match" : "matches"} for “${query}”.` : `The source responded successfully, but returned no matches for “${query}”.`;
     } catch (error) {
       output.dataset.state = "error";
@@ -2202,7 +2282,7 @@
       render(); return;
     }
     // Saved titles refresh from their source at most once a day when opened; pull-to-refresh or Refresh forces it.
-    if (!force && !detailPreview && useCached && !item.relinkFresh && Date.now() - metadataStamp(item) < DETAIL_REFRESH_MS && ((item.cachedDetails.sections || []).length || Object.keys(item.cachedDetails.facts || {}).length)) {
+    if (!force && !detailPreview && useCached && !item.relinkFresh && item.fullDetailsAt && Date.now() - metadataStamp(item) < DETAIL_REFRESH_MS && ((item.cachedDetails.sections || []).length || Object.keys(item.cachedDetails.facts || {}).length)) {
       detailLoading = false; if (detailAbortController === controller) detailAbortController = null; render(); return;
     }
     detailLoading = true; render();
@@ -2214,6 +2294,7 @@
         if (!detailPreview) {
           const hadCache = Boolean(item.cachedDetails);
           applyLoadedMetadata(item, loaded, { replaceFacts: Boolean(item.relinkFresh) });
+          item.fullDetailsAt = Date.now();
           persist({ ids: [item.id] });
           const changes = metadataChanges.get(String(item.id));
           if (hadCache && changes?.length) toast(`Updated from ${item.metadataSource}: ${changes.slice(0, 4).join(", ")}${changes.length > 4 ? "…" : ""}.`);
@@ -2299,16 +2380,109 @@
   }, true);
   // Saving a title mirrors its full details (cast, episodes, images) into the app database right away, not only when its page is opened.
   const hydrating = new Set();
-  async function hydrateSavedItem(item) {
-    if (!item?.metadataSource || !item.providerId || item.cachedDetails || hydrating.has(item.id) || prefs.metadataMode === "offline") return;
-    hydrating.add(item.id);
+  // Cast & crew is never stored: it is fetched on demand (only while online) when the Cast & Crew tab opens.
+  const castCache = new Map(); let castState = { key: "", loading: false, error: "" };
+  const castKeyNow = () => { const entry = detailPreview || itemById(String(detailItemId)); return entry ? String(entry.id) : ""; };
+  const isCastSection = section => section?.kind === "people" || /^(cast|characters|staff|crew|people|guest cast|guest crew)(?:\b|\s)/i.test(section?.title || "");
+  async function loadDetailCast(retry = false) {
+    const entry = detailPreview || itemById(String(detailItemId)), key = castKeyNow();
+    if (!entry || !key || castCache.has(key) || (castState.loading && castState.key === key)) return;
+    if (!retry && castState.key === key && castState.error) return;
+    castState = { key, loading: true, error: "" };
+    const panel = $("[data-cast-lazy]"); if (panel && retry) { panel.setAttribute("aria-busy", "true"); render(); }
     try {
-      const loaded = await window.SplitAppDetails.load(item, { ...detailSettings(), background: true });
-      if (itemById(item.id) !== item) return;
-      applyLoadedMetadata(item, loaded); persist({ ids: [item.id] }); if (page === "details" && detailItemId === item.id) render();
-    } catch (error) { recordLog("warning", `Could not save details for ${item.title}: ${error?.message || error}`); }
-    finally { hydrating.delete(item.id); }
+      const loaded = await window.SplitAppDetails.load(entry, { ...detailSettings() });
+      const people = (loaded.sections || []).filter(section => isCastSection(section) && (section.items || []).length);
+      if (!people.length) throw new Error("This source has no cast & crew for this title.");
+      castCache.set(key, people); castState = { key, loading: false, error: "" };
+    } catch (error) { castState = { key, loading: false, error: error?.message || "Could not load cast & crew." }; }
+    if (page === "details" && !detailRef && castKeyNow() === key) render();
   }
+  // Quick setup can add dozens of titles at once: load full details (episodes, ratings, posters, backgrounds,
+  // screenshots) two at a time so every title is complete without hammering the providers.
+  const hydrateQueue = []; let hydrateActive = 0;
+  // Progress of titles being filled in after Quick setup (shown on #sync); in memory only.
+  const setupDownloads = new Map();
+  const DOWNLOADS_KEY = `${storageKey}_sync_downloads`;
+  let downloadSaveTimer = 0;
+  // The list survives navigation and restarts (compact rows only), and unfinished rows resume on launch.
+  function saveDownloads() {
+    clearTimeout(downloadSaveTimer);
+    downloadSaveTimer = setTimeout(() => { try { localStorage.setItem(DOWNLOADS_KEY, JSON.stringify([...setupDownloads.values()].slice(-400))); } catch (_) {} }, 400);
+  }
+  const markDownload = (item, status, error = "") => {
+    const row = setupDownloads.get(String(item.id)) || {};
+    setupDownloads.set(String(item.id), { ...row, id: String(item.id), title: item.title, category: item.category, source: item.metadataSource, providerId: item.providerId, status, error, at: Date.now() });
+    saveDownloads(); if (page === "sync") scheduleHydrateRender();
+  };
+  function restoreDownloads() {
+    let saved = [];
+    try { saved = JSON.parse(localStorage.getItem(DOWNLOADS_KEY) || "[]"); } catch (_) {}
+    const resume = [];
+    for (const row of Array.isArray(saved) ? saved : []) {
+      const item = itemById(row?.id); if (!item) continue;
+      setupDownloads.set(String(row.id), { ...row, title: item.title });
+      if (["queued", "running"].includes(row.status) && !item.fullDetailsAt) resume.push(item);
+      else if (row.status === "done" || item.fullDetailsAt) setupDownloads.set(String(row.id), { ...row, status: "done", error: "" });
+    }
+    if (resume.length) syncImported(resume);
+  }
+  function hydrateSavedItem(item) {
+    if (!item?.metadataSource || !item.providerId || item.fullDetailsAt || hydrating.has(item.id) || prefs.metadataMode === "offline") return;
+    hydrating.add(item.id); hydrateQueue.push(item); markDownload(item, "queued"); pumpHydrateQueue();
+  }
+  function pumpHydrateQueue() {
+    while (hydrateActive < 2 && hydrateQueue.length) {
+      const item = hydrateQueue.shift(); hydrateActive++; markDownload(item, "running");
+      hydrateOne(item).finally(() => { hydrateActive--; hydrating.delete(item.id); pumpHydrateQueue(); });
+    }
+  }
+  async function hydrateOne(item) {
+    try {
+      if (!navigator.onLine) { markDownload(item, "failed", "Offline. Retry when connected."); return; }
+      const loaded = await window.SplitAppDetails.load(item, { ...detailSettings() });
+      if (itemById(item.id) !== item) { setupDownloads.delete(String(item.id)); return; }
+      applyLoadedMetadata(item, loaded); item.fullDetailsAt = Date.now(); persist({ ids: [item.id] }); markDownload(item, "done");
+      if (page === "details" && String(detailItemId) === String(item.id)) { detailData = item.cachedDetails; render(); }
+      else if (page === "sync") scheduleHydrateRender(); // collection pages are not rebuilt while downloads run: a full re-render restarts every poster's image loading
+    } catch (error) { markDownload(item, "failed", error?.message || "Could not load details."); recordLog("warning", `Could not save details for ${item.title}: ${error?.message || error}`); if (page === "sync") scheduleHydrateRender(); }
+  }
+  // Restore sync: titles with a source + id are filled in through the same download queue; names-only titles
+  // (TXT / CSV, or an older backup) are first matched to a source by searching for the title.
+  const normalizeTitle = value => String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().replace(/^the\s+/, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  let matchTail = Promise.resolve();
+  async function matchTitleToSource(item) {
+    const rows = await window.SplitAppDiscovery.search(item.title, item.category, detailSettings());
+    const wanted = normalizeTitle(item.title), year = String(item.year || "").match(/(?:19|20)\d{2}/)?.[0] || "";
+    const pick = (rows || []).find(row => normalizeTitle(row.title) === wanted && (!year || !row.year || String(row.year).slice(0, 4) === year));
+    if (!pick) throw new Error("No exact match found in the enabled sources.");
+    item.metadataSource = pick.source; item.providerId = String(pick.providerId);
+    if (!item.image && pick.image) item.image = pick.image;
+    if (!item.year && pick.year) item.year = pick.year;
+    item.updatedAt = Date.now(); persist({ ids: [item.id] });
+  }
+  function syncImported(list) {
+    if (prefs.metadataMode === "offline") return 0;
+    let queued = 0;
+    for (const item of list) {
+      if (!item || item.fullDetailsAt) continue;
+      if (item.metadataSource && item.providerId) { hydrateSavedItem(item); queued++; continue; }
+      if (hydrating.has(item.id)) continue;
+      hydrating.add(item.id); markDownload(item, "queued"); queued++;
+      matchTail = matchTail.then(async () => {
+        try {
+          if (!navigator.onLine) throw new Error("Offline. Retry when connected.");
+          markDownload(item, "running");
+          await matchTitleToSource(item);
+          hydrating.delete(item.id); hydrateSavedItem(item);
+        } catch (error) { hydrating.delete(item.id); markDownload(item, "failed", error?.message || "Could not match this title."); if (page === "sync") scheduleHydrateRender(); }
+        await new Promise(resolve => setTimeout(resolve, 350));
+      });
+    }
+    return queued;
+  }
+  let hydrateRenderTimer = 0;
+  function scheduleHydrateRender() { if (!hydrateRenderTimer) hydrateRenderTimer = setTimeout(() => { hydrateRenderTimer = 0; if (!document.hidden) render(); }, page === "sync" ? 400 : 1500); }
   let metadataSync = null;
   let metadataSyncSaveTimer = 0, metadataSyncRenderTimer = 0;
   let metadataSyncCountState = null, metadataSyncCounters = null;
@@ -2338,7 +2512,8 @@
   }
   function deferMetadataSyncUpdate() {
     if (!metadataSyncSaveTimer) metadataSyncSaveTimer = setTimeout(saveMetadataSyncState, 500);
-    if (!document.hidden && !metadataSyncRenderTimer) metadataSyncRenderTimer = setTimeout(() => { metadataSyncRenderTimer = 0; render(); }, 300);
+    // Only the pages that show refresh progress re-render during a sync; rebuilding Series / Movies / Favorites every 300 ms made posters reload and scrolling lag.
+    if (!document.hidden && !metadataSyncRenderTimer && (page === "sync" || page === "settings")) metadataSyncRenderTimer = setTimeout(() => { metadataSyncRenderTimer = 0; render(); }, 300);
   }
   function isMetadataRefreshable(item) {
     const source = window.SplitAppSources.list(item?.category).find(row => row.key === item?.metadataSource);
@@ -2535,7 +2710,8 @@
     if (!info.done && before > 0) info.eps.slice(0, Math.min(before, info.total)).forEach(entry => ids.add(String(entry.id)));
     const next = info.eps.filter(entry => ids.has(String(entry.id))).length;
     const changed = next !== before || ids.size !== (item.watchedEpisodeIds || []).length;
-    item.watchedEpisodeIds = [...ids]; item.progress = next;
+    // Only rewrite when something changed: this runs on every details render and used to allocate a new array each time.
+    if (changed) { item.watchedEpisodeIds = [...ids]; item.progress = next; }
     // Keep the tracked goal stable when a metadata refresh adds a new episode.
     // The newly listed episode remains the next item, while progress can still
     // accurately read 62/62 until the user chooses to continue.
@@ -2582,7 +2758,7 @@
     const currentGoal = Number(item.goal) || Number(detailData?.goal) || watched.size;
     item.watchedEpisodeIds = [...watched]; item.goal = !done && info && watched.size > currentGoal ? info.total : currentGoal; item.progress = watched.size;
     if (!done && watched.size) item.lastProgressAt = Date.now();
-    if (seriesProgressComplete(item, info, item.progress)) item.status = roles.done;
+    if (finishSeriesIfComplete(item, info)) { /* completed automatically */ }
     else if (done && !item.progress && item.status !== roles.dropped) item.status = roles.queued;
     else if (done && item.status === roles.done) item.status = roles.active;
     else if (!done && item.progress) item.status = roles.active;
@@ -2650,7 +2826,7 @@
     item.goal = markingWatched && info && watched.size > currentGoal ? info.total : currentGoal;
     item.progress = watched.size;
     if (markingWatched) item.lastProgressAt = Date.now();
-    if (seriesProgressComplete(item, info, item.progress)) item.status = roles.done;
+    if (finishSeriesIfComplete(item, info)) { /* completed automatically */ }
     else if (markingWatched) item.status = roles.active;
     else if (!item.progress && item.status !== roles.dropped) item.status = roles.queued;
     else if (item.status === roles.done) item.status = roles.active;
@@ -2661,8 +2837,7 @@
     else if (watchlistCard && page === (item.category === "movie" ? "movie-watchlist" : "series-watchlist")) {
       const before = captureWatchlistLayout();
       const replaceCard = () => {
-        const root = [...document.querySelectorAll("[data-watchlist-root]")].find(row => row.dataset.watchlistRoot === String(watchlistCard));
-        const infoNext = window.SplitAppLibrary.episodeInfo(item)?.next;
+          const infoNext = window.SplitAppLibrary.episodeInfo(item)?.next;
         const fresh = infoNext ? window.SplitAppPages.watchlistCard({ item, episode: infoNext, esc, roles, view: currentWatchlistView() }) : null;
         if (root && fresh) { root.outerHTML = fresh; if (markingWatched) animateWatchlistCard(item.id); }
         else if (root) root.remove();
@@ -2839,7 +3014,6 @@
     const settingPreviewIcons = {
       textSize: { small: "type", normal: "text", large: "text-cursor-input" },
       animationSpeed: { off: "pause", fast: "zap", normal: "gauge", slow: "turtle" },
-      defaultStatus: { Watchlist: "bookmark", "In Progress": "play", Completed: "circle-check", "On Hold": "pause", Dropped: "circle-x" },
       dateFormat: { auto: "globe", dmy: "calendar", mdy: "calendar", iso: "calendar-days", long: "calendar-check" },
       imageStorage: { all: "images", posters: "image", online: "cloud-off" },
       pageTransition: { slide: "move-right", fade: "cloud", zoom: "zoom-in", none: "ban" },
@@ -2927,11 +3101,14 @@
   // (silent: straight into the backup folder, used before destructive actions). Browsers get a normal download.
   let exportRunning = false;
   async function exportNames(format) {
-    const columns = ["Title", "Category", "Year", "Status", "Progress", "Goal", "Review"];
+    // CSV keeps everything a restore needs to re-link titles (source, source id, id) plus tracking details; TXT is "Title (Year)".
+    const columns = ["Title", "Category", "Year", "Status", "Progress", "Goal", "Favorite", "Review", "Source", "SourceID", "ID", "Added", "Updated"];
     const quote = value => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const iso = value => Number(value) ? new Date(Number(value)).toISOString() : "";
+    const yearOf = item => String(item.year || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
     const content = format === "txt"
-      ? items.map(item => String(item.title || "").trim()).filter(Boolean).join("\n") + "\n"
-      : [columns.map(quote).join(","), ...items.map(item => [item.title, item.category, item.year, item.status, item.progress, item.goal, item.review || item.notes].map(quote).join(","))].join("\r\n");
+      ? items.map(item => { const title = String(item.title || "").replace(/[\r\n]+/g, " ").trim(); return title && `${title}${yearOf(item) ? ` (${yearOf(item)})` : ""}`; }).filter(Boolean).join("\n") + "\n"
+      : "\uFEFF" + [columns.map(quote).join(","), ...items.map(item => [item.title, item.category, item.year, item.status, item.progress, item.goal, item.favorite ? "yes" : "", item.review || item.notes, item.metadataSource || item.source || "", item.providerId || "", item.id, iso(item.createdAt), iso(item.updatedAt)].map(quote).join(","))].join("\r\n");
     const mime = format === "txt" ? "text/plain;charset=utf-8" : "text/csv;charset=utf-8";
     const name = `${config.key}-titles-${new Date().toISOString().slice(0, 10)}`;
     try {
@@ -2965,16 +3142,29 @@
       return;
     }
     const fileName = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    const parts = [`{"app":${JSON.stringify(config.name)},"version":1,"exportedAt":${JSON.stringify(new Date().toISOString())},"items":[`];
+    const parts = [`{"app":${JSON.stringify(config.name)},"version":2,"exportedAt":${JSON.stringify(new Date().toISOString())},"index":${JSON.stringify(items.map(item => backend?.backupRefOf ? backend.backupRefOf(item) : { id: String(item.id), source: item.metadataSource || "manual", providerId: String(item.providerId || "") }))},"items":[`];
     items.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify(backend?.backupItem ? backend.backupItem(item) : item)));
     parts.push(`],"history":${JSON.stringify(history)},"preferences":${JSON.stringify(prefs)}}`);
-    const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(parts, { type: "application/json" })); link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); toast("Export ready.");
+    let blob = new Blob(parts, { type: "application/json" }), name = fileName;
+    // Large libraries compress ~10x as gzip; the importer reads either form.
+    if (typeof CompressionStream === "function") { try { blob = await new Response(blob.stream().pipeThrough(new CompressionStream("gzip"))).blob(); name = `${fileName}.gz`; } catch (_) {} }
+    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); toast("Export ready.");
+  }
+  // Backups may be gzip-compressed (.json.gz): detect by name or magic bytes and inflate with the built-in stream.
+  async function readBackupText(file) {
+    // Decide by content, not by name: a plain JSON file called .gz, or a gzip file called .json, both open.
+    const head = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+    if (!file.size) throw new Error("This backup file is empty.");
+    if (!(head[0] === 0x1f && head[1] === 0x8b)) return file.text();
+    if (typeof DecompressionStream !== "function") throw new Error("This device cannot open compressed backups.");
+    try { return await new Response(file.stream().pipeThrough(new DecompressionStream("gzip"))).text(); }
+    catch (_) { throw new Error("This compressed backup is damaged or incomplete, so it could not be read."); }
   }
   async function importList(file) {
     if (!file) return;
     try {
       const encryptedImportIds = [];
-      const text = await file.text();
+      const text = await readBackupText(file);
       const parseCsv = value => {
         const rows = []; let row = [], cell = "", quoted = false;
         for (let i = 0; i < value.length; i++) {
@@ -2990,22 +3180,23 @@
       let data, incoming;
       if (/\.txt$/i.test(file.name)) {
         const key = preferredCategory !== "all" && config.categories.some(cat => cat.key === preferredCategory) ? preferredCategory : config.categories[0].key;
-        incoming = text.split(/\r?\n/).map(title => title.trim()).filter(Boolean).map(title => ({ title, category: key, status: defaultStatus(key) })); data = { items: incoming };
+        incoming = text.replace(/^\uFEFF/, "").split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => { const match = line.match(/^(.*?)\s*\(((?:19|20)\d{2})\)\s*$/); return { title: (match ? match[1] : line).trim(), ...(match ? { year: match[2] } : {}), category: key, status: defaultStatus(key) }; }); data = { items: incoming };
       } else if (/\.csv$/i.test(file.name)) {
         const rows = parseCsv(text); if (!rows.length) throw new Error("The CSV file has no title rows.");
-        const normalize = value => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+        const normalize = value => String(value || "").replace(/^\uFEFF/, "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
         const first = rows[0].map(normalize), hasHeader = first.some(value => ["title", "name"].includes(value));
-        const headers = hasHeader ? first : ["title", "category", "year", "status", "progress", "goal", "review"];
+        const headers = hasHeader ? first : ["title", "category", "year", "status", "progress", "goal", "favorite", "review", "source", "sourceid", "id", "added", "updated"];
         const records = (hasHeader ? rows.slice(1) : rows).map(row => Object.fromEntries(headers.map((header, index) => [header, row[index] || ""])));
         const fallbackCategory = preferredCategory !== "all" ? preferredCategory : config.categories[0].key;
         incoming = records.map(record => {
           const title = String(record.title || record.name || Object.values(record)[0] || "").trim();
           const categoryKey = config.categories.some(cat => cat.key === record.category) ? record.category : fallbackCategory;
           const cat = config.categories.find(entry => entry.key === categoryKey);
-          return { ...record, title, category: categoryKey, status: cat?.statuses.includes(record.status) ? record.status : defaultStatus(categoryKey), year: record.year || "", progress: Number(record.progress) || 0, goal: Number(record.goal) || 0 };
+          const { source: csvSource, sourceid: csvSourceId, id: _csvId, added: csvAdded, updated: csvUpdated, favorite: csvFavorite, ...rest } = record;
+          return { ...rest, title, category: categoryKey, status: cat?.statuses.includes(record.status) ? record.status : defaultStatus(categoryKey), year: record.year || "", progress: Number(record.progress) || 0, goal: Number(record.goal) || 0, ...(/^(yes|true|1|y)$/i.test(String(csvFavorite || "")) ? { favorite: true } : {}), ...(Date.parse(csvAdded) ? { createdAt: Date.parse(csvAdded) } : {}), ...(Date.parse(csvUpdated) ? { updatedAt: Date.parse(csvUpdated) } : {}), ...(csvSource && csvSource !== "manual" && csvSourceId ? { metadataSource: csvSource, providerId: csvSourceId } : {}) };
         }).filter(item => item.title);
         data = { items: incoming };
-      } else if (/\.sqdb$/i.test(file.name)) {
+      } else if (/\.sqdb$/i.test(file.name) && !/\.gz$/i.test(file.name)) {
         const plugin = window.Capacitor?.Plugins?.EncryptedStore;
         if (!plugin?.importPackedState) throw new Error("Encrypted Android backups can only be restored in the ScreenMark Android app.");
         const restored = await plugin.importPackedState({ packed: text });
@@ -3024,8 +3215,14 @@
         const id = crypto.randomUUID();
         if (item.id != null) idMap.set(String(item.id), id);
         const categoryKey = config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key;
-        const statuses = config.categories.find(cat => cat.key === categoryKey)?.statuses || [];
         const cleanItem = stripLocalScores({ ...item });
+        // Backups carry the source and its id: use them to rebuild the metadata link and to match titles exactly.
+        const ref = item.backupRef && typeof item.backupRef === "object" ? item.backupRef : null;
+        if (ref) {
+          if (!cleanItem.metadataSource && ref.source && ref.source !== "manual") cleanItem.metadataSource = ref.source;
+          if (!cleanItem.providerId && ref.providerId) cleanItem.providerId = ref.providerId;
+        }
+        delete cleanItem.backupRef;
         return { ...cleanItem, id, category: categoryKey, status: item.status || defaultStatus(categoryKey), createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
       });
       const byIdentity = new Map(items.map(item => [titleIdentity(item), item]));
@@ -3033,7 +3230,7 @@
       const fillFields = ["favorite", "progress", "goal", "metadataSource", "providerId", "facts", "cachedDetails", "url", "description", "image", "backdrop", "year"];
       const empty = value => value == null || value === "" || value === 0 || (Array.isArray(value) && !value.length) || (typeof value === "object" && !Array.isArray(value) && !Object.keys(value).length);
       for (const imported of normalized) {
-        const existing = byIdentity.get(titleIdentity(imported));
+        const existing = (imported.metadataSource && imported.providerId ? itemByProvider(imported.metadataSource, imported.category, imported.providerId) : null) || byIdentity.get(titleIdentity(imported));
         if (!existing) { fresh.push(imported); continue; }
         const patch = {};
         for (const field of fillFields) if (empty(existing[field]) && !empty(imported[field])) patch[field] = imported[field];
@@ -3086,7 +3283,9 @@
         const store = window.Capacitor?.Plugins?.EncryptedStore;
         for (const id of encryptedImportIds) if (!retained.has(id)) await store?.deleteItem?.({ id });
       }
-      render(); toast(`Imported ${fresh.length} ${fresh.length === 1 ? "entry" : "entries"}${patches.length ? ` and restored details for ${patches.length} existing ${patches.length === 1 ? "title" : "titles"}` : ""}.`);
+      await primeThumbCache(fresh).catch(() => 0);
+      const syncing = syncImported([...fresh, ...patches.map(row => row.item)]);
+      render(); setTimeout(fillThumbCache, 800); if (syncing) setTimeout(() => toast(`Syncing ${syncing} ${syncing === 1 ? "title" : "titles"} with their sources. Progress: Metadata Sync → Refresh status.`), 1800); toast(`Imported ${fresh.length} ${fresh.length === 1 ? "entry" : "entries"}${patches.length ? ` and restored details for ${patches.length} existing ${patches.length === 1 ? "title" : "titles"}` : ""}.`);
     } catch (error) { toast(error.message || "Could not import this file."); }
   }
   function resetAnimations() {
@@ -3204,7 +3403,7 @@
         else if (!stepped.changed) { toast("No released episodes are available to mark yet."); return; }
         item.updatedAt = Date.now();
         if (item.category === "series" && amount > 0) { item.lastProgressAt = item.updatedAt; item.status = roles.active; }
-        if (item.category === "series" && seriesProgressComplete(item, window.SplitAppLibrary.episodeInfo(item), item.progress)) item.status = roles.done;
+        if (item.category === "series") finishSeriesIfComplete(item, window.SplitAppLibrary.episodeInfo(item));
         if (item.category !== "series" && item.goal && item.progress >= item.goal && prefs.automaticCompletion === "automatic" && item.status !== roles.done) { item.status = roles.done; history.unshift({ itemId: item.id, title: item.title, action: roles.done, status: roles.done, at: Date.now() }); toast(`Marked as ${roles.done}.`); }
         persist({ ids: [item.id] }); render();
         if (stepped?.skippedUpcoming) toast(`Skipped ${stepped.skippedUpcoming} upcoming ${stepped.skippedUpcoming === 1 ? "episode" : "episodes"}.`);
@@ -3339,8 +3538,20 @@
     }
     if (eventClosest(event, "[data-setup-back]")) { if (setupState.step > 0) { setupState.step--; setupState.query = ""; render(); loadSetupRows(); window.scrollTo({ top: 0 }); } return; }
     if (eventClosest(event, "[data-setup-skip]")) { finishSetup(false); return; }
-    const coverPick = eventClosest(event, "[data-cover-pick]");
-    if (coverPick) { const prefix = coverPick.dataset.coverPick === "avatar" ? "profileAvatar" : "profileCover"; prefs[prefix + "Pinned"] = coverPick.dataset.id; setPreference(prefix + "Source", "pinned"); render(); return; }
+    const coverTitle = eventClosest(event, "[data-cover-title]");
+    if (coverTitle) { window.SplitAppPages.browseCover(coverTitle.dataset.coverTitle, coverTitle.dataset.id); render(); scrollPageTop(); return; }
+    const coverBack = eventClosest(event, "[data-cover-back]");
+    if (coverBack) { window.SplitAppPages.browseCover(coverBack.dataset.coverBack, ""); render(); return; }
+    const coverImage = eventClosest(event, "[data-cover-image]");
+    if (coverImage) {
+      const pickItem = itemById(coverImage.dataset.id), kind = coverImage.dataset.coverImage, chosen = pickItem && window.SplitAppPages.coverCandidates(pickItem, kind)[Number(coverImage.dataset.index)];
+      if (chosen) {
+        const prefix = kind === "avatar" ? "profileAvatar" : "profileCover";
+        prefs[prefix + "Pinned"] = String(pickItem.id); prefs[prefix + "PinnedImage"] = chosen.value;
+        setPreference(prefix + "Source", "pinned"); window.SplitAppPages.browseCover(kind, ""); render(); toast(kind === "avatar" ? "Profile photo updated." : "Background updated.");
+      }
+      return;
+    }
     const coverMore = eventClosest(event, "[data-cover-more]");
     if (coverMore) { window.SplitAppPages.moreCovers(coverMore.dataset.coverMore); render(); return; }
     const coverTabButton = eventClosest(event, "[data-cover-tab]");
@@ -3409,8 +3620,17 @@
       root.querySelectorAll("[data-detail-tab]").forEach(button => { const on = button === tabButton; button.classList.toggle("active", on); button.setAttribute("aria-selected", String(on)); });
       root.querySelectorAll("[data-detail-panel]").forEach(panel => { panel.hidden = panel.dataset.detailPanel !== detailTab; });
       prioritizeVisibleDetailImages(root);
+      if (detailTab === "cast" && root.querySelector("[data-cast-lazy]")) loadDetailCast();
       return;
     }
+    if (eventClosest(event, "[data-setup-download-clear]")) { [...setupDownloads].forEach(([id, row]) => { if (row.status === "done") setupDownloads.delete(id); }); saveDownloads(); render(); return; }
+    const retryDownload = eventClosest(event, "[data-setup-download-retry]");
+    if (retryDownload) {
+      const ids = retryDownload.dataset.setupDownloadRetry ? [retryDownload.dataset.setupDownloadRetry] : [...setupDownloads.values()].filter(row => row.status === "failed").map(row => row.id);
+      ids.forEach(id => { const entry = itemById(id); if (entry) { delete entry.fullDetailsAt; hydrating.delete(entry.id); syncImported([entry]); } });
+      render(); return;
+    }
+    if (eventClosest(event, "[data-cast-load]")) { loadDetailCast(true); return; }
     const seasonPill = eventClosest(event, "[data-season-pill]");
     if (seasonPill) {
       const root = seasonPill.closest(".season-list"), collapsing = seasonPill.getAttribute("aria-expanded") === "true";
@@ -3509,6 +3729,11 @@
     const row = eventClosest(event, '.season-accordion-row[role="button"][data-season-pill]');
     if (!row || event.target !== row) return;
     event.preventDefault(); row.click();
+  });
+  document.addEventListener("input", event => {
+    const box = event.target?.closest?.("[data-cover-search]"); if (!box) return;
+    const needle = box.value.trim().toLocaleLowerCase();
+    box.closest(".profile-cover-library")?.querySelectorAll("[data-title]").forEach(tile => { tile.hidden = Boolean(needle) && !tile.dataset.title.includes(needle); });
   });
   document.addEventListener("change", event => {
     const input = event.target;
@@ -3836,12 +4061,10 @@
   }
   document.addEventListener("focusin", event => {
     if (event.target.id !== "discover-query") return;
-    discoverSearchFocused = true;
     syncDiscoverTypeTabs();
   });
   document.addEventListener("focusout", event => {
     if (event.target.id !== "discover-query") return;
-    discoverSearchFocused = Boolean(event.relatedTarget?.closest?.("#header-type"));
     syncDiscoverTypeTabs();
   });
   $("[data-close-setting-picker]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#setting-picker-dialog")); });
@@ -3984,6 +4207,8 @@
       normalizeNavigationPrefs();
       normalizeMotionPreferences();
       if (!restored.fast || pendingStartupMigration || nativeHasLegacyScores || nativeHasLegacyPreferences || migratedMixItems || migrateNativeAccentDefault) await window.SplitAppBackend.save({ items, history, preferences: prefs });
+      // Mutation revisions only matter while a restore is in flight; keep the map from growing for the whole session.
+      if (!fast && itemMutationRevisions.size > 2000) itemMutationRevisions.clear();
       return true;
     } catch (error) {
       recordLog("error", `App data restore failed: ${error.message || error}`);
@@ -4001,7 +4226,9 @@
       const selected = await window.SplitAppBackend.chooseFolder({ items, history, preferences: prefs });
       applySelectedFolderData(selected);
       if (storageFolderGate) storageFolderGate.hidden = true;
-      applyPreferences(); render(); syncBackupSchedule();
+      // Fresh install: once the storage folder is chosen (and holds no library), start Quick setup right away.
+      if (!items.length && !setupDone() && page !== "setup") { setupStarted = false; setupState.mode = ""; page = "setup"; historyPush(true); }
+      applyPreferences(); render(); syncPageNavigation(); syncBackupSchedule();
       // The first full save of a large library is slow; do it in the background instead of holding the gate open.
       Promise.resolve(window.SplitAppBackend.save({ items, history, preferences: prefs })).catch(error => recordLog("error", `App data save failed: ${error?.message || error}`));
       setTimeout(fillThumbCache, 3000);
@@ -4088,13 +4315,14 @@
       const full = await restoreNativeData();
       if (full === false) finishStartup(false);
       else if (full) { applySeriesInactivityTransitions(); if (libraryStamp() !== before) { applyPreferences(); render(); } } // keep scroll position when nothing changed
-      if (full) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); }
+      if (full) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); }
       setTimeout(fillThumbCache, 1500);
       return;
     }
+    // null means "nothing stored yet" (a fresh install), which is a valid empty library, not a failure.
     const full = await restoreNativeData();
-    finishStartup(full);
-    if (full) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); }
+    finishStartup(full !== false);
+    if (full !== false) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); }
     setTimeout(fillThumbCache, 3000);
   });
 })();
