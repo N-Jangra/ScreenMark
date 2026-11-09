@@ -142,7 +142,7 @@
   const legacyDashboardSettingsRoute = initialRoute[0] === "settings" && initialRoute[1] === "dashboard";
   let settingsGroup = page === "settings" ? (legacyExploreRoute ? "metadata-sources" : (legacyDashboardSettingsRoute || initialRoute[1] === "nav-layout") ? null : initialRoute[1] === "manage-backups" ? "backups" : initialRoute[1] || null) : null;
   let settingsParam = initialRoute[0] === "settings" ? new URLSearchParams(initialHashQuery).get("id") || "" : "", settingsFrom = "", renderedSettingsGroup;
-  const statsSections = ["activity"];
+  const statsSections = [];
   const normalizeStatsSection = section => section === "playtime" ? "watchtime" : section === "breakdown" ? "library" : section;
   let statsSubpage = page === "statistics" && statsSections.includes(initialRoute[1]) ? normalizeStatsSection(initialRoute[1]) : "";
   let renderedRoute = null, inAppNav = false, statsRange = "week", statsCategory = "series", statsActivityDate = "", addCategory = "", discoverCategoryChoice = "";
