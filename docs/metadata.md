@@ -59,3 +59,12 @@ Search runs enabled sources for the chosen type concurrently and displays each s
 ## Per-source options
 
 Settings → Metadata Sources → a source's ⚙ page stores `preferences.sourceOptions[key] = { domain, userAgent, cookies }`. The Android app can send source cookies and user-agent headers through its provider-session bridge; the local preview server forwards the corresponding headers. A plain browser may drop them. IMDb and Rotten Tomatoes are read from public pages and may answer with a bot check or require you to complete a prompt in the provider page before retrying.
+
+## Source behavior notes (0.1.5 review)
+
+- **IMDb** reads the public title page, then enriches it by IMDb id: TVmaze (`/lookup/shows?imdb=`, no key), TMDB (`/find`) or OMDb. If the page is blocked, the same catalogue supplies the whole title and its episode pages fall back to the saved guide / OMDb.
+- **Jikan** is queued (about 3 requests per second) and trips a 3-minute fast-fail breaker after two network-level failures, because `api.jikan.moe` is intermittently unreachable.
+- **Kitsu** pages are limited to 20 rows; characters / staff come from `mediaCharacters` / `mediaStaff` joins.
+- **TheTVDB** exposes no user rating and no episode scores, so those sections are hidden; specials (season 0) are not part of the guide.
+- **Developer probe:** `ROOT=$PWD OMDB=… TMDB=… TVDB=… PLAN='[["tmdb","series","breaking bad","Breaking Bad"]]' DEEP=1 node tests/tools/probe-sources.js` loads real data through the app's own loaders; `tests/tools/probe-discover.js` checks every Discover shelf and search.
+- **Jikan fallback:** if `api.jikan.moe` cannot be reached (it is a single host that some networks cannot connect to), Jikan search, Discover shelves and details are served from AniList by MAL id, labelled "via AniList"; person / character / episode pages from before the outage may still need Jikan.

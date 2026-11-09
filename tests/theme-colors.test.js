@@ -26,7 +26,7 @@ test("theme CSS does not override the selected light or dark accent", () => {
 });
 
 test("settings picker heading shares the options surface in every theme", () => {
-  assert.match(polishStyles, /#setting-picker-dialog\s*>\s*\.choice-dialog-header\s*\{[^}]*background:\s*var\(--surface-2\)!important/);
+  assert.match(polishStyles, /#setting-picker-dialog\s*>\s*\.choice-dialog-header\s*\{[^}]*background:\s*var\(--surface\)!important/);
   assert.match(polishStyles, /#setting-picker-dialog\s*>\s*\.choice-dialog-header\s*\{[^}]*backdrop-filter:\s*none/);
   assert.match(fs.readFileSync(path.join(root, "frontend/styles.css"), "utf8"), /\.setting-picker-option\s*\{[^}]*background:var\(--surface-2\)/);
 });

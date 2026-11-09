@@ -855,7 +855,7 @@
     const files = listing?.files || [];
     const tree = files.find(entry => entry.name === folderTreeName && entry.uri);
     const treeFiles = tree ? (await plugin.listFiles({ uri: tree.uri }))?.files || [] : [];
-    const backups = files.filter(entry => entry.uri && new RegExp(`^${app.key}(?:-backup-|_backup_)\\d{4}-\\d{2}-\\d{2}\\.json$`, "i").test(entry.name))
+    const backups = files.filter(entry => entry.uri && new RegExp(`^${app.key}(?:-backup-|_backup_)\\d{4}-\\d{2}-\\d{2}\\.json(?:\\.gz)?$`, "i").test(entry.name))
       .sort((a, b) => (Number(b.lastModified) || 0) - (Number(a.lastModified) || 0) || b.name.localeCompare(a.name));
     const candidates = [
       treeFiles.find(entry => entry.name === "database.json" && entry.uri),
@@ -864,8 +864,15 @@
     ].filter((entry, index, all) => entry && all.findIndex(other => other?.uri === entry.uri) === index);
     for (const file of candidates) {
       try {
-        const result = await plugin.readFile({ uri: file.uri });
-        const parsed = JSON.parse(result.content);
+        let content;
+        if (/\.gz$/i.test(file.name) && plugin.readBinaryFile && typeof DecompressionStream === "function") {
+          // Compressed backup copy: read the bytes and inflate them.
+          const { base64Content } = await plugin.readBinaryFile({ uri: file.uri, maxBytes: 64 * 1024 * 1024 });
+          const binary = atob(base64Content || ""), bytes = new Uint8Array(binary.length);
+          for (let at = 0; at < binary.length; at++) bytes[at] = binary.charCodeAt(at);
+          content = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+        } else content = (await plugin.readFile({ uri: file.uri })).content;
+        const parsed = JSON.parse(content);
         const items = Array.isArray(parsed) ? parsed : parsed?.items;
         if (!Array.isArray(items)) throw new Error("Database has no game list");
         return {
@@ -1128,7 +1135,8 @@
     if (!latest) return Promise.resolve();
     const payload = latest.getPayload();
     folderLastCount = payload.items.length;
-    return queueFolderDatabaseWrite(payload, activeFolderUri, latest);
+    // Tell the UI once the folder mirror is written: thumbnail paths and fingerprints exist only after this point.
+    return queueFolderDatabaseWrite(payload, activeFolderUri, latest).finally(() => { try { window.dispatchEvent(new Event("screenmark:folder-written")); } catch (_) {} });
   }
   function scheduleFolderWrite(getPayload, count, urgent, options = {}) {
     if (!activeFolderUri) return Promise.resolve();
@@ -1270,7 +1278,7 @@
     const mediaFoldersReady = treeFiles.some(file => file.name === folderLayoutMarker && file.uri);
     const rootHasDatabase = files.some(file => file.name === databaseFileName
       || new RegExp(`^${app.key}_backup_\\d{4}-\\d{2}-\\d{2}\\.tar$`, "i").test(file.name)
-      || new RegExp(`^${app.key}-backup-\\d{4}-\\d{2}-\\d{2}\\.json$`, "i").test(file.name));
+      || new RegExp(`^${app.key}-backup-\\d{4}-\\d{2}-\\d{2}\\.json(?:\\.gz)?$`, "i").test(file.name));
     let itemTreeHasData = false;
     const categoryDirs = treeFiles.filter(file => ["movies", "series", "shows", "titles"].includes(file.name) && file.uri);
     // Listing every title folder is slow; skip it when a database file already proves the folder is in use.
@@ -1285,29 +1293,46 @@
   // Streams the library to a file in small chunks, so a 1500-game export never builds one huge string
   // or sends one huge message across the Android bridge (that crashed the app).
   // mode "ask": Android's "Save as" screen. mode "folder": straight into the chosen backup folder.
+  // Backups name where each title came from (source + source id) so a restore can match it exactly instead of guessing by title.
+  const backupRefOf = item => ({ id: String(item?.id ?? ""), source: String(item?.metadataSource || item?.source || "manual"), providerId: String(item?.providerId ?? ""), category: String(item?.category || ""), title: String(item?.title || ""), year: String(item?.year || "") });
+  const backupEntry = item => ({ ...portableItem(item, { includeImageData: true }), backupRef: backupRefOf(item) });
+  const backupIndex = items => items.map(item => backupRefOf(item));
   async function exportLibrary({ items, history, preferences }, { mode = "ask", onProgress } = {}) {
     const plugin = window.Capacitor?.Plugins?.BackupFolder;
-    const fileName = `${app.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    // Backups are gzip-compressed (about 10x smaller) when the WebView can compress; the importer opens both forms.
+    const gzip = typeof CompressionStream === "function" && typeof TextEncoder === "function";
+    const fileName = `${app.key}-backup-${new Date().toISOString().slice(0, 10)}.json${gzip ? ".gz" : ""}`;
     if (!plugin?.writeDocumentChunk) throw new Error("This build cannot save files. Update the app.");
     let opened;
     if (mode === "folder") {
       const uri = await getFolderUri({ prompt: false });
       if (!uri) throw new Error("No backup folder selected. Pick one in Settings → Backups.");
       opened = await plugin.beginFolderExport({ uri, fileName });
-    } else opened = await plugin.createDocument({ fileName, mimeType: "application/json" });
+    } else opened = await plugin.createDocument({ fileName, mimeType: gzip ? "application/gzip" : "application/json" });
+    let write = text => plugin.writeDocumentChunk({ content: text }), finishStream = async () => {}, pumpError = null;
+    if (gzip) {
+      const compressor = new CompressionStream("gzip"), writer = compressor.writable.getWriter(), reader = compressor.readable.getReader(), encoder = new TextEncoder();
+      const toBase64 = bytes => { let binary = ""; for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(at, at + 0x8000)); return btoa(binary); };
+      // Compressed bytes are written as they come out, so nothing large is ever held in memory.
+      const pump = (async () => { for (;;) { const { done, value } = await reader.read(); if (done) break; await plugin.writeDocumentChunk({ content: toBase64(value), base64: true }); } })()
+        .catch(error => { pumpError = error; writer.abort(error).catch(() => {}); });
+      write = async text => { if (pumpError) throw pumpError; await writer.write(encoder.encode(text)); };
+      finishStream = async () => { if (!pumpError) await writer.close().catch(error => { pumpError = pumpError || error; }); await pump; if (pumpError) throw pumpError; };
+    }
     try {
       const CHUNK = 256 * 1024;
-      let buffer = `{"app":${JSON.stringify(app.name)},"version":1,"exportedAt":${JSON.stringify(new Date().toISOString())},"items":[`;
+      let buffer = `{"app":${JSON.stringify(app.name)},"version":2,"exportedAt":${JSON.stringify(new Date().toISOString())},"index":${JSON.stringify(backupIndex(items))},"items":[`;
       for (let index = 0; index < items.length; index++) {
-        buffer += (index ? "," : "") + JSON.stringify(portableItem(items[index], { includeImageData: true }));
+        buffer += (index ? "," : "") + JSON.stringify(backupEntry(items[index]));
         if (buffer.length >= CHUNK) {
-          await plugin.writeDocumentChunk({ content: buffer }); buffer = "";
+          await write(buffer); buffer = "";
           onProgress?.(index + 1, items.length);
           await new Promise(resolve => setTimeout(resolve, 0));
         }
       }
       buffer += `],"history":${JSON.stringify(history || [])},"preferences":${JSON.stringify(preferences || {})}}`;
-      await plugin.writeDocumentChunk({ content: buffer });
+      await write(buffer);
+      await finishStream();
       onProgress?.(items.length, items.length);
     } finally { await plugin.closeDocument().catch(() => {}); }
     return { fileName, uri: opened?.uri || "" };
@@ -1385,7 +1410,9 @@
   window.SplitAppBackend = Object.freeze({
     appendJournal, readJournal, clearJournal, flushJournals,
     exportLibrary,
-    backupItem: item => portableItem(item, { includeImageData: true }),
+    backupItem: backupEntry,
+    backupIndex,
+    backupRefOf,
     exportTextFile,
     name: app.name,
     key: app.key,

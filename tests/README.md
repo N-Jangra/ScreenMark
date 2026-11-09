@@ -26,3 +26,9 @@ The test runner uses Node's built-in `node:test`, plus `fake-indexeddb` to run t
 - `share-pdf-options.test.js`: list and title share option controls plus generated PDF page counts for list, poster-grid and optional title-page layouts.
 
 The fixture tests verify request shapes and app-side mapping. They do not establish current availability, credentials, rate limits or response compatibility of live external providers.
+- `release-0-1-5.test.js`: Quick setup downloads on the sync page, the two-step Edit profile picker, backup source/id references and restore matching, fresh-install wizard and download queue wiring, the missing-page fallback, cast persistence and Full list styles, and 0.1.5 version consistency.
+- `details-page.test.js` also covers the lazy Cast & Crew tab and the sideways-scroll CSS; `database.test.js` also covers the IndexedDB artwork catalog (`images` store, version 7).
+- `backup-compression.test.js`: native export streams valid gzip as base64 chunks and restores the same library, plain-text fallback, failed writes, import by content for plain / gzip / mislabeled files, and clear messages for empty, truncated and corrupt backups.
+- `jikan-source.test.js`: Jikan v4 search, details, person / character / episode pages from fixtures, the breaker, and the AniList mirror when the host is unreachable.
+- `imdb-source.test.js`: exact TVmaze lookup by IMDb id, full cast enrichment, the blocked-page fallback and the blocked episode fallback.
+- `sources-review.test.js`: Kitsu page limits, TheTVDB shelves / staff / specials / rating, TMDB character pages and runtime, empty rating tables, and opt-in redirects.

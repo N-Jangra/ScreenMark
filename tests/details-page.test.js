@@ -95,3 +95,37 @@ test("episode loading holds the still, synopsis, cast and saved-series guide pos
   assert.match(html, /ref-skeleton-series ref-skeleton-section/);
   assert.match(html, /role="status"[^>]*>Loading episode details from TVmaze/);
 });
+
+function renderLoadedDetails(categoryKey, { castOnline, sections = [] }) {
+  const window = { SplitAppDates: { text: value => String(value ?? "") }, SplitAppLibrary: { episodeInfo: () => null } };
+  const contextVm = vm.createContext({ window, URL, Promise, Map, Set, Object, Array, String, Number, Math, Date, RegExp, Error, JSON, encodeURIComponent });
+  vm.runInContext(metadataSource, contextVm, { filename: "metadata.js" });
+  vm.runInContext(pageSource, contextVm, { filename: "details.js" });
+  const item = { id: "i1", title: "Saved title", category: categoryKey, metadataSource: "tvmaze", providerId: "1", status: "Backlog", progress: 0, goal: 0, watchedEpisodeIds: [] };
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+  return window.SplitAppPages.details({
+    detailPreview: null, items: [item], detailItemId: item.id, detailReturnPage: "series", detailData: { title: item.title, sections, fields: [], facts: {} },
+    detailLoading: false, detailError: "", detailEditMode: false, category: () => ({ statuses: ["Backlog", "Completed"], unit: "episodes" }), labelCategory: key => key,
+    prefs: {}, roles: { queued: "Backlog", active: "Playing", hold: "On Hold", dropped: "Dropped", done: "Completed" }, esc, detailCastOnline: castOnline, detailTab: "cast", detailStackSize: 0
+  });
+}
+
+test("Cast & Crew tab is a lazy placeholder while online and hidden while offline; cast is never needed in saved data", () => {
+  const online = renderLoadedDetails("series", { castOnline: true });
+  assert.match(online, /data-detail-tab="cast"/);
+  assert.match(online, /data-cast-lazy/);
+  const offline = renderLoadedDetails("series", { castOnline: false });
+  assert.doesNotMatch(offline, /data-detail-tab="cast"/);
+  assert.doesNotMatch(offline, /data-cast-lazy/);
+  const cast = [{ kind: "people", title: "Cast", items: [{ title: "Actor", meta: "Role" }] }];
+  const loaded = renderLoadedDetails("movie", { castOnline: true, sections: cast });
+  assert.match(loaded, /data-detail-tab="cast"/);
+  assert.doesNotMatch(loaded, /data-cast-lazy/);
+  assert.match(loaded, /Actor/);
+});
+
+test("detail tab panels let horizontal rails shrink so cast & crew scrolls sideways", () => {
+  const css = fs.readFileSync(path.join(__dirname, "../frontend/styles/demo-pages.css"), "utf8");
+  assert.match(css, /\.detail-tab-panel \{[^}]*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(css, /\.detail-tab-panel > \*[^{]*\{[^}]*min-width: 0/);
+});

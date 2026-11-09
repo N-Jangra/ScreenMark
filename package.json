@@ -1,6 +1,6 @@
 {
   "name": "screenmark",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "ScreenMark media tracker",
   "main": "frontend/app.js",
   "scripts": {

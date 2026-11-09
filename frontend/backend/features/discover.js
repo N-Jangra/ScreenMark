@@ -51,13 +51,15 @@
   }
   async function fetchWithTimeout(url, options = {}, responseType = "json") {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new Error("Metadata request timed out.")), 25000);
+    const timer = setTimeout(() => controller.abort(new Error("Metadata request timed out.")), Number(options.timeoutMs) || 25000);
     const externalSignal = options.signal;
     const abort = () => controller.abort(externalSignal.reason);
     externalSignal?.addEventListener("abort", abort, { once: true });
     if (externalSignal?.aborted) abort();
     try {
-      const response = await fetch(url, { ...options, redirect: "error", referrerPolicy: "no-referrer", signal: controller.signal });
+      // Redirects are refused unless the caller opts in (TVmaze's IMDb lookup answers with a 301 to the show).
+      const { followRedirect, timeoutMs, ...fetchOptions } = options;
+      const response = await fetch(url, { ...fetchOptions, redirect: followRedirect ? "follow" : "error", referrerPolicy: "no-referrer", signal: controller.signal });
       let data = null;
       if (response.ok) {
         const body = await readBoundedText(response, "Metadata provider response");
@@ -92,7 +94,7 @@
       const response = await nativeHttp.request({
         url, method, headers, data: options.body || null,
         // Read as text so the payload can be size-checked before JSON parsing.
-        responseType: "text", connectTimeout: 15000, readTimeout: 20000, disableRedirects: true
+        responseType: "text", connectTimeout: Math.min(15000, Number(options.timeoutMs) || 15000), readTimeout: Number(options.timeoutMs) || 20000, disableRedirects: !options.followRedirect
       });
       const status = Number(response?.status || 0);
       if (status >= 400) throw Object.assign(new Error(`${status} ${response.statusText || "Metadata request failed"}`), { status });
@@ -111,18 +113,18 @@
     if (localPreview) {
       const endpoint = new URL(url);
       const localHttp = endpoint.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname);
-      response = await fetchWithTimeout(localHttp || directPreview ? endpoint.href : `/proxy?url=${encodeURIComponent(url)}`, { method, headers, body: options.body, signal: options.signal }, responseType);
+      response = await fetchWithTimeout(localHttp || directPreview ? endpoint.href : `/proxy?url=${encodeURIComponent(url)}`, { method, headers, body: options.body, signal: options.signal, followRedirect: options.followRedirect, timeoutMs: options.timeoutMs }, responseType);
     } else if (filePreview) {
       try {
-        response = await fetchWithTimeout(`${fileProxy}${encodeURIComponent(url)}`, { method, headers, body: options.body, signal: options.signal }, responseType);
+        response = await fetchWithTimeout(`${fileProxy}${encodeURIComponent(url)}`, { method, headers, body: options.body, signal: options.signal, followRedirect: options.followRedirect, timeoutMs: options.timeoutMs }, responseType);
         if (!response.response.ok) throw Object.assign(new Error(`${response.response.status} ${response.response.statusText}`), { status: response.response.status });
       } catch (proxyError) {
         if (options.signal?.aborted) throw proxyError;
-        try { response = await fetchWithTimeout(url, { method, headers, body: options.body, signal: options.signal }, responseType); }
+        try { response = await fetchWithTimeout(url, { method, headers, body: options.body, signal: options.signal, followRedirect: options.followRedirect, timeoutMs: options.timeoutMs }, responseType); }
         catch (_) { throw new Error("Firefox blocks metadata requests from file://. Start the local preview with npm run serve, then open http://127.0.0.1:3000."); }
       }
     } else {
-      response = await fetchWithTimeout(url, { method, headers, body: options.body, signal: options.signal }, responseType);
+      response = await fetchWithTimeout(url, { method, headers, body: options.body, signal: options.signal, followRedirect: options.followRedirect, timeoutMs: options.timeoutMs }, responseType);
     }
     if (!response.response.ok) throw Object.assign(new Error(`${response.response.status} ${response.response.statusText}`), { status: response.response.status });
     return response.data;
@@ -163,26 +165,54 @@
     if (provider.accept && !Object.keys(headers).some(name => name.toLowerCase() === "accept")) headers.Accept = provider.accept;
     return { url: resolved.url, options: { ...options, headers } };
   }
+  // Identical in-flight GETs share one network request (a title opened while its background download is running,
+  // Quick setup picks that resolve to the same URL, ...). Callers with their own abort signal keep their own request.
+  const inflightJson = new Map();
   async function requestJson(url, options = {}) {
     ({ url, options } = applySource(url, options));
     url = secureEndpoint(url);
     const method = String(options.method || "GET").toUpperCase();
-    const canCache = method === "GET" && !options.noCache && !options.forceRefresh && window.caches && !/[?&](?:key|apikey)=/i.test(url);
+    const shareable = method === "GET" && !options.signal && !options.forceRefresh && !options.noCache;
+    if (!shareable) return requestJsonOnce(url, options, method);
+    const key = `${url}\u0000${JSON.stringify(options.headers || {})}`;
+    let running = inflightJson.get(key);
+    if (!running) { running = requestJsonOnce(url, options, method).finally(() => inflightJson.delete(key)); inflightJson.set(key, running); }
+    return running;
+  }
+  // One quick retry for transient failures (rate limit / gateway errors) on idempotent requests.
+  const transientStatus = new Set([429, 502, 503, 504]);
+  async function wireWithRetry(url, options, method) {
+    // Idempotent GETs retry transient failures: 429 / 502 / 503 / 504 and dropped connections (TypeError: fetch failed,
+    // which some providers produce intermittently). HTTPS / validation errors and aborted requests are never retried.
+    const delays = method === "GET" ? [600, 1400] : [];
+    for (let attempt = 0; ; attempt++) {
+      try { return await wireRequest(url, options, "json"); }
+      catch (error) {
+        const dropped = !error?.status && /fetch failed|network|load failed|socket|ECONN/i.test(String(error?.message || ""));
+        const retryable = dropped || transientStatus.has(Number(error?.status));
+        if (!retryable || attempt >= delays.length || options.signal?.aborted) throw error;
+        await new Promise(resolve => setTimeout(resolve, error.status === 429 ? 1200 : delays[attempt]));
+      }
+    }
+  }
+  async function requestJsonOnce(url, options, method) {
+    // forceRefresh skips reading the cache but still refreshes it, so pull-to-refresh data is what the next open sees.
+    const canCache = method === "GET" && !options.noCache && window.caches && !/[?&](?:key|apikey)=/i.test(url);
     let cache = null, stale = null;
     if (canCache) {
       try {
         cache = await cacheStep(window.caches.open(cacheName)); stale = await cacheStep(cache.match(url));
         pruneMetadataCache(cache);
         const fetchedAt = Number(stale?.headers.get("x-splitapp-cached-at")) || 0;
-        if (stale && fetchedAt && Date.now() - fetchedAt < 6 * 60 * 60 * 1000) return cachedJson(stale);
+        if (!options.forceRefresh && stale && fetchedAt && Date.now() - fetchedAt < 6 * 60 * 60 * 1000) return cachedJson(stale);
       } catch { cache = null; stale = null; }
     }
     try {
-      const data = await wireRequest(url, options, "json");
+      const data = await wireWithRetry(url, options, method);
       if (cache) {
         try {
           const serialized = JSON.stringify(data);
-          if (new Blob([serialized]).size <= maxMetadataResponseBytes) {
+          if (serialized.length <= maxMetadataResponseBytes && new Blob([serialized]).size <= maxMetadataResponseBytes) {
             const headers = new Headers({ "Content-Type": "application/json", "x-splitapp-cached-at": String(Date.now()) });
             await cacheStep(cache.put(url, new Response(serialized, { status: 200, headers })));
           }
@@ -214,7 +244,22 @@
       return { ...(session?.cookie ? { Cookie: session.cookie } : {}), ...(session?.userAgent ? { "User-Agent": session.userAgent } : {}) };
     } catch (_) { return {}; }
   }
-  const sourceJson = async (sourceKey, url, settings = {}, extra = {}) => requestJson(url, { ...settings, ...extra, headers: { ...(await providerSessionHeaders(sourceKey)), ...(extra.headers || {}) } });
+  // Jikan allows ~3 requests/second: search and trending calls queue behind each other, and after two network-level failures
+  // in a row it fails fast for a few minutes (the host is frequently unreachable) instead of hanging every screen.
+  let jikanQueue = Promise.resolve(), jikanLastAt = 0, jikanFailures = 0, jikanDownUntil = 0;
+  const jikanSlot = task => {
+    const run = jikanQueue.then(async () => {
+      if (Date.now() < jikanDownUntil) throw new Error("MyAnimeList (Jikan) is unreachable right now. Try again in a few minutes or use another source.");
+      const wait = Math.max(0, 400 - (Date.now() - jikanLastAt)); if (wait) await new Promise(resolve => setTimeout(resolve, wait));
+      jikanLastAt = Date.now();
+      try { const value = await task(); jikanFailures = 0; return value; }
+      catch (error) { if (!error?.status) { jikanFailures += 1; if (jikanFailures >= 1) jikanDownUntil = Date.now() + 3 * 60 * 1000; } throw error; }
+    });
+    jikanQueue = run.catch(() => {});
+    return run;
+  };
+  const sourceJson = async (sourceKey, url, settings = {}, extra = {}) => sourceKey === "jikan" ? jikanSlot(() => sourceJsonNow(sourceKey, url, settings, { timeoutMs: 8000, ...extra })) : sourceJsonNow(sourceKey, url, settings, extra);
+  const sourceJsonNow = async (sourceKey, url, settings = {}, extra = {}) => requestJson(url, { ...settings, ...extra, headers: { ...(await providerSessionHeaders(sourceKey)), ...(extra.headers || {}) } });
   const sourceText = async (sourceKey, url, settings = {}, extra = {}) => requestText(url, { ...settings, ...extra, headers: { ...(await providerSessionHeaders(sourceKey)), ...(extra.headers || {}) } });
   const tmdbAuth = key => key.length > 40 ? { headers: { Authorization: `Bearer ${key}` } } : { query: `api_key=${encodeURIComponent(key)}` };
   const tmdbGet = (path, settings) => {
@@ -286,8 +331,9 @@
     if (!response?.data && response?.errors?.length) throw new Error(`AniList: ${response.errors.map(error => error.message).filter(Boolean).join("; ") || "request failed"}`);
     return response?.data || {};
   };
-  const anilistRows = (rows, category) => (rows || []).map(row => result("anilist", category, row.id, row.title?.english || row.title?.romaji, { year: row.startDate?.year, image: row.coverImage?.large || row.coverImage?.medium, backdrop: row.bannerImage || "", description: textFromHtml(row.description), rating: row.averageScore ? row.averageScore / 10 : 0, genres: row.genres || [], goal: category === "movie" ? 0 : (row.episodes || 0), url: row.siteUrl, subtitle: [row.startDate?.year, row.format, row.averageScore ? `★ ${(row.averageScore / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") }));
-  const ANILIST_FIELDS = "id title{romaji english} coverImage{large medium} bannerImage description startDate{year} averageScore episodes format genres siteUrl";
+  const anilistRows = (rows, category) => (rows || []).map(row => result("anilist", category, row.id, row.title?.english || row.title?.romaji, { idMal: row.idMal || 0, year: row.startDate?.year, image: row.coverImage?.large || row.coverImage?.medium, backdrop: row.bannerImage || "", description: textFromHtml(row.description), rating: row.averageScore ? row.averageScore / 10 : 0, genres: row.genres || [], goal: category === "movie" ? 0 : (row.episodes || 0), url: row.siteUrl, subtitle: [row.startDate?.year, row.format, row.averageScore ? `★ ${(row.averageScore / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") }));
+  const ANILIST_FIELDS = "id title{romaji english} coverImage{large medium} bannerImage description startDate{year} averageScore episodes format genres siteUrl idMal";
+  const jikanDirectSearch = (query, category, settings) => searchers.jikanDirect(query, category, settings);
   const searchers = {
     tvmaze: async (query, category, settings) => {
       const data = await requestJson(`https://api.tvmaze.com/search/shows?q=${encode(query)}`, settings);
@@ -299,9 +345,20 @@
       return anilistRows(anilistData(data).Page?.media, category);
     },
     jikan: async (query, category, settings) => {
-      const type = category === "movie" ? "movie" : "tv";
-      const data = await sourceJson("jikan", `https://api.jikan.moe/v4/anime?q=${encode(query)}&type=${type}&limit=15&sfw=true`, settings);
-      return (data.data || []).map(row => result("jikan", category, row.mal_id, row.title_english || row.title || row.title_japanese, {
+      try { return await jikanDirectSearch(query, category, settings); }
+      catch (error) {
+        if (error?.status) throw error; // an HTTP answer from Jikan is a real answer; only an unreachable host uses the mirror
+        const rows = await searchers.anilist(query, category, settings);
+        const mirrored = rows.filter(row => Number(row.idMal) > 0).map(row => ({ ...row, source: "jikan", providerId: String(row.idMal), via: "AniList", url: `https://myanimelist.net/anime/${row.idMal}` }));
+        if (!mirrored.length) throw error;
+        return mirrored;
+      }
+    },
+    jikanDirect: async (query, category, settings) => {
+      // Series search covers TV, ONA and OVA releases; the movie tab only wants movies.
+      const typeParam = category === "movie" ? "&type=movie" : "";
+      const data = await sourceJson("jikan", `https://api.jikan.moe/v4/anime?q=${encode(query)}${typeParam}&limit=20&sfw=true`, settings);
+      return (data.data || []).filter(row => category === "movie" ? true : !/^(movie|music)$/i.test(row.type || "")).map(row => result("jikan", category, row.mal_id, row.title_english || row.title || row.title_japanese, {
         year: row.year || String(row.aired?.from || row.year || "").slice(0, 4), image: row.images?.webp?.large_image_url || row.images?.jpg?.large_image_url || row.images?.webp?.image_url || "",
         description: textFromHtml(row.synopsis), rating: row.score || 0, genres: (row.genres || []).map(genre => genre.name).filter(Boolean), goal: category === "series" ? Number(row.episodes) || 0 : 0,
         url: row.url || `https://myanimelist.net/anime/${row.mal_id}`, subtitle: [row.year || String(row.aired?.from || "").slice(0, 4), row.type, row.score ? `★ ${Number(row.score).toFixed(1)}` : ""].filter(Boolean).join(" · ")
@@ -330,7 +387,7 @@
     },
     tvdb: async (query, category, settings) => {
       const data = await tvdbGet(`/search?query=${encode(query)}&type=${category === "movie" ? "movie" : "series"}`, settings);
-      return (data.data || []).map(row => result("tvdb", category, row.tvdb_id || String(row.id || "").replace(/^\D+/, ""), row.name, { year: row.year, image: row.image_url || row.thumbnail || "", description: row.overview, url: row.url || "", subtitle: row.year || "" }));
+      return (data.data || []).map(row => result("tvdb", category, row.tvdb_id || String(row.id || "").replace(/^\D+/, ""), String(row.name || "").replace(new RegExp(`\\s*\\(${row.year}\\)\\s*$`), ""), { year: row.year, image: row.image_url || row.thumbnail || "", description: row.overview, url: row.url || "", subtitle: row.year || "" }));
     },
     imdb: async (query, category, settings) => {
       const text = query.trim().toLowerCase(); if (!text) return [];
@@ -487,7 +544,28 @@
         sourceJson("jikan", `https://api.jikan.moe/v4/top/anime?type=${type}&filter=${category === "movie" ? "bypopularity" : "airing"}&limit=24&sfw=true`, settings).catch(() => ({})),
         category === "movie" ? Promise.resolve({}) : new Promise(resolve => setTimeout(resolve, 450)).then(() => sourceJson("jikan", `https://api.jikan.moe/v4/seasons/now?filter=tv&limit=24&sfw=true`, settings)).catch(() => ({}))
       ]);
+      if (!rows(top).length && !rows(popular).length) {
+        // api.jikan.moe unreachable: show the same MyAnimeList titles through AniList (it carries each title's MAL id).
+        const list = async sort => {
+          const gql = `query{Page(perPage:24){media(type:ANIME,format_in:${anilistFormats(category)},sort:${sort},isAdult:false){${ANILIST_FIELDS}}}}`;
+          const data = await requestJson("https://graphql.anilist.co", { ...settings, method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ query: gql }) });
+          return anilistRows(data?.data?.Page?.media, category).filter(row => Number(row.idMal) > 0).map(row => ({ ...row, source: "jikan", providerId: String(row.idMal), via: "AniList", url: `https://myanimelist.net/anime/${row.idMal}` }));
+        };
+        const [trendingNow, popularNow] = await Promise.all([list("TRENDING_DESC"), list("POPULARITY_DESC")]);
+        return [{ source: "jikan", title: `Trending ${noun} (via AniList)`, items: trendingNow }, { source: "jikan", title: `Popular ${noun} (via AniList)`, items: popularNow }];
+      }
       return [{ source: "jikan", title: `Trending ${noun}`, items: rows(top) }, ...(category === "movie" ? [] : [{ source: "jikan", title: "Latest anime", items: rows(popular) }])];
+    });
+    if (want("tvdb") && settings.apiKeys?.tvdb?.trim()) jobs.push(async () => {
+      const kind = category === "movie" ? "movies" : "series", year = new Date().getFullYear();
+      const art = value => !value ? "" : /^https?:/i.test(value) ? value : `https://artworks.thetvdb.com${value.startsWith("/") ? "" : "/"}${value}`;
+      const rows = response => (response.data || []).map(row => result("tvdb", category, row.id, row.name, { year: String(row.firstAired || row.year || "").slice(0, 4), image: art(row.image), description: "", url: `https://thetvdb.com/${kind === "movies" ? "movies" : "series"}/${row.slug || row.id}`, subtitle: String(row.firstAired || row.year || "").slice(0, 4) })).filter(row => row.title && row.image);
+      const [top, recent] = await Promise.all([
+        tvdbGet(`/${kind}/filter?country=usa&lang=eng&sort=score&sortType=desc`, settings).catch(() => ({})),
+        tvdbGet(`/${kind}/filter?country=usa&lang=eng&sort=${kind === "movies" ? "score" : "firstAired"}&sortType=desc&year=${kind === "movies" ? year - 1 : year}`, settings).catch(() => ({}))
+      ]);
+      const noun = category === "movie" ? "movies" : "series";
+      return [{ source: "tvdb", title: `Top ${noun} on TheTVDB`, items: rows(top).slice(0, 24) }, { source: "tvdb", title: `New ${noun}`, items: rows(recent).slice(0, 24) }];
     });
     if (want("kitsu")) jobs.push(async () => {
       const subtype = category === "movie" ? "movie" : "TV";
@@ -495,7 +573,7 @@
         const attributes = row.attributes || {}, poster = attributes.posterImage || {};
         return result("kitsu", category, row.id, attributes.titles?.en || attributes.titles?.en_jp || attributes.canonicalTitle || "Untitled", { year: String(attributes.startDate || "").slice(0, 4), image: poster.large || poster.medium || poster.small || "", backdrop: attributes.coverImage?.large || attributes.coverImage?.original || "", description: textFromHtml(attributes.synopsis || attributes.description), rating: Number(attributes.averageRating) / 10 || 0, goal: category === "series" ? Number(attributes.episodeCount) || 0 : 0, genres: [], url: `https://kitsu.io/anime/${attributes.slug || row.id}`, subtitle: [attributes.startDate?.slice(0, 4), attributes.subtype, attributes.averageRating ? `★ ${(Number(attributes.averageRating) / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") });
       }).filter(row => row.title && row.image);
-      const base = `https://kitsu.io/api/edge/anime?filter[subtype]=${encode(subtype)}&page[limit]=24`;
+      const base = `https://kitsu.io/api/edge/anime?filter[subtype]=${encode(subtype)}&page[limit]=20`;
       const [current, popular] = await Promise.all([
         sourceJson("kitsu", `${base}&filter[status]=current&sort=-userCount`, settings).catch(() => ({})),
         sourceJson("kitsu", `${base}&sort=-userCount`, settings).catch(() => ({}))

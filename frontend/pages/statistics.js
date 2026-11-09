@@ -57,7 +57,6 @@
     const mediaPlural = isShowStats ? "shows" : "movies";
     const mediaCompleted = mediaItems.filter(item => item.status === roles.done).length;
     const mediaWatching = mediaItems.filter(item => item.status === roles.active).length;
-    const mediaWatchedMinutes = mediaItems.reduce((sum, item) => sum + Math.min(watchedOf(item), totalOf(item) || Infinity), 0);
     const episodeProgress = item => {
       const totalEpisodes = episodesOf(item);
       const checkedCount = Array.isArray(item.watchedEpisodeIds) ? item.watchedEpisodeIds.length : 0;

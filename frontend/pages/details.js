@@ -110,7 +110,6 @@
       const panels = seasons.map(season => {
         const { list, done } = stats(season), info = section.seasons?.[season] || {};
         const all = list.length > 0 && done === list.length, pct = list.length ? Math.round(done / list.length * 100) : 0;
-        const seasonHasUpcoming = list.some(row => window.SplitAppLibrary.isUpcoming?.(row) && !watchedIds.has(String(row.id)));
         const ids = list.map(row => row.id).join(","), year = info.premiere ? String(info.premiere).slice(0, 4) : "";
         const rowsHtml = `<ul class="episode-list">${list.map(row => {
           const watched = watchedIds.has(String(row.id)), thumb = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${rows.indexOf(row)}.image`] || row.image) || fallbackImage;
@@ -134,7 +133,6 @@
       const epId = String(refEpisode?.id ?? context.detailRef?.id ?? ""), epIndex = refEpisode && epInfo ? epInfo.eps.indexOf(refEpisode) : -1;
       const epWatched = epIndex >= 0 && epInfo.watched.has(epId);
       const refUpcoming = epIndex >= 0 && Boolean(window.SplitAppLibrary.isUpcoming?.(refEpisode)) && !epWatched;
-      const watchedButton = epIndex >= 0 ? refUpcoming ? `<span class="ep-upcoming-countdown">${esc(episodeCountdown(refEpisode))}</span>` : `<button type="button" class="ep-watch-button${epWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(savedItem.id)}" data-episode-id="${esc(epId)}" data-episode-title="${esc(data?.title || "Episode")}" aria-pressed="${epWatched}">${epWatched ? "✓ Watched" : "Mark watched"}</button>` : "<span></span>";
       const back = `<header class="detail-page-heading demo-detail-heading"><button type="button" class="detail-back" data-detail-back><span aria-hidden="true">‹</span> Back</button></header>`;
       const refClass = `detail-page demo-cinema-page demo-ref-page demo-${esc(kind || "detail")}-page`;
       if (context.refLoading && !data) {
@@ -260,7 +258,10 @@
       const alreadyInLibrary = Boolean(savedLibraryItem);
       const fields = (loaded.fields || []).filter(row => row && row.value !== "" && row.value != null);
       const links = (loaded.links || []).map(link => ({ ...link, href: safeUrl(link.url) })).filter(link => link.href);
-      const sections = (loaded.sections || []).filter(section => section && section.items?.length);
+      const castSectionRe = /^(cast|characters|staff|crew|people|guest cast|guest crew)(?:\b|\s)/i;
+      const hasSavedCast = (loaded.sections || []).some(section => section?.items?.length && (section.kind === "people" || castSectionRe.test(section.title || "")));
+      // Cast & crew is never saved: it is fetched on demand (lazy) while online and kept only for this visit.
+      const sections = [...(loaded.sections || []), ...(hasSavedCast ? [] : context.detailCastSections || [])].filter(section => section && section.items?.length);
       const canProgress = !detailPreview;
       const popupImageButton = (src, label, content, className = "") => src
         ? `<button type="button" class="detail-image-trigger ${className}" data-detail-image-src="${esc(src)}" data-detail-image-label="${esc(label)}" aria-label="View ${esc(label)}">${content}</button>`
@@ -284,8 +285,10 @@
       const watchedSet = new Set((item.watchedEpisodeIds || []).map(String));
       const indexedSections = sections.map((section, index) => ({ section, index })).filter(({ section }) => Array.isArray(section.items) && section.items.length > 0), taken = new Set();
       const takeSlot = pattern => indexedSections.filter(({ section, index }) => !taken.has(index) && pattern.test(section.title || "") && taken.add(index));
+      const takeSlotPeek = pattern => indexedSections.some(({ section, index }) => !taken.has(index) && pattern.test(section.title || ""));
       const castSection = section => section.kind === "people" || /^(cast|characters|staff|guest cast|guest crew)(?:\b|\s)/i.test(section.title || "");
       if (context.detailCastOnline === false) indexedSections.filter(({ section }) => castSection(section)).forEach(({ index }) => taken.add(index));
+      const castLazy = context.detailCastOnline !== false && !!(item.metadataSource && item.providerId) && !takeSlotPeek(/^(cast|characters|staff)/i);
       const slots = { media: takeSlot(/^(trailers|images|screenshots|posters)/i), cast: context.detailCastOnline === false ? [] : takeSlot(/^(cast|characters|staff)/i), ratings: indexedSections.filter(({ section, index }) => !taken.has(index) && section.kind === "ratings" && taken.add(index)), episodes: indexedSections.filter(({ section, index }) => !taken.has(index) && section.kind === "episodes" && taken.add(index)), related: takeSlot(/^(related|you might also like|same series)/i) };
       slots.other = indexedSections.filter(({ index }) => !taken.has(index));
       const fallbackEpisodeImage = safeImage(item.customCover || item.localThumbnailData || item.image || item.backdrop) || safeImage(slots.media.flatMap(({ section, index }) => (section.items || []).map((entry, entryIndex) => item.localImageData?.[`cachedDetails.sections.${index}.items.${entryIndex}.image`] || entry.image)).find(Boolean));
@@ -307,7 +310,6 @@
           const runtime = Number(item.facts?.runtimeMinutes || loaded.facts?.runtimeMinutes) || 0;
           const leftUnits = goal ? Math.max(0, goal - progress) : 0;
           const leftMinutes = cat.unit === "minutes" ? leftUnits : leftUnits * runtime;
-          const leftText = !goal ? "" : !leftUnits ? "finished" : leftMinutes ? `${leftMinutes >= 60 ? `${Math.floor(leftMinutes / 60)}h ${leftMinutes % 60 ? `${leftMinutes % 60}m` : ""}`.trim() : `${leftMinutes}m`} left` : `${leftUnits} ${cat.unit} left`;
           const fmtLeft = leftMinutes ? (leftMinutes >= 60 ? `${Math.floor(leftMinutes / 60)}h${leftMinutes % 60 ? ` ${leftMinutes % 60}m` : ""}` : `${leftMinutes}m`) : "";
           return `<section class="detail-progress-card progress-console"><div class="pc-top-row"><div class="pc-big-ratio"><b>${progress}</b>${goal ? `/${goal}` : ""} <small>${esc(short === "m" ? "min" : "ep")}</small> <span>${goal ? `${percent}%` : ""}</span></div><span class="pc-remaining">${goal ? (leftUnits ? `${fmtLeft || `${leftUnits} ${esc(unit)}`} left` : "Completed") : ""}</span></div><div class="progress-line pc-bar-track"><span style="width:${percent}%"></span></div>${goal ? "" : `<small class="pc-note">Edit the entry to set a total and track completion.</small>`}<div class="detail-quick-adjust pc-steppers"><span class="pc-step-label">${cat.unit === "minutes" ? "Runtime scrub" : "Quick adjust"}</span><div class="ios-stepper pc-step-group">${quick.map((amount, index) => `<button type="button"${index === 1 ? ' class="accent"' : ""} data-adjust-progress="${amount}">${amount < 0 ? "−" : "+"}${Math.abs(amount)}${short}</button>`).join("")}</div></div></section>`;
         })() : "",
@@ -357,10 +359,13 @@
       })() : part.legacyProgress;
       const hasRatingTab = slots.ratings.length > 0 || (loaded.ratingBreakdown || []).length > 0 || (item.category === "movie" && Number(loaded.rating) > 0);
       const hasTabs = item.category === "movie" || item.category === "series" || slots.episodes.length > 0 || slots.ratings.length > 0;
+      const castPlaceholder = context.detailCastError
+        ? `<section class="detail-section demo-list-section demo-cast-section" data-cast-lazy><h3>Cast &amp; crew</h3><p class="app-info">${esc(context.detailCastError)}</p><button type="button" class="button" data-cast-load>Try again</button></section>`
+        : `<section class="detail-section demo-list-section demo-cast-section" data-cast-lazy aria-busy="${context.detailCastLoading ? "true" : "false"}"><h3>Cast &amp; crew</h3><div class="detail-carousel ref-skeleton-cast">${Array.from({ length: 4 }, () => `<div class="ref-skeleton-cast-row"><span class="ref-skeleton-avatar detail-skeleton-block"></span><span><span class="detail-skeleton-block" style="display:block;height:10px;width:70%;margin:6px 0"></span><span class="detail-skeleton-block" style="display:block;height:8px;width:45%"></span></span></div>`).join("")}</div><p class="app-info sr-only" role="status">Loading cast &amp; crew…</p></section>`;
       let detailBody;
       if (item.category === "movie") {
         const movieHasMedia = Boolean(slots.media.length || loaded.trailer?.url || detailPlaceholders.media);
-        const tabs = [["overview", "Overview"], ["details", "Details"], movieHasMedia && ["media", "Media"], hasRatingTab && ["ratings", "Ratings"], slots.cast.length && ["cast", "Cast & Crew"]].filter(Boolean);
+        const tabs = [["overview", "Overview"], ["details", "Details"], movieHasMedia && ["media", "Media"], hasRatingTab && ["ratings", "Ratings"], (slots.cast.length || castLazy) && ["cast", "Cast & Crew"]].filter(Boolean);
         const activeTab = tabs.some(([key]) => key === context.detailTab) ? context.detailTab : "overview";
         const panel = (key, html) => `<div class="detail-tab-panel" data-detail-panel="${key}"${activeTab === key ? "" : " hidden"}>${html}</div>`;
         detailBody = `<div class="detail-tabs movie-detail-tabs" role="tablist">${tabs.map(([key, label]) => `<button type="button" role="tab" class="${activeTab === key ? "active" : ""}" aria-selected="${activeTab === key}" data-detail-tab="${key}">${label}</button>`).join("")}</div>`
@@ -368,17 +373,17 @@
           + panel("details", [part.facts, part.tags, part.stores, part.requirements, part.languages, part.other, part.links].join(""))
           + (movieHasMedia ? panel("media", [part.trailer, part.media].join("")) : "")
           + (hasRatingTab ? panel("ratings", [part.ratings, part.communityRating, part.breakdown].join("")) : "")
-          + (slots.cast.length ? panel("cast", part.cast) : "");
+          + ((slots.cast.length || castLazy) ? panel("cast", slots.cast.length ? part.cast : castPlaceholder) : "");
       } else if (hasTabs) {
         const hasEpisodeGuide = slots.episodes.length > 0 || Boolean(detailPlaceholders.episodes);
-        const tabs = [["overview", "Overview"], hasEpisodeGuide && ["episodes", "Episodes"], hasRatingTab && ["ratings", "Ratings"], slots.cast.length && ["cast", "Cast & Crew"]].filter(Boolean);
+        const tabs = [["overview", "Overview"], hasEpisodeGuide && ["episodes", "Episodes"], hasRatingTab && ["ratings", "Ratings"], (slots.cast.length || castLazy) && ["cast", "Cast & Crew"]].filter(Boolean);
         const activeTab = tabs.some(([key]) => key === context.detailTab) ? context.detailTab : canProgress && hasEpisodeGuide ? "episodes" : "overview";
         const panel = (key, html) => `<div class="detail-tab-panel" data-detail-panel="${key}"${activeTab === key ? "" : " hidden"}>${html}</div>`;
         detailBody = `<div class="detail-tabs" role="tablist">${tabs.map(([key, label]) => `<button type="button" role="tab" class="${activeTab === key ? "active" : ""}" aria-selected="${activeTab === key}" data-detail-tab="${key}">${label}</button>`).join("")}</div>`
           + panel("overview", [part.overview, part.trailer, part.tracking, part.facts, item.category === "series" ? "" : part.tags, part.media, part.stores, part.requirements, part.languages, part.other, part.related, part.links].join(""))
           + (hasEpisodeGuide ? panel("episodes", part.episodes) : "")
           + (hasRatingTab ? panel("ratings", [part.ratings, part.communityRating, part.breakdown].join("")) : "")
-          + (slots.cast.length ? panel("cast", part.cast) : "");
+          + ((slots.cast.length || castLazy) ? panel("cast", slots.cast.length ? part.cast : castPlaceholder) : "");
       } else {
         detailBody = [part.overview, part.tracking, part.facts, part.media, part.trailer, part.ratings, part.episodes, part.stores, item.category === "series" ? "" : part.tags, part.breakdown, part.requirements, part.cast, part.languages, part.related, part.other, part.links].join("");
       }

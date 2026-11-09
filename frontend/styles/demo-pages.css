@@ -1643,7 +1643,7 @@ body .demo-cast-section .detail-carousel:not(.expanded) > * { flex-shrink: 0; }
 
 /* Distinct nav bar backgrounds (outranks earlier .bottom-bar rules) */
 body .bottom-bar[data-bg="solid"] { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
-body .bottom-bar[data-bg="glass"] { background: color-mix(in srgb, var(--surface) 45%, transparent); backdrop-filter: blur(22px) saturate(180%) !important; -webkit-backdrop-filter: blur(22px) saturate(180%) !important; }
+body .bottom-bar[data-bg="glass"] { background: color-mix(in srgb, var(--surface) calc(var(--bar-alpha) * 55%), transparent); backdrop-filter: blur(22px) saturate(180%) !important; -webkit-backdrop-filter: blur(22px) saturate(180%) !important; }
 body .bottom-bar[data-bg="transparent"] { background: color-mix(in srgb, var(--surface) calc(var(--bar-alpha) * 100%), transparent); backdrop-filter: none; -webkit-backdrop-filter: none; }
 
 /* Discover search: calmer, consistent with the bottom-bar surfaces */
@@ -1899,3 +1899,44 @@ html[data-lowend="true"] .profile-collection-grid .profile-poster:not(.is-loaded
 body[data-sheet-anim="slide"] .profile-options-dialog[open] { animation: sp-sheet-up calc(var(--speed, 180ms) * 1.5) var(--ease-out, ease-out) both; }
 body[data-sheet-anim="fade"] .profile-options-dialog[open] { animation: sp-fade calc(var(--speed, 180ms) * 1.2) ease both; }
 body[data-sheet-anim="scale"] .profile-options-dialog[open] { animation: sp-pop calc(var(--speed, 180ms) * 1.4) var(--ease-out, ease-out) both; }
+
+/* Edit profile: two-step library picker (title, then one of its pictures) */
+.profile-cover-hint { margin: 4px 2px 10px; color: var(--d-t2); font-size: 12px; line-height: 1.45; }
+.profile-pick-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.profile-pick-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-pick-head .profile-cover-remove { display: inline-flex; align-items: center; gap: 4px; width: auto; margin: 0; }
+.profile-cover-library h4 { margin: 14px 2px 8px; color: var(--d-t2); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.profile-cover-library h4 small { opacity: .7; }
+.profile-pick-search { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 0 12px; height: 40px; border: 1px solid var(--d-line2); border-radius: 12px; background: var(--d-surface); }
+.profile-pick-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--d-t1); font: inherit; font-size: 14px; }
+.profile-pick-search svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.profile-title-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px 8px; }
+.profile-title-tile { all: unset; box-sizing: border-box; display: grid; gap: 3px; min-width: 0; cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 190px; }
+.profile-title-tile[hidden] { display: none; }
+.profile-title-art { display: block; aspect-ratio: 2 / 3; overflow: hidden; border: 2px solid transparent; border-radius: 12px; background: var(--d-surface); }
+.profile-title-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.profile-title-tile.selected .profile-title-art { border-color: var(--d-gold); }
+.profile-title-name { overflow: hidden; color: var(--d-t1); font-size: 11.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.profile-title-tile small { color: var(--d-t2); font-size: 10px; }
+
+/* Tab panels are grids: let their children shrink so horizontal rails (cast & crew) scroll instead of stretching the page. */
+.detail-tab-panel { grid-template-columns: minmax(0, 1fr); min-width: 0; max-width: 100%; }
+.detail-tab-panel > *, .demo-detail-content > *, .detail-body-grid > * { min-width: 0; max-width: 100%; }
+
+/* Cast / characters / staff "Full list": expanded rails wrap into a grid instead of scrolling sideways. */
+body .demo-cast-section .detail-carousel.expanded { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); flex-flow: initial; overflow-x: visible !important; overflow-y: visible; scroll-snap-type: none; gap: 10px; touch-action: auto !important; }
+body .demo-cast-section .detail-carousel.expanded > * { flex: initial; width: auto; min-width: 0; max-width: none; }
+
+.setup-wait { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 4px 0 12px; color: var(--d-t2); font-size: 12.5px; }
+.setup-wait svg { width: 16px; height: 16px; animation: setup-wait-spin 1s linear infinite; }
+@keyframes setup-wait-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .setup-wait svg { animation: none; } }
+
+/* Bar style "Underline": an accent line under the active item (the style previously only removed the icon highlight). */
+body[data-bar-style="underline"] .bottom-bar .nav-button { position: relative; }
+body[data-bar-style="underline"] .bottom-bar .nav-button.active { color: var(--accent-text, var(--accent)); }
+body[data-bar-style="underline"] .bottom-bar .nav-button.active::after { content: ""; position: absolute; right: 24%; bottom: 3px; left: 24%; height: 3px; border-radius: 3px; background: var(--accent); }
+
+/* Search placeholders keep the layout of the results that replace them (three-column grid for a single source). */
+body[data-page="discover"] .discover-all-results-grid.discover-catalog-loading { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 14px 10px; padding: 0 20px; overflow: visible; }
+body[data-page="discover"] .discover-search-loading > header > span { color: var(--d-t2); font: 600 11px var(--d-font); }

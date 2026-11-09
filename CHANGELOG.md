@@ -2,6 +2,86 @@
 
 All notable changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [0.1.5] — 2026-11-09
+
+Version code 105 (117 automated tests). Highlights: Quick setup that works on a fresh install and fills in full details, a sync status page, much more reliable backups and restore, a two-step profile picture picker, a lazy online-only Cast & Crew tab, gzip-compressed backups on browser and Android, a database artwork index, a full review of every metadata source (IMDb, Jikan, Kitsu, TheTVDB, TMDB, AniList), fixes to the bottom bar / default status / automatic completion settings, and performance work.
+
+### Added
+
+- Artwork catalog in the app database (IndexedDB `images` store, schema version 7): one row per poster, background, logo, thumbnail or screenshot, indexed by title, title + kind and source, so titles with hundreds of pictures are queried without loading the whole record. It is kept in sync on every save and filled from the existing library on upgrade.
+- Backups (`version: 2`) now include a top-level `index` and a `backupRef` on every title with its source, source id, category, title and year. CSV exports gain `Source`, `SourceID` and `ID` columns.
+- Edit profile: the library picker is a two-step flow. Choose **Picked below**, pick a series or movie (with search), then pick one of its posters, thumbnails, backgrounds or screenshots. The exact picture is remembered (`profileAvatarPinnedImage` / `profileCoverPinnedImage`) and prefers the on-device copy so it shows offline.
+- Episode ratings, the rating breakdown and the rating count are saved explicitly in each title's `facts` (`episodeRatings`, `ratingBreakdown`, `ratingCount`) in IndexedDB, folder JSON and exports.
+
+- Sync status page (`#sync`) for Quick setup and backup restore: progress bar, per-title Downloading / Queued / Synced / Not synced list with errors, Retry failed and Clear finished; it survives restarts and resumes unfinished titles.
+- Restore sync: restored titles with a source and id download through the queue, and names-only titles (TXT, CSV, old backups) are matched to a source by exact title and year first.
+- Compressed backups: JSON can be saved as `.json.gz` in the browser and the importer opens `.json`, `.json.gz` and `.sqdb`. CSV exports carry year, status, progress, goal, favorite, review, source, source id, id and dates; TXT is `Title (Year)`.
+- MyAnimeList (Jikan) mirror through AniList, new sections for Jikan (staff, pictures, recommendations, episode ratings) and a developer source probe (`tests/tools/`).
+
+### Changed
+
+- Quick setup downloads show on the Refresh status page (`#sync`): a progress bar plus a per-title list (Downloading, Queued, Synced, Not synced with the error and a Retry button). Finishing Quick setup with more than 8 picks opens that page.
+- Cast & Crew is lazy: the tab appears only while online (and the source is enabled), loads from the source when you tap it with a placeholder skeleton and a Try again button, and is never written to the database or backups. It disappears when offline.
+- Titles added by Quick setup now load full details (episodes, ratings, posters, backgrounds, screenshots) two at a time in the background and save their artwork straight away; opening a title that only has lightweight details refreshes it once automatically instead of needing pull-to-refresh.
+- Restoring a backup matches titles by source + source id first (then by title) and rebuilds the metadata link from the backup, so restored titles sync with their source.
+- Restore primes the device artwork cache directly from the restored data in one batched write, and the background artwork fill uses larger batches, so posters in Watchlist, Profile, Series/Movies and Favorites appear quickly.
+
+### MyAnimeList (Jikan) unreachable
+
+- When `api.jikan.moe` cannot be reached (connect timeout on some networks, including the phone's), searches, Discover shelves and title pages now fall back to AniList, which carries every title's MyAnimeList id: titles keep their MAL id and link, details show "MyAnimeList (via AniList)", and Source → Test explains that the host is unreachable and the mirror is used. Jikan requests time out after 8 seconds, and one failure pauses direct Jikan calls for 3 minutes so screens do not keep waiting. If AniList does not know the title either, the error says so plainly.
+
+### Settings review (Appearance, Animations, Tracking)
+
+- **Bottom bar on phones:** the low-end profile (always on in the Android app) forced the bar solid, so Bar background Glass / Transparent and the transparency slider did nothing on mobile. The bar now follows your choice; Glass keeps a light blur, and the slider sets the tint (Glass) or opacity (Transparent). Measured on a phone-sized low-end profile: Solid is opaque, Glass is a blurred 55% tint, Transparent follows the slider from 0 to 100%.
+- **Bar style Underline** only removed the icon highlight; it now draws an accent line under the active item.
+- **Show sidebar** says it applies to tablets and wide windows (phones always use the bottom bar).
+- **Default Status** only offers Watchlist and Completed: a new title with no progress cannot stay In Progress, On Hold or Dropped, so the other options silently reverted. The manual Add form also ignores a saved default that does not exist for the chosen category.
+- **Automatic Completion** now governs series as well as movies: Automatic completes a fully watched series, Ask prompts, Manual leaves the status alone (series were always completed regardless).
+- Reviewed and confirmed working: text size, theme, date format, accent colour, bar labels, motion speed, reduce motion, screen / sheet transitions, tap feedback, progress animation and style, placeholder shimmer / pulse / off, preview and reset.
+
+### Metadata sources (full review of every source)
+
+- **IMDb:** the exact IMDb id now decides which TVmaze show supplies the episode guide (it used to search by title and could pick a different show), the short IMDb cast (a few names, no roles) is replaced by the full cast with roles, characters, crew and artwork from the catalogue that shares the id (TVmaze, TMDB or OMDb), and when IMDb answers with a bot check the title, episodes and cast still load from that catalogue. Blocked IMDb episode and person pages fall back to the saved guide / OMDb / TMDB.
+- **MyAnimeList (Jikan):** adds staff, pictures, recommendations and episode ratings, a runtime, a request queue that respects the 3 requests/second limit, a fast failure with a clear message while `api.jikan.moe` is unreachable (it times out from some networks), and series search that includes ONA / OVA releases.
+- **Kitsu:** characters and staff were never shown (the join records were read instead of the characters / people they point to); they now load with their roles. Trending and popular shelves were empty because Kitsu cut its page size to 20. Character and person pages list their anime credits. Runtime is read from the episode length.
+- **TheTVDB:** the popularity score was shown as a rating (184.2 for Inception); it is gone. Directors / writers / producers are in Staff instead of Cast, specials no longer inflate the episode guide (80 instead of 62), person pages list their credits, empty rating tables are hidden, and Discover gets Top and New shelves from its filter endpoint.
+- **TMDB:** series runtime falls back to the latest episode or the guide median, big films keep the 60 key crew instead of 700+, and characters get their own page (played by / appears in) instead of opening the actor.
+- **AniList:** voice actor and staff pages list their voice roles and staff credits.
+- **OMDb, Rotten Tomatoes, AniList, Kitsu:** titles with only a cover and banner get a Posters gallery; ratings tables with no ratings are hidden for every source.
+- **All sources:** a dropped connection (`fetch failed`) is retried twice and one flaky TMDB season no longer fails a whole title; a developer probe (`tests/tools/probe-sources.js`) checks search, details, cast, characters, episodes and every linked page against live APIs with keys from the environment.
+
+### Backup compression
+
+- The Android app now compresses exports too: library exports and the automatic safety backups are written as streamed gzip (`.json.gz`, about 10x smaller, never held in memory) through the native plugin, which can now write binary chunks and picks a gzip file type. WebViews without compression keep writing plain `.json`.
+- Import decides by content, not file name: a plain JSON called `.gz` or a gzip called `.json` both open, empty files and damaged / truncated compressed backups give clear messages, and the file picker lists gzip files. Folder recovery reads compressed backup copies and the backup detection recognises `.json.gz`.
+
+### Performance
+
+- Grid and list posters request smaller TMDB (`w342`) and TVmaze (`medium_portrait`) renditions instead of the full-size artwork, with a one-time fallback to the original if the host does not have it; detail pages, heroes and landscape art keep full size. Image hosts (TMDB, TVmaze, AniList) are preconnected.
+
+- Series, Movies and Favorites (and Watchlist / Profile) were rebuilt every 300 ms during a background metadata refresh and every 1.5 s while Quick setup / restore downloads ran, which restarted every poster's image loading and made even 10 titles lag. Only the Sync status and Settings pages re-render during those jobs now.
+- Poster progress bars on those pages no longer wait up to 4 seconds when a title has no picture yet or its picture is deferred: they show immediately, with a 1.5 s safety limit.
+
+- Logs and library history are cached in memory and written once per burst (adding 30 titles used to parse and rewrite up to 2000 stored rows 30 times); the settings pages read the cache and nothing parses them on ordinary renders.
+- Identical in-flight metadata requests share one network call, transient 429 / 502 / 503 / 504 responses retry once, and pull-to-refresh now refreshes the response cache (it used to skip writing it).
+- Details pages no longer rebuild the watched-episode array on every render, and unused per-render work (per-season upcoming scans, unused statistics and timeline lookups, a document-wide DOM scan) was removed.
+- The mutation-revision map no longer grows for the whole session; dead code and a duplicate settings key were removed after a static lint pass (no undefined variables remain).
+
+### Fixed
+
+- Discover search placeholders now look like the results that replace them: one shelf per source (source name header and a rail of cards) when searching all sources, and one three-column grid with the source name when a single source is selected. They used to be a generic grid unlike the page.
+- Sync status page (Quick setup and restore): it updates every moment a title changes state (not only when one finishes), keeps its list across navigation and restarts and resumes unfinished titles on launch, hides the empty "No refresh history" box while downloads exist, goes back to the library, and has Retry failed and Clear finished buttons.
+- Backup formats: **CSV** now exports year, status, progress, goal, favorite, review, source, source id, id and dates (not just names) and imports them back; **TXT** exports `Title (Year)` and reads that form; **JSON** can be saved gzip-compressed (`.json.gz`, about 10x smaller in browsers) and the importer opens `.json`, `.json.gz` and `.sqdb`.
+- Restore now syncs: every restored title with a source and id is downloaded through the queue (progress on Metadata Sync → Refresh status), and names-only titles (TXT, CSV or old backups) are first matched to a source by an exact title (+ year) search, with a clear "No exact match" status and Retry when none is found.
+- Quick setup shows "Please wait while the sources load data…" with a spinner above the loading placeholders.
+- Thumbnails after a restore: posters kept in memory were written to the cache with an empty signature (ignored, then cleaned up as stale) because the folder write assigns the real one later. They are now held (up to 300) until the folder write finishes, then stored with the correct signature; no more slow re-reads of those files.
+- The artwork catalog skips titles whose pictures did not change, so progress and status updates no longer delete and rewrite hundreds of image rows.
+- Adding a title from Discover or Quick setup matches an existing title by source and source id first, so the same title is not added twice under a different spelling or year.
+- The Quick setup wizard now opens on a fresh install, including after the first storage-folder choice, instead of only from Profile ⋮ → Quick setup.
+- Cast / Characters / Staff **Full list** and **Collapse** now work: the expanded list wraps into a grid and Collapse returns to the sideways rail.
+- A page whose script did not register no longer throws `SplitAppPages[page] is not a function`; the app logs it and falls back to Watchlist.
+- Cast & Crew rails scroll sideways again: the tab panel grid stopped its children from shrinking, so the rail stretched to its full width instead of scrolling.
+
 ## [0.1.4] — 2026-11-09
 
 ### Added

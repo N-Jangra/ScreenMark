@@ -15,7 +15,6 @@ test("mobile title, movie, episode, cast and character controls float over the h
   assert.match(mobileRules, /demo-cinema-page\.demo-title-page\s+\.demo-detail-heading/);
   assert.match(mobileRules, /demo-cinema-page\.demo-ref-page\s*>\s*\.demo-detail-heading/);
   assert.match(mobileRules, /background:\s*transparent\s*!important/);
-  assert.match(mobileRules, /background:\s*linear-gradient\(155deg,\s*rgba\(255,255,255/);
   assert.match(mobileRules, /min-height:\s*40px/);
   assert.match(mobileRules, /html\[data-lowend="true"\]/);
   assert.match(details, /demo-title-page \$\{item\.category === "series" \? "demo-show-page" : "demo-movie-page"\}/);

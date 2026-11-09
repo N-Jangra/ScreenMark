@@ -7,6 +7,12 @@
   const toList = input => Array.isArray(input) ? input.map(String).filter(Boolean) : String(input ?? "").split(/,\s*/).map(part => part.trim()).filter(Boolean);
 
   // Every loader returns this shape (schemaVersion 2). `watch` carries the numbers Statistics needs.
+  // Sources that only expose a cover and a banner (OMDb, Rotten Tomatoes, AniList, Kitsu) still get a Posters gallery.
+  const withPosterGallery = (sections, data, item) => {
+    if (sections.some(section => section.kind === "gallery")) return sections;
+    const urls = [...new Set([data.portraitImage || data.image || item.image, data.landscapeImage || data.backgroundImage].filter(url => /^https?:\/\//i.test(url || "")))];
+    return urls.length ? [...sections, { title: "Posters", kind: "gallery", items: urls.map((image, index) => ({ title: index ? "Banner" : "Poster", image })) }] : sections;
+  };
   const baseDetails = (source, item, data = {}) => ({
     source, title: data.title || item.title || "Untitled", description: clean(data.description || data.summary || item.description || ""),
     image: data.image || data.portraitImage || data.thumbnail || item.image || "",
@@ -16,7 +22,8 @@
     goal: data.goal || item.goal || 0, progress: Number(item.progress) || 0,
     url: data.url || item.url || "", fields: (data.fields || []).filter(row => row && row.value !== undefined && row.value !== null && row.value !== "" && !(Array.isArray(row.value) && !row.value.length)),
     links: (data.links || []).filter(row => row?.url),
-    sections: (data.sections || []).filter(section => section && Array.isArray(section.items) && section.items.length),
+    // A ratings table with no positive rating (a provider that exposes none) is noise: leave it out.
+    sections: withPosterGallery((data.sections || []).filter(section => section && Array.isArray(section.items) && section.items.length && !(section.kind === "ratings" && !section.items.some(row => Number(row?.rating) > 0))), data, item),
     tags: (data.tags || []).map(String).filter(Boolean),
     badge: data.badge ? String(data.badge) : "",
     trailer: data.trailer?.url ? { url: String(data.trailer.url), title: String(data.trailer.title || ""), image: String(data.trailer.image || "") } : null,
@@ -34,6 +41,9 @@
     const watch = out.watch || {};
     const runtimeMinutes = Number(watch.runtimeMinutes) || numberFrom(field(/^Runtime$/));
     const episodeCount = Number(watch.episodeCount) || 0, seasonCount = Number(watch.seasonCount) || 0;
+    // Episode ratings and the rating breakdown are saved with the title (database, JSON and folder) so the Ratings tab works offline.
+    const episodeRatings = (out.sections.find(section => section.kind === "ratings")?.items || out.sections.filter(section => section.kind === "episodes").flatMap(section => section.items || []))
+      .filter(row => Number(row?.rating) > 0).slice(0, 2000).map(row => ({ season: Number(row.season) || 1, number: Number(row.number) || 0, rating: Number(row.rating), ...(row.title ? { title: String(row.title) } : {}) }));
     const cast = (out.sections.find(section => /^(cast|characters)/i.test(section.title))?.items || []).map(row => ({ name: row.title, role: row.meta || "" }));
     return {
       source, fetchedAt: Date.now(),
@@ -41,7 +51,7 @@
       genres: toList(field(/^Genres?$/)), released: field(/^(Released|Premiered|Published|Release date)$/) || "",
       directors: toList(field(/^(Director|Directors|Created by)$/)), writers: toList(field(/^(Writer|Writers)$/)), cast,
       networks: toList(field(/^(Network|Streaming|Broadcaster)$/)), languages: toList(field(/^Languages?$/)), countries: toList(field(/^Countr(y|ies)$/)),
-      status: field(/^Status$/) || "", ageRating: out.badge || "", rating: Number(out.rating) || 0, ratingCount: out.ratingCount || 0,
+      status: field(/^Status$/) || "", ageRating: out.badge || "", rating: Number(out.rating) || 0, ratingCount: out.ratingCount || 0, ratingBreakdown: out.ratingBreakdown || [], episodeRatings,
       awards: field(/^Awards$/) || "", boxOffice: field(/^Box office$/) || "", tags: out.tags, alternativeNames: toList(field(/^Also known as$/))
     };
   };
@@ -72,13 +82,18 @@
     return request;
   };
   let jikanTail = Promise.resolve(), jikanLastRequestAt = 0;
+  let jikanDownUntil = 0, jikanNetworkFailures = 0;
   const jikanGet = (url, settings = {}) => {
     const request = jikanTail.then(async () => {
       const wait = Math.max(0, 360 - (Date.now() - jikanLastRequestAt));
       if (wait) await new Promise(resolve => setTimeout(resolve, wait));
       jikanLastRequestAt = Date.now();
-      try { return await get(url, settings); }
+      // api.jikan.moe is often unreachable (outage, IPv6-only route, blocked network). After two network-level failures in a
+      // row, fail fast for a few minutes instead of making every screen wait out a 25 s timeout.
+      if (Date.now() < jikanDownUntil) throw Object.assign(new Error("MyAnimeList (Jikan) is unreachable right now. Try again in a few minutes or use another source."), { jikanDown: true });
+      try { const data = await get(url, { timeoutMs: 8000, ...settings }); jikanNetworkFailures = 0; return data; }
       catch (error) {
+        if (!error?.status && !/HTTPS|invalid|credentials/i.test(String(error?.message))) { jikanNetworkFailures += 1; if (jikanNetworkFailures >= 1) jikanDownUntil = Date.now() + 3 * 60 * 1000; }
         if (Number(error?.status) !== 429) throw error;
         await new Promise(resolve => setTimeout(resolve, 1200));
         jikanLastRequestAt = Date.now();
@@ -219,6 +234,27 @@
       }), row => row.id);
     } catch (_) { return []; }
   };
+  // IMDb pages only list a few actors without roles and are often behind a bot check. The IMDb id is exact, so other
+  // catalogues can be asked for the same title by that id: TVmaze (series, no key), then TMDB / OMDb when a key is saved.
+  const imdbCounterpart = async (imdbId, category, s) => {
+    if (category === "series") {
+      try { const show = await get(`https://api.tvmaze.com/lookup/shows?imdb=${encode(imdbId)}`, { ...s, followRedirect: true }); if (show?.id) return { source: "tvmaze", id: String(show.id) }; } catch (_) {}
+    }
+    if (s.apiKeys?.tmdb?.trim()) {
+      try {
+        const found = await controller.tmdbGet(`/find/${encode(imdbId)}?external_source=imdb_id`, s);
+        const row = category === "movie" ? found.movie_results?.[0] : found.tv_results?.[0];
+        if (row?.id) return { source: "tmdb", id: String(row.id) };
+      } catch (_) {}
+    }
+    if (s.apiKeys?.omdb?.trim()) return { source: "omdb", id: imdbId };
+    return null;
+  };
+  // Kitsu credit rows ("media-characters", "staff") come with their anime / manga included; only anime can open in the app.
+  const kitsuCredits = (response, roleOf) => {
+    const media = new Map((response.included || []).filter(row => row.type === "anime").map(row => [row.id, row]));
+    return unique((response.data || []).map(row => { const anime = media.get(row.relationships?.media?.data?.id); if (!anime) return null; const attrs = anime.attributes || {}, title = attrs.titles?.en || attrs.titles?.en_jp || attrs.canonicalTitle || "Anime"; return { id: anime.id, title, meta: [roleOf(row), String(attrs.startDate || "").slice(0, 4)].filter(Boolean).join(" · "), image: attrs.posterImage?.small || attrs.posterImage?.medium || "", ref: { type: "show", id: anime.id, title, extra: { source: "kitsu", category: attrs.subtype === "movie" ? "movie" : "series" } } }; }).filter(Boolean), row => row.id);
+  };
   const loaders = {
     // ---- TVmaze: series ----
     tvmaze: async (item, s) => {
@@ -353,13 +389,31 @@
 
     // ---- MyAnimeList through Jikan ----
     jikan: async (item, s) => {
-      const id = encode(item.providerId), response = await jikanGet(`https://api.jikan.moe/v4/anime/${id}/full`, s), anime = response.data;
+      // api.jikan.moe is unreachable from some networks: when it cannot be reached, load the same MyAnimeList title from AniList (by MAL id).
+      let first;
+      try { first = await jikanGet(`https://api.jikan.moe/v4/anime/${encode(item.providerId)}/full`, s); }
+      catch (error) {
+        if (error?.status) throw error;
+        const lookup = await get("https://graphql.anilist.co", { ...s, method: "POST", headers: POST_JSON, body: JSON.stringify({ query: "query($m:Int){Media(idMal:$m,type:ANIME){id}}", variables: { m: Number(item.providerId) } }) }).catch(() => null);
+        const anilistId = lookup?.data?.Media?.id;
+        if (!anilistId) throw new Error(`MyAnimeList (Jikan) is unreachable from this network (${String(error?.message || error).slice(0, 120)}) and AniList has no copy of this title. Try again later or switch the title's source.`);
+        const alt = await loaders.anilist({ ...item, metadataSource: "anilist", providerId: String(anilistId) }, s);
+        const links = [{ label: "MyAnimeList", url: `https://myanimelist.net/anime/${encode(item.providerId)}` }, ...(alt.links || [])];
+        return { ...alt, links, url: `https://myanimelist.net/anime/${encode(item.providerId)}`, source: "MyAnimeList (via AniList)", facts: { ...alt.facts, source: "jikan" } };
+      }
+      const id = encode(item.providerId), response = first, anime = response.data;
       if (!anime) throw new Error("Jikan could not load this anime.");
       const title = anime.title_english || anime.title || item.title || "Anime";
-      const [characterResponse, episodeResponse] = s.background ? [{ data: [] }, { data: [] }] : await Promise.all([
+      const [characterResponse, episodeResponse, staffResponse, pictureResponse, recommendationResponse] = s.background ? [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }] : await Promise.all([
         jikanGet(`https://api.jikan.moe/v4/anime/${id}/characters`, s).catch(() => ({ data: [] })),
-        item.category === "series" ? jikanEpisodes(id, s).then(data => ({ data })) : Promise.resolve({ data: [] })
+        item.category === "series" ? jikanEpisodes(id, s).then(data => ({ data })) : Promise.resolve({ data: [] }),
+        jikanGet(`https://api.jikan.moe/v4/anime/${id}/staff`, s).catch(() => ({ data: [] })),
+        jikanGet(`https://api.jikan.moe/v4/anime/${id}/pictures`, s).catch(() => ({ data: [] })),
+        jikanGet(`https://api.jikan.moe/v4/anime/${id}/recommendations`, s).catch(() => ({ data: [] }))
       ]);
+      const staffItems = (staffResponse.data || []).slice(0, 40).map(row => ({ title: row.person?.name || "Staff", meta: (row.positions || []).join(", "), image: row.person?.images?.jpg?.image_url || "", url: row.person?.url, ref: row.person?.mal_id ? { type: "person", id: `jikan-person:${row.person.mal_id}`, title: row.person.name, extra: { source: "jikan" } } : null }));
+      const pictureItems = (pictureResponse.data || []).slice(0, 30).map((row, index) => ({ title: `Picture ${index + 1}`, image: row.webp?.large_image_url || row.jpg?.large_image_url || row.jpg?.image_url || "" })).filter(row => row.image);
+      const similarItems = (recommendationResponse.data || []).slice(0, 20).map(row => row.entry).filter(entry => entry?.mal_id).map(entry => ({ id: entry.mal_id, title: entry.title, image: entry.images?.webp?.large_image_url || entry.images?.jpg?.image_url || "", ref: { type: "show", id: entry.mal_id, title: entry.title, extra: { source: "jikan", category: item.category } } }));
       const characters = (characterResponse.data || []).slice(0, 60);
       const characterItems = characters.map(row => ({ title: row.character?.name || "Character", meta: row.role || "", image: row.character?.images?.webp?.image_url || row.character?.images?.jpg?.image_url || "", url: row.character?.url, ref: row.character?.mal_id ? { type: "character", id: `jikan-character:${row.character.mal_id}`, title: row.character.name, extra: { source: "jikan" } } : null }));
       const voiceActors = unique(characters.flatMap(row => (row.voice_actors || []).map(actor => ({ actor, character: row.character?.name }))), row => row.actor.person?.mal_id).slice(0, 60).map(({ actor, character }) => ({ title: actor.person?.name || "Voice actor", meta: [actor.language, character ? `as ${character}` : ""].filter(Boolean).join(" · "), image: actor.person?.images?.jpg?.image_url || actor.person?.images?.webp?.image_url || "", url: actor.person?.url, ref: actor.person?.mal_id ? { type: "person", id: `jikan-person:${actor.person.mal_id}`, title: actor.person.name, extra: { source: "jikan" } } : null }));
@@ -371,17 +425,20 @@
       const image = anime.images?.webp?.large_image_url || anime.images?.jpg?.large_image_url || "";
       const episodeCount = Number(anime.episodes) || episodes.length;
       const fields = [["Format", anime.type], ["Genres", (anime.genres || []).map(row => row.name)], ["Themes", (anime.themes || []).map(row => row.name)], ["Status", anime.status], ["Aired", anime.aired?.string], ["Season", anime.season], ["Year", anime.year], ["Source", anime.source], ["Studios", (anime.studios || []).map(row => row.name)], ["Producers", (anime.producers || []).map(row => row.name)], ["Episodes", anime.episodes], ["Duration", anime.duration], ["Rating", anime.rating], ["Rank", anime.rank], ["Popularity", anime.popularity], ["Members", anime.members]].map(([label, value]) => ({ label, value }));
-      return details("jikan", item, { title, description: anime.synopsis, image, year: anime.year || String(anime.aired?.from || "").slice(0, 4), rating: Number(anime.score) || 0, goal: item.category === "series" ? episodeCount : 0, url: anime.url, tags: genres, links: [{ label: "MyAnimeList", url: anime.url }], watch: { episodeCount: item.category === "series" ? episodeCount : 0, seasonCount: item.category === "series" && episodeCount ? 1 : 0 }, fields,
+      return details("jikan", item, { title, description: anime.synopsis, image, year: anime.year || String(anime.aired?.from || "").slice(0, 4), rating: Number(anime.score) || 0, goal: item.category === "series" ? episodeCount : 0, url: anime.url, tags: genres, links: [{ label: "MyAnimeList", url: anime.url }], watch: { runtimeMinutes: numberFrom(String(anime.duration || "").replace(/(\d+)\s*hr\.?\s*(\d+)?\s*min\.?/i, (_, h, m) => String(Number(h) * 60 + Number(m || 0)))), episodeCount: item.category === "series" ? episodeCount : 0, seasonCount: item.category === "series" && episodeCount ? 1 : 0 }, fields,
         sections: [
           { title: "Cast", kind: "carousel", items: voiceActors },
           { title: "Characters", kind: "carousel", items: characterItems },
-          { title: `Episode guide (${episodeCount || episodes.length})`, kind: "episodes", seasons: { 1: { name: "Episodes" } }, items: episodes }
+          { title: "Staff", kind: "carousel", items: staffItems },
+          { title: "Pictures", kind: "gallery", items: pictureItems },
+          ...(episodes.length ? [{ title: `Episode guide (${episodeCount || episodes.length})`, kind: "episodes", seasons: { 1: { name: "Episodes" } }, items: episodes }, { title: "Episode ratings", kind: "ratings", items: episodes.map(({ id, season, number, title, rating, ref }) => ({ id, season, number, title, rating, ref })) }] : []),
+          { title: "You might also like", kind: "carousel", items: similarItems }
         ] });
     },
 
     // ---- Kitsu anime catalogue ----
     kitsu: async (item, s) => {
-      const id = encode(item.providerId), include = s.background ? "" : "?include=characters,staff.person", response = await get(`https://kitsu.io/api/edge/anime/${id}${include}`, s), anime = response.data;
+      const id = encode(item.providerId), include = s.background ? "" : "?include=characters.character,staff.person", response = await get(`https://kitsu.io/api/edge/anime/${id}${include}`, s), anime = response.data;
       if (!anime) throw new Error("Kitsu could not load this anime.");
       const attributes = anime.attributes || {}, poster = attributes.posterImage || {}, title = attributes.titles?.en || attributes.titles?.en_jp || attributes.canonicalTitle || item.title || "Anime";
       let episodeRows = [];
@@ -405,14 +462,24 @@
       let genreRows = [];
       if (!s.background) try { const genres = await get(`https://kitsu.io/api/edge/anime/${id}/genres?page[limit]=20`, s); genreRows = (genres.data || []).map(row => row.attributes?.name).filter(Boolean); } catch (_) {}
       const included = response.included || [];
-      const characterItems = included.filter(row => row.type === "characters").slice(0, 60).map(row => ({ title: row.attributes?.name || "Character", image: row.attributes?.image?.original || row.attributes?.image?.large || "", ref: { type: "character", id: `kitsu-character:${row.id}`, title: row.attributes?.name || "Character", extra: { source: "kitsu" } } }));
-      const staffItems = included.filter(row => row.type === "people").slice(0, 60).map(row => ({ title: row.attributes?.name || "Staff", image: row.attributes?.image?.original || row.attributes?.image?.large || "", ref: { type: "person", id: `kitsu-person:${row.id}`, title: row.attributes?.name || "Staff", extra: { source: "kitsu" } } }));
+      // Kitsu joins media to people through "mediaCharacters" / "mediaStaff" rows; the character and person are the included
+      // records those rows point to, and the join row carries the role (main / supporting, producer / director ...).
+      const byKey = new Map(included.map(row => [`${row.type}:${row.id}`, row]));
+      const characterItems = included.filter(row => row.type === "mediaCharacters").slice(0, 60).map(row => {
+        const character = byKey.get(`characters:${row.relationships?.character?.data?.id}`); if (!character) return null;
+        const role = row.attributes?.role ? String(row.attributes.role).replace(/^./, c => c.toUpperCase()) : "";
+        return { title: character.attributes?.name || "Character", meta: role, image: character.attributes?.image?.original || character.attributes?.image?.large || "", ref: { type: "character", id: `kitsu-character:${character.id}`, title: character.attributes?.name || "Character", extra: { source: "kitsu" } } };
+      }).filter(Boolean);
+      const staffItems = included.filter(row => row.type === "mediaStaff").slice(0, 60).map(row => {
+        const person = byKey.get(`people:${row.relationships?.person?.data?.id}`); if (!person) return null;
+        return { title: person.attributes?.name || "Staff", meta: row.attributes?.role || "", image: person.attributes?.image?.original || person.attributes?.image?.large || "", ref: { type: "person", id: `kitsu-person:${person.id}`, title: person.attributes?.name || "Staff", extra: { source: "kitsu" } } };
+      }).filter(Boolean);
       const rating = Number(attributes.averageRating) / 10 || 0, image = poster.large || poster.medium || poster.small || "";
       const episodeCount = Number(attributes.episodeCount) || episodes.length;
       const fields = [["Format", attributes.subtype], ["Genres", genreRows], ["Status", attributes.status], ["Aired", [attributes.startDate, attributes.endDate].filter(Boolean).join(" – ")], ["Season", attributes.season], ["Episodes", attributes.episodeCount], ["Episode length", attributes.episodeLength ? `${attributes.episodeLength} min` : ""], ["Age rating", attributes.ageRating], ["Age guide", attributes.ageRatingGuide], ["Popularity", attributes.userCount], ["Favorites", attributes.favoritesCount]].map(([label, value]) => ({ label, value }));
-      return details("kitsu", item, { title, description: attributes.synopsis || attributes.description, image, year: String(attributes.startDate || "").slice(0, 4), rating, goal: item.category === "series" ? episodeCount : 0, url: `https://kitsu.io/anime/${attributes.slug || id}`, tags: genreRows, links: [{ label: "Kitsu", url: `https://kitsu.io/anime/${attributes.slug || id}` }], watch: { episodeCount: item.category === "series" ? episodeCount : 0, seasonCount: item.category === "series" && episodeCount ? 1 : 0 }, fields,
+      return details("kitsu", item, { title, description: attributes.synopsis || attributes.description, image, year: String(attributes.startDate || "").slice(0, 4), rating, goal: item.category === "series" ? episodeCount : 0, url: `https://kitsu.io/anime/${attributes.slug || id}`, tags: genreRows, links: [{ label: "Kitsu", url: `https://kitsu.io/anime/${attributes.slug || id}` }], watch: { runtimeMinutes: Number(attributes.episodeLength) || 0, episodeCount: item.category === "series" ? episodeCount : 0, seasonCount: item.category === "series" && episodeCount ? 1 : 0 }, fields,
         sections: [
-          { title: "Cast & crew", kind: "carousel", items: staffItems },
+          { title: "Staff", kind: "carousel", items: staffItems },
           { title: "Characters", kind: "carousel", items: characterItems },
           { title: `Episode guide (${episodeCount || episodes.length})`, kind: "episodes", seasons: { 1: { name: "Episodes" } }, items: episodes }
         ] });
@@ -426,11 +493,14 @@
         : kind === "movie" ? "credits,images,recommendations,external_ids,videos,keywords,release_dates" : "credits,images,recommendations,external_ids,videos,keywords,content_ratings";
       const d = await controller.tmdbGet(`/${kind}/${encode(item.providerId)}?append_to_response=${append}`, s);
       const img = (path, size = "w500") => path ? `https://image.tmdb.org/t/p/${size}${path}` : "";
-      const people = (d.credits?.cast || []).map(row => ({ title: row.name, meta: row.character ? `as ${row.character}` : "", image: img(row.profile_path, "w185"), url: `https://www.themoviedb.org/person/${row.id}`, ref: { type: "person", id: `tmdb:${row.id}`, title: row.name } }));
-      const crew = unique(d.credits?.crew || [], row => `${row.id}:${row.job}`).map(row => ({ title: row.name, meta: row.job, image: img(row.profile_path, "w185"), url: `https://www.themoviedb.org/person/${row.id}`, ref: { type: "person", id: `tmdb:${row.id}`, title: row.name } }));
+      const people = (d.credits?.cast || []).slice(0, 80).map(row => ({ title: row.name, meta: row.character ? `as ${row.character}` : "", image: img(row.profile_path, "w185"), url: `https://www.themoviedb.org/person/${row.id}`, ref: { type: "person", id: `tmdb:${row.id}`, title: row.name } }));
+      // Big films list hundreds of crew: keep the key roles first and cap the rest so records and the Staff rail stay small.
+      const crewRank = job => { const index = ["Director", "Creator", "Writer", "Screenplay", "Story", "Producer", "Executive Producer", "Director of Photography", "Original Music Composer", "Editor", "Production Design", "Costume Design"].indexOf(job); return index < 0 ? 99 : index; };
+      const crew = unique(d.credits?.crew || [], row => `${row.id}:${row.job}`).sort((a, b) => crewRank(a.job) - crewRank(b.job)).slice(0, 60).map(row => ({ title: row.name, meta: row.job, image: img(row.profile_path, "w185"), url: `https://www.themoviedb.org/person/${row.id}`, ref: { type: "person", id: `tmdb:${row.id}`, title: row.name } }));
       const imageRows = rows => rows.map((row, index) => ({ title: `Image ${index + 1}`, image: img(row.file_path, "w780"), imageType: row.iso_639_1 ? "localized" : "original", language: row.iso_639_1 || "" }));
       const shots = imageRows(d.images?.backdrops || []), posters = imageRows(d.images?.posters || []), logos = imageRows(d.images?.logos || []);
-      const characters = unique((d.credits?.cast || []).filter(row => row.character), row => `${row.character}:${row.id}`).map(row => ({ title: row.character, meta: row.name ? `played by ${row.name}` : "", image: img(row.profile_path, "w185"), ref: { type: "person", id: `tmdb:${row.id}`, title: row.name } }));
+      // TMDB has no character endpoint: the character page is built from the credit itself (who plays them, which title) and links to the actor.
+      const characters = unique((d.credits?.cast || []).filter(row => row.character), row => `${row.character}:${row.id}`).slice(0, 80).map(row => ({ title: row.character, meta: row.name ? `played by ${row.name}` : "", image: img(row.profile_path, "w185"), ref: { type: "character", id: `tmdb-character:${d.id}:${row.id}`, title: row.character, extra: { source: "tmdb", image: img(row.profile_path, "w342"), actor: { id: row.id, name: row.name }, show: { id: d.id, title: d.title || d.name, image: img(d.poster_path, "w342"), category: kind === "movie" ? "movie" : "series" } } } }));
       // Season 0 is TMDB's optional specials bucket. Its season endpoint commonly
       // returns 404 even while the parent series is valid, so leave it out here.
       const seasonRows = (d.seasons || []).filter(row => Number(row.season_number) > 0);
@@ -468,7 +538,9 @@
       if (d.external_ids?.imdb_id) links.push({ label: "IMDb", url: `https://www.imdb.com/title/${d.external_ids.imdb_id}/` });
       if (d.homepage) links.push({ label: "Official site", url: d.homepage });
       if (trailer) links.push({ label: "Trailer", url: `https://www.youtube.com/watch?v=${trailer.key}` });
-      const runtime = d.runtime || d.episode_run_time?.[0] || 0;
+      // Newer TMDB series often leave episode_run_time empty: fall back to the latest episode, then the median of the guide.
+      const episodeRuntimes = episodeRows.map(row => row.runtime).filter(value => value > 0).sort((a, b) => a - b);
+      const runtime = d.runtime || d.episode_run_time?.[0] || d.last_episode_to_air?.runtime || d.next_episode_to_air?.runtime || episodeRuntimes[Math.floor(episodeRuntimes.length / 2)] || 0;
       const tmdbKeywords = (d.keywords?.keywords || d.keywords?.results || []).map(row => row.name).filter(Boolean);
       const releaseCertifications = (d.release_dates?.results || []).flatMap(country => (country.release_dates || []).map(entry => entry.certification).filter(Boolean));
       const contentCertifications = (d.content_ratings?.results || []).map(row => row.rating).filter(Boolean);
@@ -503,7 +575,10 @@
         rawEpisodes = pages;
       }
       const remote = Object.fromEntries((d.remoteIds || []).map(row => [row.sourceName, row.id]));
-      const people = unique(d.characters || [], row => `${row.peopleId}:${row.name}`).filter(row => row.personName).slice(0, 60).map(row => ({ title: row.personName, meta: row.name ? `as ${row.name}` : row.peopleType, image: row.personImgURL || row.image || "", url: row.peopleId ? `https://thetvdb.com/people/${row.peopleId}` : "", ref: row.peopleId ? { type: "person", id: `tvdb:${row.peopleId}`, title: row.personName } : null }));
+      const isActing = row => !row.peopleType || /^(actor|actress|guest star|voice|self)/i.test(String(row.peopleType));
+      const tvdbPerson = row => ({ title: row.personName, meta: row.name ? `as ${row.name}` : row.peopleType, image: row.personImgURL || row.image || "", url: row.peopleId ? `https://thetvdb.com/people/${row.peopleId}` : "", ref: row.peopleId ? { type: "person", id: `tvdb:${row.peopleId}`, title: row.personName } : null });
+      const tvdbStaff = unique((d.characters || []).filter(row => row.personName && !isActing(row)), row => `${row.peopleId}:${row.peopleType}`).slice(0, 40).map(tvdbPerson);
+      const people = unique((d.characters || []).filter(isActing), row => `${row.peopleId}:${row.name}`).filter(row => row.personName).slice(0, 80).map(row => ({ title: row.personName, meta: row.name ? `as ${row.name}` : row.peopleType, image: row.personImgURL || row.image || "", url: row.peopleId ? `https://thetvdb.com/people/${row.peopleId}` : "", ref: row.peopleId ? { type: "person", id: `tvdb:${row.peopleId}`, title: row.personName } : null }));
       const shots = (d.artworks || []).filter(row => [3, 15, 16, 7, 8].includes(row.type) || /background|fanart/i.test(String(row.type))).slice(0, 20).map((row, index) => ({ title: `Image ${index + 1}`, image: row.image }));
       const officialSeasons = (d.seasons || []).filter(row => String(row.type?.type || row.type || "").toLowerCase() === "official");
       const seasonRows = officialSeasons.length ? officialSeasons : (d.seasons || []);
@@ -511,20 +586,20 @@
       const seasons = seasonRows.map(row => ({ title: row.name || `Season ${row.number}`, meta: row.year || "", image: row.image || "", ref: { type: "season", id: `tvdb-season:${seriesId}:${row.number}`, title: row.name || `Season ${row.number}`, extra: { previewOnly: true, source: "TheTVDB", image: row.image || "", role: row.year || `Season ${row.number}` } } }));
       const episodeItems = unique(rawEpisodes.map(ep => {
         const season = Number(ep.seasonNumber ?? ep.seasons?.[0]?.number) || 0, number = Number(ep.number) || 0;
-        if (!ep.id || !number) return null;
+        if (!ep.id || !number || !season) return null; // season 0 (specials) would inflate the checklist: 80 instead of 62 for Breaking Bad
         const id = String(ep.id), title = ep.name || `Episode ${number}`;
         return { id: `tvdb-episode:${id}`, season, number, title, airdate: ep.aired || "", runtime: Number(ep.runtime) || 0, rating: Number(ep.score) || 0, image: ep.image || "", description: clean(ep.overview || ""), ref: { type: "episode", id, title, extra: { source: "tvdb", series: d.name || item.title, season, number } } };
-      }).filter(Boolean), row => row.id).sort((a, b) => a.season - b.season || a.number - b.number);
+      }).filter(Boolean), row => row.id).sort((a, b) => (a.season === 0) - (b.season === 0) || a.season - b.season || a.number - b.number); // specials (season 0) go last
       const links = [{ label: "TheTVDB", url: `https://thetvdb.com/${kind === "movies" ? "movies" : "series"}/${d.slug || d.id}` }];
       if (remote.IMDB) links.push({ label: "IMDb", url: `https://www.imdb.com/title/${remote.IMDB}/` });
       const runtime = d.averageRuntime || d.runtime || 0;
       if (!Object.keys(seasonInfo).length && episodeItems.length) episodeItems.forEach(ep => { seasonInfo[ep.season] ||= { name: `Season ${ep.season}` }; });
       return details("tvdb", item, {
         trailer: (() => { const list = d.trailers || [], pick = list.find(row => /^eng/i.test(row.language || "")) || list[0]; if (!pick?.url) return null; const yt = String(pick.url).match(/(?:v=|youtu\.be\/|embed\/)([\w-]{11})/); return { url: pick.url, title: pick.name || "Official trailer", image: yt ? `https://img.youtube.com/vi/${yt[1]}/hqdefault.jpg` : "" }; })(),
-        title: d.name, description: (d.translations?.overviewTranslations || []).find(row => row.language === "eng")?.overview || d.overview, image: d.image, year: String(d.year || d.first_release?.date || d.firstAired || "").slice(0, 4), rating: d.score ? Math.round(Number(d.score) / 1000) / 10 : 0, url: links[0].url, links, tags: (d.genres || []).map(row => row.name),
+        title: d.name, description: (d.translations?.overviewTranslations || []).find(row => row.language === "eng")?.overview || d.overview, image: d.image, year: String(d.year || d.first_release?.date || d.firstAired || "").slice(0, 4), rating: 0, url: links[0].url, links, tags: (d.genres || []).map(row => row.name),
         goal: kind === "series" ? episodeItems.length : 0,
         watch: { runtimeMinutes: runtime, episodeCount: episodeItems.length, seasonCount: Object.keys(seasonInfo).length || seasons.length },
-        sections: [{ title: "Images", kind: "gallery", items: shots }, { title: "Cast", kind: "carousel", items: people }, ...(seasons.length ? [{ title: "Seasons", kind: "carousel", items: seasons }] : []), ...(episodeItems.length ? [{ title: `Episode guide (${episodeItems.length})`, kind: "episodes", seasons: seasonInfo, items: episodeItems }, { title: "Episode ratings", kind: "ratings", items: episodeItems.map(({ id, season, number, title, rating, ref }) => ({ id, season, number, title, rating, ref })) }] : [])],
+        sections: [{ title: "Images", kind: "gallery", items: shots }, { title: "Cast", kind: "carousel", items: people }, { title: "Staff", kind: "carousel", items: tvdbStaff }, ...(seasons.length ? [{ title: "Seasons", kind: "carousel", items: seasons }] : []), ...(episodeItems.length ? [{ title: `Episode guide (${episodeItems.length})`, kind: "episodes", seasons: seasonInfo, items: episodeItems }, { title: "Episode ratings", kind: "ratings", items: episodeItems.map(({ id, season, number, title, rating, ref }) => ({ id, season, number, title, rating, ref })) }] : [])],
         raw: { title: d, episodes: rawEpisodes },
         fields: [["Status", d.status?.name], ["First aired", d.firstAired], ["Last aired", d.lastAired], ["Runtime", runtime ? `${runtime} min` : ""], ["Genres", (d.genres || []).map(row => row.name)], ["Network", d.originalNetwork?.name], ["Country", d.originalCountry], ["Language", d.originalLanguage], ["Seasons", Object.keys(seasonInfo).length || seasons.length], ["Episodes", episodeItems.length], ["Also known as", (d.aliases || []).map(row => row.name).slice(0, 8)]].map(([label, value]) => ({ label, value }))
       });
@@ -532,9 +607,23 @@
 
     // ---- IMDb and Rotten Tomatoes: unofficial, read from the public page's structured data ----
     imdb: async (item, s) => {
-      const id = String(item.providerId), page = await controller.sourceText("imdb", `https://www.imdb.com/title/${encode(id)}/`, s, { noCache: true }).catch(error => { throw new Error(error?.status === 403 || error?.status === 202 ? "IMDb blocked this request. Open IMDb below, complete any prompt, then ScreenMark will retry." : error?.message || "IMDb could not be reached."); });
+      const id = String(item.providerId);
+      // When IMDb blocks the request (403 / 202 / bot check) the same title is loaded from a catalogue that knows its IMDb id.
+      const viaCounterpart = async reason => {
+        const match = await imdbCounterpart(id, item.category, s);
+        if (!match) throw new Error(reason);
+        const base = await loaders[match.source]({ ...item, metadataSource: match.source, providerId: match.id }, s);
+        const links = [{ label: "IMDb", url: `https://www.imdb.com/title/${id}/` }, ...(base.links || []).filter(link => link.label !== "IMDb")];
+        return { ...base, links, url: `https://www.imdb.com/title/${id}/`, facts: { ...base.facts, source: "imdb" }, source: `IMDb (via ${base.source || match.source})` };
+      };
+      let page;
+      try { page = await controller.sourceText("imdb", `https://www.imdb.com/title/${encode(id)}/`, s, { noCache: true }); }
+      catch (error) { return viaCounterpart(error?.status === 403 || error?.status === 202 ? "IMDb blocked this request. Open IMDb below, complete any prompt, then ScreenMark will retry." : error?.message || "IMDb could not be reached."); }
       const ld = ldJsonType(page, item.category === "series" ? "TVSeries" : "Movie") || ldJson(page), person = (row, role = "Actor") => (Array.isArray(row) ? row : row ? [row] : []).map(entry => { const url = imdbNameUrl(entry), personId = url.match(/\/name\/(nm\d+)/i)?.[1]; return { title: entry.name, meta: entry.characterName || entry.character ? `as ${entry.characterName || entry.character}` : entry.job || role, url, ref: personId ? { type: "person", id: `imdb:${personId}`, title: entry.name } : null }; }).filter(entry => entry.title);
-      if (!ld) throw new Error("IMDb returned a bot check instead of title details. Open IMDb below, complete any prompt, then ScreenMark will retry.");
+      if (!ld) return viaCounterpart("IMDb returned a bot check instead of title details. Open IMDb below, complete any prompt, then ScreenMark will retry.");
+      // The exact IMDb id decides which TVmaze show this is; a title-name search can pick a different show with the same name.
+      let exactTvmaze = null;
+      if (item.category === "series") { try { exactTvmaze = await get(`https://api.tvmaze.com/lookup/shows?imdb=${encode(id)}`, { ...s, followRedirect: true }); } catch (_) {} }
       const isSeries = item.category === "series" || [].concat(ld["@type"] || []).some(type => /TVSeries|TVMiniSeries/i.test(String(type)));
       let guideEpisodes = structuredEpisodes(ld).map(ep => {
         const episodeId = String(ep.url || ep.sameAs || ep.identifier || "").match(/tt\d+/i)?.[0] || "";
@@ -551,10 +640,10 @@
       if (isSeries) {
         try {
           const normalizeTitle = value => String(value || "").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "");
-          const search = await get(`https://api.tvmaze.com/search/shows?q=${encode(ld.name || item.title)}`, s);
+          const search = exactTvmaze?.id ? [] : await get(`https://api.tvmaze.com/search/shows?q=${encode(ld.name || item.title)}`, s);
           const matches = (search || []).map(row => row.show).filter(show => normalizeTitle(show?.name) === normalizeTitle(ld.name || item.title));
           const year = String(ld.datePublished || ld.startDate || item.year || "").slice(0, 4);
-          const match = matches.find(show => String(show.premiered || "").slice(0, 4) === year) || (matches.length === 1 ? matches[0] : null);
+          const match = exactTvmaze?.id ? exactTvmaze : matches.find(show => String(show.premiered || "").slice(0, 4) === year) || (matches.length === 1 ? matches[0] : null);
           if (match?.id) {
             const show = await get(`https://api.tvmaze.com/shows/${encode(match.id)}?embed[]=episodes&embed[]=seasons`, s);
             const episodes = show._embedded?.episodes || [], seasons = show._embedded?.seasons || [];
@@ -571,13 +660,34 @@
         } catch (_) {}
         if (!Object.keys(seasonInfo).length) seasonInfo = Object.fromEntries([...new Set(guideEpisodes.map(ep => ep.season))].map(season => [season, { name: `Season ${season}` }]));
       }
-      return details("imdb", item, {
+      const imdbOut = details("imdb", item, {
         trailer: ld.trailer?.url ? { url: String(ld.trailer.url).startsWith("/") ? `https://www.imdb.com${ld.trailer.url}` : ld.trailer.url, title: ld.trailer.name || "Official trailer", image: ld.trailer.thumbnailUrl || "" } : null,
         title: ld.name, description: ld.description, image: rtImage(ld.image), year: String(ld.datePublished || ld.startDate || "").slice(0, 4), rating: ld.aggregateRating?.ratingValue, ratingCount: ld.aggregateRating?.ratingCount, url: `https://www.imdb.com/title/${id}/`, links: [{ label: "IMDb", url: `https://www.imdb.com/title/${id}/` }], tags: toList(ld.genre), badge: ld.contentRating,
         goal: isSeries ? guideEpisodes.length : 0, watch: { runtimeMinutes: isoMinutes(ld.duration), episodeCount: guideEpisodes.length, seasonCount: Object.keys(seasonInfo).length },
         sections: [{ title: "Cast", kind: "carousel", items: person(ld.actor, "Actor") }, { title: "Staff", kind: "carousel", items: unique([...person(ld.director, "Director"), ...person(ld.creator, "Creator"), ...person(ld.writer, "Writer"), ...person(ld.producer, "Producer")], row => row.title.toLowerCase()) }, ...(isSeries && guideEpisodes.length ? [{ title: `Episode guide (${guideEpisodes.length})`, kind: "episodes", seasons: seasonInfo, items: guideEpisodes }, { title: "Episode ratings", kind: "ratings", items: guideEpisodes.map(row => ({ id: row.ref.id, season: row.season, number: row.number, title: row.title, rating: row.rating, ref: row.ref })) }] : [])],
         fields: [["Released", ld.datePublished || ld.startDate], ["Runtime", isoMinutes(ld.duration) ? `${isoMinutes(ld.duration)} min` : ""], ["Genres", toList(ld.genre)], ["Keywords", toList(ld.keywords).slice(0, 10)], ["Seasons", isSeries ? Object.keys(seasonInfo).length : ""], ["Episodes", isSeries ? guideEpisodes.length : ""]].map(([label, value]) => ({ label, value }))
       });
+      // The page's structured data lists only a handful of actors (no roles) and no artwork: add the full cast, characters,
+      // crew and images from the catalogue that shares this IMDb id. The IMDb overview, rating and guide stay as they are.
+      try {
+        const match = await imdbCounterpart(id, item.category, s);
+        if (match) {
+          const alt = await loaders[match.source]({ ...item, metadataSource: match.source, providerId: match.id }, { ...s, background: false });
+          const castLike = /^(cast|characters|staff)/i, count = title => (imdbOut.sections.find(section => section.title === title)?.items || []).length;
+          for (const section of alt.sections || []) {
+            if (!section.items?.length) continue;
+            if (castLike.test(section.title)) {
+              const own = imdbOut.sections.findIndex(row => row.title === section.title);
+              if (own < 0) imdbOut.sections.push(section);
+              else if (section.items.length > count(section.title)) imdbOut.sections[own] = section;
+            } else if (section.kind === "gallery" && !imdbOut.sections.some(row => row.title === section.title)) imdbOut.sections.push(section);
+          }
+          if (!imdbOut.landscapeImage && alt.landscapeImage) imdbOut.landscapeImage = alt.landscapeImage;
+          if (!imdbOut.image && alt.image) { imdbOut.image = alt.image; imdbOut.portraitImage = alt.portraitImage || alt.image; }
+          imdbOut.facts = deriveFacts(imdbOut, "imdb");
+        }
+      } catch (_) { /* the IMDb-only details are still complete enough to show */ }
+      return imdbOut;
     },
     rottentomatoes: async (item, s) => {
       const path = String(item.providerId).startsWith("/") ? String(item.providerId) : `/${item.providerId}`;
@@ -734,6 +844,11 @@
       const preview = ref.extra;
       return { type: ref.type || "person", source: preview.source || "ScreenMark", title: ref.title || preview.name || "Details", image: preview.image || "", subtitle: preview.role || "", url: preview.url || "", facts: preview.role ? [[ref.type === "season" ? "Season details" : "Role", preview.role]] : [], sections: [] };
     }
+    if (ref.type === "character" && /^tmdb-character:/.test(String(ref.id)) && ref.extra?.actor) {
+      const { actor, show, image } = ref.extra;
+      return { type: "character", source: "TMDB", title: ref.title || "Character", image: image || "", subtitle: show?.title || "", url: `https://www.themoviedb.org/person/${actor.id}`, facts: [["Played by", actor.name], ["Appears in", show?.title]].filter(([, value]) => value),
+        sections: [{ title: "Played by", kind: "people", items: [{ title: actor.name, meta: "Actor", image: image || "", ref: { type: "person", id: `tmdb:${actor.id}`, title: actor.name } }] }, ...(show?.id ? [{ title: "Appears in", kind: "shows", items: [{ id: show.id, title: show.title, image: show.image || "", ref: { type: "show", id: show.id, title: show.title, extra: { source: "tmdb", category: show.category } } }] }] : [])] };
+    }
     if (ref.type === "person") {
       const jikanPerson = String(ref.id).match(/^jikan-person:(\d+)$/), kitsuPerson = String(ref.id).match(/^kitsu-person:([^:]+)$/);
       if (jikanPerson) {
@@ -746,26 +861,32 @@
       if (kitsuPerson) {
         const personId = kitsuPerson[1], person = (await get(`https://kitsu.io/api/edge/people/${encode(personId)}`, settings)).data, attrs = person?.attributes || {};
         if (!person) throw new Error("Kitsu could not load this profile.");
-        return { type: "person", source: "Kitsu", title: attrs.name || ref.title, image: attrs.image?.original || attrs.image?.large || "", url: `https://kitsu.io/people/${personId}`, description: clean(attrs.description || ""), facts: [], sections: [] };
+        let credits = [];
+        try { credits = kitsuCredits(await get(`https://kitsu.io/api/edge/people/${encode(personId)}/staff?include=media&page[limit]=20`, settings), row => row.attributes?.role || ""); } catch (_) {}
+        return { type: "person", source: "Kitsu", title: attrs.name || ref.title, image: attrs.image?.original || attrs.image?.large || "", url: `https://kitsu.io/people/${personId}`, description: clean(attrs.description || ""), facts: [["Born", attrs.birthday]].filter(([, value]) => value), sections: [{ title: "Staff credits", kind: "shows", items: credits }].filter(section => section.items.length) };
       }
       const anilistPerson = String(ref.id).match(/^anilist-(staff|character):(\d+)$/);
       if (anilistPerson) {
         const [, entity, personId] = anilistPerson;
         const query = entity === "staff"
-          ? `query($id:Int){Staff(id:$id){id name{full native} language image{large medium} description yearsActive homeTown primaryOccupations siteUrl}}`
+          ? `query($id:Int){Staff(id:$id){id name{full native} language image{large medium} description yearsActive homeTown primaryOccupations siteUrl characterMedia(perPage:25,sort:POPULARITY_DESC){edges{characterRole characters{name{full}} node{id title{english romaji} format startDate{year} coverImage{medium}}}} staffMedia(perPage:20,sort:POPULARITY_DESC){edges{staffRole node{id title{english romaji} format startDate{year} coverImage{medium}}}}}}`
           : `query($id:Int){Character(id:$id){id name{full native} image{large medium} description siteUrl media(sort:POPULARITY_DESC,perPage:15){nodes{id title{english romaji}format startDate{year}coverImage{medium}}}}}`;
         const result = anilistResponse(await get("https://graphql.anilist.co", { ...settings, method: "POST", headers: POST_JSON, body: JSON.stringify({ query, variables: { id: Number(personId) } }) }));
         const person = result[entity === "staff" ? "Staff" : "Character"];
         if (!person) throw new Error("AniList could not load this profile.");
         const name = person.name?.full || ref.title || "Unknown";
-        const media = (person.media?.nodes || []).map(row => {
+        const mediaCard = (row, role = "") => {
           const category = row.format === "MOVIE" ? "movie" : "series", title = row.title?.english || row.title?.romaji || "Untitled";
-          return { id: row.id, title, image: row.coverImage?.medium || "", meta: [row.format, row.startDate?.year].filter(Boolean).join(" · "), ref: { type: "show", id: row.id, title, extra: { source: "anilist", category } } };
-        });
+          return { id: row.id, title, image: row.coverImage?.medium || "", meta: [role, row.format, row.startDate?.year].filter(Boolean).join(" · "), ref: { type: "show", id: row.id, title, extra: { source: "anilist", category } } };
+        };
+        const media = (person.media?.nodes || []).map(row => mediaCard(row));
+        // Voice actors and staff list their credits as edges (role + the title), not as a plain media list.
+        const voiceCredits = unique((person.characterMedia?.edges || []).filter(edge => edge.node), edge => edge.node.id).map(edge => mediaCard(edge.node, edge.characters?.[0]?.name?.full ? `as ${edge.characters[0].name.full}` : ""));
+        const staffCredits = unique((person.staffMedia?.edges || []).filter(edge => edge.node), edge => edge.node.id).map(edge => mediaCard(edge.node, edge.staffRole || ""));
         const facts = entity === "staff"
           ? [["Occupations", person.primaryOccupations], ["Language", person.language], ["Years active", (person.yearsActive || []).join("–")], ["Hometown", person.homeTown]]
           : [["Also known as", person.name?.native]];
-        return { type: entity === "character" ? "character" : "person", source: "AniList", title: name, image: person.image?.large || person.image?.medium || "", url: person.siteUrl || `https://anilist.co/${entity}/${personId}`, description: clean(person.description || ""), facts: facts.filter(([, value]) => value), sections: media.length ? [{ title: "Appears in", kind: "shows", items: media }] : [] };
+        return { type: entity === "character" ? "character" : "person", source: "AniList", title: name, image: person.image?.large || person.image?.medium || "", url: person.siteUrl || `https://anilist.co/${entity}/${personId}`, description: clean(person.description || ""), facts: facts.filter(([, value]) => value), sections: [{ title: "Appears in", kind: "shows", items: media }, { title: "Voice roles", kind: "shows", items: voiceCredits }, { title: "Staff credits", kind: "shows", items: staffCredits }].filter(section => section.items.length) };
       }
       if (/^tvdb:\d+$/i.test(String(ref.id))) {
         const personId = String(ref.id).split(":")[1];
@@ -776,13 +897,26 @@
         const links = remote.imdb ? [{ label: "IMDb", url: `https://www.imdb.com/name/${remote.imdb}/` }] : [];
         const facts = [["Born", person.birth], ["Died", person.death], ["Birthplace", person.birthPlace], ["Also known as", (person.aliases || []).map(row => row.name).filter(Boolean)]]
           .filter(([, value]) => Array.isArray(value) ? value.length : value);
-        return { type: "person", source: "TheTVDB", title: person.name || ref.title, image: person.image || "", url: `https://thetvdb.com/people/${personId}`, description: clean(bio || person.overview || ""), facts, links, sections: [], raw: person };
+        return { type: "person", source: "TheTVDB", title: person.name || ref.title, image: person.image || "", url: `https://thetvdb.com/people/${personId}`, description: clean(bio || person.overview || ""), facts, links, sections: [{ title: "Appears in", kind: "shows", items: unique((person.characters || []).filter(row => row.seriesId || row.movieId), row => `${row.seriesId || row.movieId}`).slice(0, 40).map(row => { const isMovie = Boolean(row.movieId), id = row.seriesId || row.movieId, title = row.series?.name || row.movie?.name || row.name || "Title"; return { id, title, meta: row.name ? `as ${row.name}` : "", image: row.series?.image || row.movie?.image || row.image || "", ref: { type: "show", id, title, extra: { source: "tvdb", category: isMovie ? "movie" : "series" } } }; }) }].filter(section => section.items.length), raw: person };
       }
       if (/^imdb:nm\d+$/i.test(String(ref.id))) {
         const personId = String(ref.id).split(":")[1];
-        const html = await controller.sourceText("imdb", `https://www.imdb.com/name/${encode(personId)}/`, settings, { noCache: true });
+        // A blocked IMDb profile page falls back to TMDB's profile for the same IMDb name id (credits included) when a key is saved.
+        const viaTmdb = async reason => {
+          if (settings.apiKeys?.tmdb?.trim()) {
+            try {
+              const found = await controller.tmdbGet(`/find/${encode(personId)}?external_source=imdb_id`, settings);
+              const match = found.person_results?.[0];
+              if (match?.id) return { ...(await loadRef({ ...ref, id: `tmdb:${match.id}` }, settings)), source: "IMDb (via TMDB)", url: `https://www.imdb.com/name/${personId}/` };
+            } catch (_) {}
+          }
+          throw new Error(reason);
+        };
+        let html;
+        try { html = await controller.sourceText("imdb", `https://www.imdb.com/name/${encode(personId)}/`, settings, { noCache: true }); }
+        catch (error) { return viaTmdb(error?.status === 403 || error?.status === 202 ? "IMDb blocked this profile request. Open IMDb below, complete any prompt, then ScreenMark will retry." : error?.message || "IMDb profile could not be loaded."); }
         const person = ldJsonType(html, "Person") || ldJson(html);
-        if (!person) throw new Error("IMDb did not return readable profile details.");
+        if (!person) return viaTmdb("IMDb did not return readable profile details.");
         const facts = [["Job", person.jobTitle], ["Known for", person.knowsAbout], ["Born", person.birthDate], ["Birthplace", person.birthPlace?.name || person.birthPlace], ["Also known as", person.alternateName]].filter(([, value]) => value);
         return { type: "person", source: "IMDb", title: person.name || ref.title, image: rtImage(person.image), url: `https://www.imdb.com/name/${personId}/`, description: clean(person.description || ""), facts, sections: [] };
       }
@@ -837,7 +971,9 @@
       if (kitsuCharacter) {
         const characterId = kitsuCharacter[1], character = (await get(`https://kitsu.io/api/edge/characters/${encode(characterId)}`, settings)).data, attrs = character?.attributes || {};
         if (!character) throw new Error("Kitsu could not load this character.");
-        return { type: "character", source: "Kitsu", title: attrs.name || ref.title, image: attrs.image?.original || attrs.image?.large || "", url: `https://kitsu.io/characters/${characterId}`, description: clean(attrs.description || ""), facts: [], sections: [] };
+        let appearances = [];
+        try { appearances = kitsuCredits(await get(`https://kitsu.io/api/edge/characters/${encode(characterId)}/media-characters?include=media&page[limit]=20`, settings), row => row.attributes?.role ? String(row.attributes.role).replace(/^./, c => c.toUpperCase()) : ""); } catch (_) {}
+        return { type: "character", source: "Kitsu", title: attrs.name || ref.title, image: attrs.image?.original || attrs.image?.large || "", url: `https://kitsu.io/characters/${characterId}`, description: clean(attrs.description || ""), facts: [["Japanese name", attrs.names?.ja_jp]].filter(([, value]) => value), sections: [{ title: "Appears in", kind: "shows", items: appearances }].filter(section => section.items.length) };
       }
       const anilistCharacter = String(ref.id).match(/^anilist-character:(\d+)$/);
       if (anilistCharacter) {
@@ -896,9 +1032,21 @@
       if (ref.extra?.source === "imdb" || /^imdb-episode:tt\d+$/i.test(String(ref.id))) {
         const imdbId = ref.extra?.imdbId || String(ref.id).match(/tt\d+/i)?.[0] || "";
         if (!imdbId) throw new Error("IMDb did not provide an episode ID for this entry.");
-        const html = await controller.sourceText("imdb", `https://www.imdb.com/title/${encode(imdbId)}/`, settings, { noCache: true }).catch(error => { throw new Error(error?.status === 403 || error?.status === 202 ? "IMDb blocked this episode request. Open IMDb below, complete any prompt, then ScreenMark will retry." : error?.message || "IMDb episode details could not be loaded."); });
+        // When IMDb blocks the page, the episode is rebuilt from what the guide already saved plus OMDb (by episode id, when a key exists).
+        const savedEpisode = async reason => {
+          const fb = ref.extra?.episode || {}, key = settings.apiKeys?.omdb?.trim();
+          let o = null;
+          if (key) { try { o = await get(`https://www.omdbapi.com/?apikey=${encode(key)}&i=${encode(imdbId)}&plot=full`, settings); if (o?.Response === "False") o = null; } catch (_) {} }
+          if (!o && !fb.description && !fb.airdate && !fb.image) throw new Error(reason);
+          const na = value => value && value !== "N/A" ? value : "", people = (value, meta) => toList(na(value)).map(name => ({ title: name, meta }));
+          const rating = numberFrom(na(o?.imdbRating)) || Number(fb.rating) || 0, number = Number(o?.Episode || ref.extra?.number) || 0, season = Number(o?.Season || ref.extra?.season) || 0;
+          return { type: "episode", source: o ? "IMDb (via OMDb)" : "IMDb (saved guide)", title: na(o?.Title) || ref.title || `Episode ${number}`, subtitle: `${ref.extra?.series || na(o?.Series) || "Series"}${season ? ` · S${season}` : ""}${number ? `E${number}` : ""}`, image: na(o?.Poster) || fb.image || "", description: na(o?.Plot) || fb.description || "", url: `https://www.imdb.com/title/${encode(imdbId)}/`, facts: [["Aired", na(o?.Released) || fb.airdate], ["Runtime", na(o?.Runtime) || (Number(fb.runtime) ? `${fb.runtime} min` : "")], ["IMDb rating", rating ? `★ ${rating.toFixed(1)}` : ""], ["Votes", na(o?.imdbVotes)], ["Season", season], ["Episode", number]].filter(([, value]) => value), sections: [{ title: "Cast", kind: "people", items: people(o?.Actors, "Actor") }, { title: "Staff", kind: "people", items: [...people(o?.Director, "Director"), ...people(o?.Writer, "Writer")] }].filter(section => section.items.length) };
+        };
+        let html;
+        try { html = await controller.sourceText("imdb", `https://www.imdb.com/title/${encode(imdbId)}/`, settings, { noCache: true }); }
+        catch (error) { return savedEpisode(error?.status === 403 || error?.status === 202 ? "IMDb blocked this episode request. Open IMDb below, complete any prompt, then ScreenMark will retry." : error?.message || "IMDb episode details could not be loaded."); }
         const ep = ldJsonType(html, "TVEpisode") || ldJson(html);
-        if (!ep) throw new Error("IMDb did not return readable episode details. Open IMDb below, complete any prompt, then retry.");
+        if (!ep) return savedEpisode("IMDb did not return readable episode details. Open IMDb below, complete any prompt, then retry.");
         const fallback = ref.extra?.episode || {}, episodeNumber = Number(ep.episodeNumber || ref.extra?.number) || 0;
         const season = Number(ep.partOfSeason?.seasonNumber || ref.extra?.season) || 0;
         const rating = Number(ep.aggregateRating?.ratingValue) || Number(fallback.rating) || 0;

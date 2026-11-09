@@ -2,7 +2,7 @@
 // so a save touches only changed games instead of rewriting one huge JSON blob
 // into localStorage (5 MB cap, synchronous, blocks the UI thread).
 (root => {
-  const DB_NAME = "screenmark_library", VERSION = 6;
+  const DB_NAME = "screenmark_library", VERSION = 7;
   let dbPromise = null;
   const known = new Map(); // id -> compact content signature; avoid retaining another copy of each full record
   let knownMeta = null; // JSON snapshot of the small library metadata row
@@ -21,6 +21,42 @@
     }
     return `${value.length}:${(first >>> 0).toString(16)}${(second >>> 0).toString(16)}`;
   };
+
+  // Artwork catalog: one small row per picture (poster, background, logo, screenshot, thumbnail ...) so a title with
+  // hundreds of images can be filtered by title, kind or source without loading the whole record.
+  const IMAGE_KINDS = [["poster", /poster|cover|portrait/i], ["background", /background|backdrop|fanart|banner/i], ["logo", /logo|clearart|typography/i], ["thumbnail", /thumb|still|episode/i], ["screenshot", /screenshot|image|scene|gallery|stills/i]];
+  const imageKindOf = title => (IMAGE_KINDS.find(([, pattern]) => pattern.test(String(title || ""))) || ["other"])[0];
+  function imageRowsOf(item, id = String(item?.id)) {
+    const rows = [], seen = new Set(), source = String(item?.metadataSource || item?.source || "manual");
+    const category = String(item?.category || "");
+    const add = (kind, url, label, section, position) => {
+      if (typeof url !== "string" || !/^https?:\/\//i.test(url) || seen.has(url)) return; seen.add(url);
+      rows.push({ key: `${id}|${rows.length}`, itemId: id, kind, itemKind: [id, kind], source, category, url, label: String(label || ""), section: String(section || ""), position });
+    };
+    const details = item?.cachedDetails || {};
+    add("poster", item?.customCover || details.portraitImage || details.image || item?.image, "Poster", "", 0);
+    add("background", item?.backdrop || details.landscapeImage || details.backgroundImage, "Background", "", 0);
+    (details.sections || []).forEach(section => {
+      if (section?.kind !== "gallery") return;
+      const title = String(section.title || "Images").replace(/\s*\(\d+\)\s*$/, ""), kind = imageKindOf(title);
+      (section.items || []).forEach((row, index) => add(kind === "other" ? imageKindOf(row?.title) : kind, row?.image || row?.url, row?.title || title, title, index));
+    });
+    return rows;
+  }
+  // Progress ticks and status changes rewrite a title often; skip the artwork catalog when its pictures did not change.
+  const knownImageSigs = new Map();
+  const imageSig = rows => rows.map(row => `${row.kind}\u0001${row.url}\u0001${row.label}`).join("\u0002");
+  function writeImageRows(tx, item, id, pending) {
+    const store = tx.objectStore("images"), rows = item ? imageRowsOf(item, id) : [], sig = imageSig(rows);
+    if (item && knownImageSigs.get(id) === sig) return;
+    const old = store.index("itemId").getAllKeys(id);
+    old.onsuccess = () => {
+      (old.result || []).forEach(key => store.delete(key));
+      rows.forEach(row => store.put(row));
+    };
+    pending.set(id, item ? sig : null);
+  }
+  const commitImageSigs = pending => pending.forEach((sig, id) => { if (sig === null) knownImageSigs.delete(id); else knownImageSigs.set(id, sig); });
 
   function open() {
     if (dbPromise) return dbPromise;
@@ -43,6 +79,16 @@
           items.createIndex("sourceCategoryProvider", ["metadataSource", "category", "providerId"], { unique: false });
         }
         if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
+        // Version 7: artwork catalog with indexes by title, kind and source; filled from the existing library once.
+        if (!db.objectStoreNames.contains("images")) {
+          const images = db.createObjectStore("images", { keyPath: "key" });
+          images.createIndex("itemId", "itemId", { unique: false });
+          images.createIndex("itemKind", "itemKind", { unique: false });
+          images.createIndex("kind", "kind", { unique: false });
+          images.createIndex("source", "source", { unique: false });
+          const fill = request.transaction.objectStore("items").openCursor();
+          fill.onsuccess = () => { const cursor = fill.result; if (!cursor) return; imageRowsOf(cursor.value, String(cursor.value.id)).forEach(row => images.put(row)); cursor.continue(); };
+        }
         // Device-local artwork cache: one small Blob per game/artwork kind, read in one fast batch.
         if (!db.objectStoreNames.contains("thumbs")) db.createObjectStore("thumbs", { keyPath: "key" });
         // Version 5 removes the unused PDF/share cache to reclaim old blobs.
@@ -55,7 +101,7 @@
         connection.onversionchange = () => {
           connection.close();
           if (dbPromise === opening) dbPromise = null;
-          known.clear(); knownMeta = null;
+          known.clear(); knownMeta = null; knownImageSigs.clear();
         };
         connection.onclose = () => { if (dbPromise === opening) dbPromise = null; };
         resolve(connection);
@@ -112,11 +158,13 @@
     const removed = [...known.keys()].filter(id => !next.has(id));
     const nextMeta = metadataSnapshot(history, preferences);
     if (!writes.length && !removed.length && knownMeta === nextMeta) return;
-    const db = await open(), tx = db.transaction(["items", "meta"], "readwrite"), store = tx.objectStore("items");
-    writes.forEach(item => store.put(item));
-    removed.forEach(id => store.delete(id));
+    const db = await open(), tx = db.transaction(["items", "meta", "images"], "readwrite"), store = tx.objectStore("items");
+    const pendingSigs = new Map();
+    writes.forEach(item => { store.put(item); writeImageRows(tx, item, String(item.id), pendingSigs); });
+    removed.forEach(id => { store.delete(id); writeImageRows(tx, null, id, pendingSigs); });
     if (knownMeta !== nextMeta) tx.objectStore("meta").put({ key: "state", history, preferences });
     await done(tx);
+    commitImageSigs(pendingSigs);
     known.clear(); next.forEach((snapshot, id) => known.set(id, snapshot));
     knownMeta = nextMeta;
   }
@@ -135,11 +183,13 @@
     }
     if (!writes.length && !removed.size && knownMeta === nextMeta) return;
     const db = await open();
-    const tx = db.transaction(["items", "meta"], "readwrite"), store = tx.objectStore("items");
-    writes.forEach(([item]) => store.put(item));
-    removed.forEach(id => store.delete(id));
+    const tx = db.transaction(["items", "meta", "images"], "readwrite"), store = tx.objectStore("items");
+    const pendingSigs = new Map();
+    writes.forEach(([item]) => { store.put(item); writeImageRows(tx, item, String(item.id), pendingSigs); });
+    removed.forEach(id => { store.delete(id); writeImageRows(tx, null, id, pendingSigs); });
     if (knownMeta !== nextMeta) tx.objectStore("meta").put({ key: "state", history, preferences });
     await done(tx);
+    commitImageSigs(pendingSigs);
     writes.forEach(([item, signature]) => known.set(String(item.id), signature));
     removed.forEach(id => known.delete(id));
     knownMeta = nextMeta;
@@ -196,7 +246,18 @@
     keys.forEach(key => store.delete(key));
     await done(tx);
   }
-  const core = Object.freeze({ open, loadAll, findByProvider, save, saveSome, getThumbs, putThumbs, listThumbKeys, clearThumbs, deleteThumbs });
+  // Artwork lookups. listImages(itemId, kind?) -> rows; imageCounts(itemId) -> { kind: count }.
+  async function listImages(itemId, kind) {
+    const db = await open(), store = db.transaction("images", "readonly").objectStore("images");
+    const rows = kind ? await result(store.index("itemKind").getAll([String(itemId), String(kind)])) : await result(store.index("itemId").getAll(String(itemId)));
+    return rows.sort((a, b) => a.position - b.position);
+  }
+  async function imageCounts(itemId) {
+    const rows = await listImages(itemId), counts = {};
+    rows.forEach(row => { counts[row.kind] = (counts[row.kind] || 0) + 1; });
+    return counts;
+  }
+  const core = Object.freeze({ listImages, imageCounts, open, loadAll, findByProvider, save, saveSome, getThumbs, putThumbs, listThumbKeys, clearThumbs, deleteThumbs });
   root.SplitAppIDBCore = core;
   if (typeof window === "undefined") return; // inside the data worker: expose the core only
 
@@ -291,6 +352,8 @@
     putThumbs: entries => call("putThumbs", entries),
     listThumbKeys: () => call("listThumbKeys"),
     clearThumbs: () => call("clearThumbs"),
-    deleteThumbs: keys => call("deleteThumbs", keys)
+    deleteThumbs: keys => call("deleteThumbs", keys),
+    listImages: (itemId, kind) => call("listImages", itemId, kind),
+    imageCounts: itemId => call("imageCounts", itemId)
   });
 })(self);

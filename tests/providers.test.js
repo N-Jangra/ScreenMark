@@ -124,3 +124,20 @@ test("metadata request helper enforces HTTPS, credential-free URLs, JSON validit
   response = new Response("{}", { headers: { "content-type": "application/json", "content-length": String(12 * 1024 * 1024 + 1) } });
   await assert.rejects(discovery.requestJson("https://provider.example/large", { noCache: true }), /12 MB limit/);
 });
+
+test("identical in-flight requests share one fetch and transient failures retry once", async () => {
+  let calls = 0, flaky = 0;
+  const discovery = makeDiscovery(async url => {
+    if (String(url).includes("flaky")) { flaky++; return flaky === 1 ? jsonResponse({}, 503) : jsonResponse({ ok: flaky }); }
+    calls++; await new Promise(resolve => setTimeout(resolve, 20)); return jsonResponse({ n: 1 });
+  });
+  const [a, b] = await Promise.all([discovery.requestJson("https://provider.example/shared"), discovery.requestJson("https://provider.example/shared")]);
+  assert.deepEqual(a, b);
+  assert.equal(calls, 1);
+  await discovery.requestJson("https://provider.example/shared");
+  assert.equal(calls, 2, "finished requests are not kept in the share map");
+  assert.deepEqual(await discovery.requestJson("https://provider.example/flaky", { noCache: true }), { ok: 2 });
+  assert.equal(flaky, 2);
+  flaky = 0;
+  await assert.rejects(discovery.requestJson("https://provider.example/flaky-post", { method: "POST", body: "{}", noCache: true }), /503/);
+});

@@ -1,4 +1,4 @@
-# ScreenMark 0.1.4
+# ScreenMark 0.1.5
 
 ScreenMark is a local-first tracker for **movies and TV series**. It runs as a browser single-page app and as a Capacitor Android app, with an iOS-style interface that adapts from phones to tablets and desktops, and keeps its library in an app-specific storage namespace.
 
@@ -22,7 +22,7 @@ ScreenMark is a local-first tracker for **movies and TV series**. It runs as a b
 - Favorites (♥) from Details or the ⋮ menu, with dedicated favorites pages.
 - Metadata sources stay separate. Titles are identified by category, source, normalized name and year, so same-name entries from different catalogs can coexist.
 - **Custom sources:** add any JSON search API on a guided page.
-- Export (Android Save as screen, chunked) and import a JSON library backup; the library lives in IndexedDB with a device cover cache, plus Android encrypted storage, an optional folder database and daily backups. Folder title mirrors are grouped by media type and metadata source.
+- Export (Android Save as screen, streamed and gzip-compressed as `.json.gz`) and import a JSON, `.json.gz`, encrypted `.sqdb`, CSV or TXT backup; restore re-links titles by source and id and syncs them (progress on the Sync status page); the library lives in IndexedDB with a device cover cache, plus Android encrypted storage, an optional folder database and daily backups. Folder title mirrors are grouped by media type and metadata source.
 
 ## Metadata providers
 
