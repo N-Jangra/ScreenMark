@@ -141,7 +141,7 @@ public class BackupFolderPlugin extends Plugin {
                 Uri treeUri = Uri.parse(treeUriStr);
                 Uri dirUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
                 Uri existing = findChildDocument(treeUri, dirUri, fileName);
-                Uri target = existing != null ? existing : DocumentsContract.createDocument(getContext().getContentResolver(), dirUri, "application/json", fileName);
+                Uri target = existing != null ? existing : DocumentsContract.createDocument(getContext().getContentResolver(), dirUri, fileName.toLowerCase().endsWith(".gz") ? "application/gzip" : "application/json", fileName);
                 if (target == null) throw new Exception("Failed to create the file in the backup folder");
                 exportStream = getContext().getContentResolver().openOutputStream(target, "wt");
                 if (exportStream == null) throw new Exception("Could not open the file for writing");
@@ -155,10 +155,13 @@ public class BackupFolderPlugin extends Plugin {
     @PluginMethod
     public void writeDocumentChunk(PluginCall call) {
         String content = call.getString("content");
+        // base64 chunks carry binary data (gzip-compressed backups); plain chunks are UTF-8 text.
+        boolean base64 = Boolean.TRUE.equals(call.getBoolean("base64", false));
         exportExecutor.execute(() -> {
             try {
                 if (exportStream == null) throw new Exception("No export file is open");
-                exportStream.write(content == null ? new byte[0] : content.getBytes(StandardCharsets.UTF_8));
+                byte[] bytes = content == null ? new byte[0] : base64 ? android.util.Base64.decode(content, android.util.Base64.DEFAULT) : content.getBytes(StandardCharsets.UTF_8);
+                exportStream.write(bytes);
                 call.resolve();
             } catch (Exception e) { closeExportStream(); call.reject("Write failed: " + e.getMessage(), e); }
         });
