@@ -1767,3 +1767,14 @@ body .profile-options-dialog nav a { min-height: 54px; padding: 0 20px; gap: 16p
 body .profile-options-dialog nav a:last-child { border-bottom: 0; }
 body .profile-options-dialog nav a svg { width: 20px; height: 20px; color: var(--d-t1); }
 body .profile-options-dialog nav a:hover svg, body .profile-options-dialog nav a:focus-visible svg { color: var(--d-gold); }
+
+/* Discover grid: text lines up with the poster edge, one-line titles keep every card the same height */
+body[data-page="discover"] .discover-catalog-card h3 { min-height: 0; max-height: none; margin: 8px 0 2px; padding-inline: 0; display: block; white-space: nowrap; text-overflow: ellipsis; font-size: 12.5px; line-height: 1.3; }
+body[data-page="discover"] .discover-catalog-card > small { min-height: 16px; padding-inline: 0; }
+body[data-page="discover"] .discover-catalog-card > .discover-catalog-genres { min-height: 20px; margin-top: 2px; padding: 0; }
+body[data-page="discover"] .discover-catalog-card { align-self: start; }
+/* keep the list view's two-line titles intact */
+body[data-discover-view="list"][data-page="discover"] .discover-catalog-card h3 { display: -webkit-box; white-space: normal; font-size: 15px; }
+
+/* Discover shelves: same 20px inset as the headings, and snapping respects it (cards no longer stick to the screen edge) */
+body[data-page="discover"] .discover-catalog-sections .discover-catalog-section > .discover-catalog-grid { padding-left: 20px !important; padding-right: 20px !important; scroll-padding-inline: 20px; scroll-snap-type: x proximity; }
