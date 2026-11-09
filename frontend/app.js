@@ -16,7 +16,7 @@
     showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, navIcons: { discover: "bookmark", "series-watchlist": "tv", "movie-watchlist": "clapperboard", profile: "user-round" },
     navBar: { order: navKeys, visible: { "series-watchlist": true, "movie-watchlist": true, discover: true, profile: true } },
     metadataSourceOrder: ["tvmaze", "imdb", "omdb", "tvdb", "tmdb", "rottentomatoes", "anilist", "kitsu", "jikan"], customSources: [],
-    dashboardDefaultCategory: "series", cardCorners: "rounded",
+    dashboardDefaultCategory: "series",
     automaticCompletion: "automatic", defaultStatus: "",
     metadataSyncWorkers: 2, syncRequestDelay: 0, syncScope: "needed",
     backupSchedule: "daily", backupRetention: 10, backupBeforeDestructive: true, folderSyncDelay: 30,
@@ -71,6 +71,7 @@
   delete prefs.recentlyAddedLimit;
   delete prefs.appDisplayName;
   delete prefs.bottomBarCorners;
+  delete prefs.cardCorners;
   prefs.apiKeys = { ...prefsDefaults.apiKeys, ...(isRecord(storedPreferences.apiKeys) ? storedPreferences.apiKeys : {}) };
   prefs.sourceOptions = { ...(isRecord(storedPreferences.sourceOptions) ? storedPreferences.sourceOptions : {}) };
   prefs.metadataSources = { ...prefsDefaults.metadataSources, ...(isRecord(storedPreferences.metadataSources) ? storedPreferences.metadataSources : {}) };
@@ -521,7 +522,6 @@
     root.dataset.perf = weakDevice ? "low" : lowEnd ? "mid" : "high";
     root.dataset.lowend = String(lowEnd);
     root.dataset.nativeAndroid = String(nativeAndroid);
-    document.body.dataset.corners = prefs.cardCorners;
     document.body.dataset.barStyle = prefs.bottomBarStyle;
     document.body.dataset.barLabels = prefs.bottomBarLabels;
     document.body.dataset.sidebar = prefs.showSidebar ? "shown" : "hidden";
@@ -2632,11 +2632,12 @@
   function setPreference(key, value) {
     prefs[key] = value;
     if (key === "bottomBarBackground" && value === "solid") prefs.bottomBarTransparency = 100;
+    if (key === "bottomBarBackground" && value === "transparent" && Number(prefs.bottomBarTransparency) >= 100) prefs.bottomBarTransparency = 30;
     persist({ meta: true }); applyPreferences();
     if (key === "metadataMode") { window.dispatchEvent(new Event("screenmark:sync-resume")); maybeAutoMetadataSync(); }
     if (key === "metadataRefreshInterval") scheduleAutomaticMetadataCheck();
     if (key === "backgroundBackups" || key === "backupSchedule" || key === "backupRetention") syncBackupSchedule();
-    if (["cardCorners", "theme"].includes(key)) render();
+    if (key === "theme") render();
   }
   function openSettingPicker(trigger) {
     let options = [];
@@ -2668,7 +2669,6 @@
       bottomBarBackground: { solid: "square", glass: "panels-top-left", transparent: "panels-top-bottom" },
       bottomBarStyle: { "icon-color": "palette", underline: "underline", pill: "pill", minimal: "minus" },
       bottomBarLabels: { "icons-labels": "list", "icons-only": "layout-grid", "labels-only": "text" },
-      cardCorners: { rounded: "circle", soft: "squircle", square: "square" },
       automaticCompletion: { automatic: "refresh-cw", ask: "message-circle-question", manual: "hand" },
       defaultStatus: Object.fromEntries(config.categories[0].statuses.map(status => [status, statusIcon(status)])),
       backupSchedule: { never: "calendar-x", daily: "calendar-days" },
@@ -3262,7 +3262,7 @@
       refreshDiscoverSavedActions(); return;
     }
   });
-  const watchlistSwipeIgnoredTarget = target => target?.closest?.("button, a, input, select, textarea, dialog, .watchlist-view-toggle");
+  const watchlistSwipeIgnoredTarget = target => target?.closest?.("input, select, textarea, dialog, .watchlist-view-toggle");
   const watchlistSwipeStart = (x, y, target, id) => {
     if ((page !== "series-watchlist" && page !== "movie-watchlist") || watchlistSwipeIgnoredTarget(target)) { watchlistSwipe = null; return; }
     if (!target?.closest?.(".watchlist-page")) { watchlistSwipe = null; return; }
