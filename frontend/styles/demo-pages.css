@@ -692,7 +692,7 @@ body[data-page="discover"] .discover-catalog-artwork .discover-catalog-add:focus
 /* Profile and profile collections. */
 body:is([data-page="profile"],[data-page="series"],[data-page="movies"],[data-page="series-favorites"],[data-page="movie-favorites"]) { background: var(--d-bg); }
 body:is([data-page="profile"],[data-page="series"],[data-page="movies"],[data-page="series-favorites"],[data-page="movie-favorites"]) .app-shell { max-width: 820px; padding-top: 0; background: var(--d-bg); color: var(--d-t1); font-family: var(--d-font); }
-body:is([data-page="profile"],[data-page="series"],[data-page="movies"],[data-page="series-favorites"],[data-page="movie-favorites"]) .topbar { display: none; }
+body:is([data-page="profile"],[data-page="profile-cover"],[data-page="series"],[data-page="movies"],[data-page="series-favorites"],[data-page="movie-favorites"]) .topbar { display: none; }
 body:is([data-page="profile"],[data-page="series"],[data-page="movies"],[data-page="series-favorites"],[data-page="movie-favorites"]) #page-content { padding-top: 0; }
 body:is([data-page="profile"],[data-page="series"],[data-page="movies"],[data-page="series-favorites"],[data-page="movie-favorites"]) .app-shell button { font-family: var(--d-font); }
 .profile-page { display: grid; gap: 21px; width: calc(100% + var(--gutter,16px) * 2); margin: 0 calc(var(--gutter,16px) * -1); padding: 0 0 calc(24px + env(safe-area-inset-bottom)); overflow: visible; background: var(--d-bg); color: var(--d-t1); font-family: var(--d-font); }
@@ -1602,3 +1602,104 @@ body .demo-cast-section .detail-carousel:not(.expanded) > * { flex-shrink: 0; }
 body .bottom-bar[data-bg="solid"] { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
 body .bottom-bar[data-bg="glass"] { background: color-mix(in srgb, var(--surface) 45%, transparent); backdrop-filter: blur(22px) saturate(180%) !important; -webkit-backdrop-filter: blur(22px) saturate(180%) !important; }
 body .bottom-bar[data-bg="transparent"] { background: color-mix(in srgb, var(--surface) calc(var(--bar-alpha) * 100%), transparent); backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* Discover search: calmer, consistent with the bottom-bar surfaces */
+body[data-page="discover"] .topbar .discover-search-field { height: 50px; border-radius: 14px; background: var(--d-surface); box-shadow: none; }
+body[data-page="discover"] .topbar .discover-top-search .discover-search-submit { height: 50px; min-width: 92px; border-radius: 14px; box-shadow: none; font-weight: 700; }
+body[data-page="discover"] .topbar .discover-top-search .discover-search-submit:hover { box-shadow: none; transform: none; }
+
+/* Profile options sheet: same surface/line/accent language as the bottom bar */
+body .profile-options-dialog { width: min(100%,520px); border: 1px solid var(--d-line2); border-bottom: 0; border-radius: 22px 22px 0 0; background: var(--d-surface); box-shadow: 0 -14px 40px #0008; padding: 8px 12px calc(14px + env(safe-area-inset-bottom)); }
+body .profile-options-dialog::before { content: ""; display: block; width: 36px; height: 4px; margin: 2px auto 8px; border-radius: 2px; background: var(--d-line2); }
+body .profile-options-dialog > header { padding: 0 6px 10px; border-bottom: 1px solid var(--d-line); font-weight: 700; }
+body .profile-options-dialog nav { gap: 4px; padding: 10px 0 0; }
+body .profile-options-dialog nav a { min-height: 50px; padding: 0 14px; border: 0; border-radius: 14px; gap: 14px; color: var(--d-t1); }
+body .profile-options-dialog nav a svg { width: 20px; height: 20px; color: var(--d-t2); transition: color .16s ease; }
+body .profile-options-dialog nav a:hover, body .profile-options-dialog nav a:focus-visible, body .profile-options-dialog nav a:active { background: color-mix(in srgb, var(--d-gold) 12%, var(--d-surface)); }
+body .profile-options-dialog nav a:hover svg, body .profile-options-dialog nav a:focus-visible svg { color: var(--d-gold); }
+
+/* Discover: icon-only search button */
+body[data-page="discover"] .topbar .discover-top-search .discover-search-submit { width: 50px; min-width: 50px; padding: 0; }
+body[data-page="discover"] .topbar .discover-top-search .discover-search-submit span { display: none; }
+body[data-page="discover"] .topbar .discover-top-search .discover-search-submit svg { width: 20px; height: 20px; }
+
+/* Profile cover editor */
+.profile-edit-trigger { position: absolute; top: calc(12px + env(safe-area-inset-top)); right: 60px; z-index: 8; display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid #ffffff55; border-radius: 50%; background: #0007; color: white; text-decoration: none; }
+.profile-edit-trigger svg { width: 18px; height: 18px; }
+.profile-cover-page { padding: 0 16px calc(96px + env(safe-area-inset-bottom)); }
+.profile-cover-preview { position: relative; height: 170px; overflow: hidden; border: 1px solid var(--d-line2); border-radius: 18px; background: var(--d-surface); }
+.profile-cover-preview img { width: 100%; height: 100%; object-fit: cover; }
+.profile-cover-preview small { position: absolute; left: 14px; bottom: 10px; z-index: 2; color: #fff; font-weight: 700; text-shadow: 0 1px 6px #000; }
+.profile-cover-note { margin: 10px 2px; color: var(--d-t2); font-size: 12.5px; }
+.profile-cover-shuffle { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 14px; background: var(--d-gold); color: var(--d-gold-fg); font-weight: 700; }
+.profile-cover-shuffle svg { width: 18px; height: 18px; }
+.profile-cover-setting { margin-top: 20px; }
+.profile-cover-setting h3 { margin: 0 2px 8px; color: var(--d-t2); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; }
+.profile-cover-option { display: flex; align-items: center; gap: 12px; min-height: 48px; margin-bottom: 4px; padding: 0 14px; border: 1px solid var(--d-line); border-radius: 14px; background: var(--d-surface); color: var(--d-t1); font-weight: 600; cursor: pointer; }
+.profile-cover-option:has(input:checked) { border-color: color-mix(in srgb, var(--d-gold) 60%, var(--d-line2)); background: color-mix(in srgb, var(--d-gold) 10%, var(--d-surface)); }
+.profile-cover-option input { accent-color: var(--d-gold); width: 18px; height: 18px; }
+.profile-avatar img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+.profile-avatar-editor { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.profile-avatar-editor .profile-avatar { flex: none; }
+.profile-avatar-editor label { cursor: pointer; }
+.profile-cover-remove { min-height: 44px; padding: 0 16px; border: 1px solid var(--d-line2); border-radius: 14px; background: transparent; color: var(--d-t1); font-weight: 700; }
+.profile-cover-shuffle:disabled { opacity: .45; }
+.profile-cover-block { margin-top: 8px; padding-bottom: 14px; }
+.profile-cover-block > h2 { margin: 18px 2px 10px; font-size: 16px; }
+.profile-cover-page { padding-left: 0; padding-right: 0; }
+.profile-cover-page > .profile-list-header { padding: 0 12px; }
+.profile-cover-page > .watchlist-tabs { top: 54px; margin-bottom: 14px; }
+.profile-cover-page > .profile-cover-block { padding: 0 16px 14px; }
+.profile-cover-page > .profile-cover-block > h2 { display: none; }
+
+/* Edit profile: tidy layout, chip options, round avatar */
+body .profile-avatar { overflow: hidden; aspect-ratio: 1 / 1; min-width: 72px; min-height: 72px; flex: 0 0 72px; }
+body .profile-avatar img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+.profile-cover-page .profile-avatar-editor { flex-direction: column; justify-content: center; gap: 14px; padding: 18px 12px; border: 1px solid var(--d-line); border-radius: 18px; background: var(--d-surface); }
+.profile-cover-page .profile-avatar-editor .profile-avatar { width: 112px; height: 112px; min-width: 112px; min-height: 112px; flex: 0 0 112px; }
+.profile-cover-page .profile-avatar-editor .profile-avatar svg { width: 64px; height: 64px; }
+.profile-cover-page .profile-avatar-editor > label, .profile-cover-page .profile-avatar-editor > button { min-width: 180px; justify-content: center; }
+.profile-cover-page .profile-cover-preview { height: 150px; }
+.profile-cover-page .profile-cover-note { text-align: center; margin: 12px 0 8px; }
+.profile-cover-page .profile-cover-block > .profile-cover-shuffle { display: flex; width: 100%; justify-content: center; margin-bottom: 4px; }
+.profile-cover-page .profile-cover-setting { margin-top: 18px; padding: 14px 12px 12px; border: 1px solid var(--d-line); border-radius: 18px; background: var(--d-surface); }
+.profile-cover-page .profile-cover-setting h3 { margin: 0 0 10px; }
+.profile-cover-page .profile-cover-setting { display: flex; flex-wrap: wrap; gap: 8px; }
+.profile-cover-page .profile-cover-setting h3 { flex: 0 0 100%; }
+.profile-cover-page .profile-cover-option { position: relative; flex: 0 0 auto; min-height: 38px; margin: 0; padding: 0 14px; border-radius: 999px; font-size: 13px; background: var(--d-bg, transparent); }
+.profile-cover-page .profile-cover-option input { position: absolute; opacity: 0; pointer-events: none; }
+.profile-cover-page .profile-cover-option:has(input:checked) { background: var(--d-gold); border-color: var(--d-gold); color: var(--d-gold-fg); }
+.profile-cover-page .profile-cover-option:has(input:focus-visible) { outline: 2px solid var(--d-gold); outline-offset: 2px; }
+
+/* Avatar: background-image circle can't distort */
+body .profile-avatar { position: relative; border-radius: 50%; }
+body .profile-avatar .avatar-img { position: absolute; inset: 0; border-radius: 50%; background-size: cover; background-position: center top; background-repeat: no-repeat; }
+.profile-cover-library { margin-top: 18px; }
+.profile-cover-library h3 { margin: 0 2px 10px; color: var(--d-t2); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; }
+.profile-pick-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+.profile-pick-grid.cover { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.profile-pick-tile { position: relative; padding: 0; overflow: hidden; border: 2px solid transparent; border-radius: 12px; background: var(--d-surface); aspect-ratio: 2 / 3; content-visibility: auto; }
+.profile-pick-grid.cover .profile-pick-tile { aspect-ratio: 16 / 9; }
+.profile-pick-tile img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.profile-pick-tile.selected { border-color: var(--d-gold); box-shadow: 0 0 0 2px color-mix(in srgb, var(--d-gold) 30%, transparent); }
+.profile-pick-more { display: block; width: 100%; margin-top: 10px; }
+
+/* Watchlist thumbnails: skip off-screen card rendering so mobile paints the visible ones first */
+.watchlist-card { content-visibility: auto; contain-intrinsic-size: auto 104px; }
+
+/* Ratings (vertical): season columns capped to a compact width instead of stretching across the card */
+body .demo-cinema-page .ep-ratings[data-layout="vertical"] .ep-ratings-cols { grid-template-columns: 30px repeat(var(--seasons), minmax(0, 64px)); justify-content: start; }
+.discover-shelf-sources { display: block; margin-top: 3px; color: var(--d-t2); font: 500 11px/1.3 var(--d-font); letter-spacing: .02em; }
+
+/* Discover: Shows / Movies tabs always visible, above the search bar (like the watchlist tabs) */
+body[data-page="discover"] .topbar .header-type { order: -1; border-top: 0; border-bottom: 1px solid var(--d-line2); margin-bottom: 8px; }
+body[data-page="discover"] .topbar { padding-top: env(safe-area-inset-top); }
+body[data-page="discover"] .topbar .header-type { background: var(--d-glass); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); margin-bottom: 10px; }
+body[data-page="discover"] .topbar .header-type .lens-tab { font: 700 12px/1 var(--d-font); letter-spacing: .08em; }
+
+/* Discover tabs: beat the :not([hidden]) rules above so they sit flush at the very top, like the watchlist tabs */
+body[data-page="discover"] .app-shell { padding-top: 0 !important; }
+body[data-page="discover"] .topbar { padding-top: env(safe-area-inset-top) !important; background: var(--d-bg); }
+body[data-page="discover"] .topbar .header-type:not([hidden]) { order: -1; border-top: 0 !important; border-bottom: 1px solid var(--d-line2); background: var(--d-glass); margin: 0 0 10px; }
+body[data-page="discover"] .topbar .header-type:not([hidden]) .lens-tab { position: relative; border-bottom: 0 !important; font: 700 12px/1 var(--d-font); letter-spacing: .08em; }
+body[data-page="discover"] .topbar .header-type:not([hidden]) .lens-tab.on::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; background: var(--d-gold); content: ""; }
