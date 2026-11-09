@@ -69,6 +69,7 @@ Version code 105 (117 automated tests). Highlights: Quick setup that works on a 
 
 ### Fixed
 
+- Discover search placeholders now look like the results that replace them: one shelf per source (source name header and a rail of cards) when searching all sources, and one three-column grid with the source name when a single source is selected. They used to be a generic grid unlike the page.
 - Sync status page (Quick setup and restore): it updates every moment a title changes state (not only when one finishes), keeps its list across navigation and restarts and resumes unfinished titles on launch, hides the empty "No refresh history" box while downloads exist, goes back to the library, and has Retry failed and Clear finished buttons.
 - Backup formats: **CSV** now exports year, status, progress, goal, favorite, review, source, source id, id and dates (not just names) and imports them back; **TXT** exports `Title (Year)` and reads that form; **JSON** can be saved gzip-compressed (`.json.gz`, about 10x smaller in browsers) and the importer opens `.json`, `.json.gz` and `.sqdb`.
 - Restore now syncs: every restored title with a source and id is downloaded through the queue (progress on Metadata Sync → Refresh status), and names-only titles (TXT, CSV or old backups) are first matched to a source by an exact title (+ year) search, with a clear "No exact match" status and Retry when none is found.
