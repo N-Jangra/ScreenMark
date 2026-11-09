@@ -1840,6 +1840,14 @@
     setupState.selected = setupState.picks[setupState.step];
     const setGrid = () => { const grid = $("#setup-grid"); if (grid && page === "setup") { grid.innerHTML = window.SplitAppSetup.grid(setupState, esc); routeRemoteImages(grid); } };
     setupState.error = "";
+    if (setupState.mode) {
+      // Favorites picker: list what is already in the local library (no network).
+      const needle = query.toLocaleLowerCase();
+      setupState.rows = items.filter(item => item.category === step.category && !item.favorite && (!needle || String(item.title || "").toLocaleLowerCase().includes(needle)))
+        .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")))
+        .map(item => ({ source: "local", providerId: String(item.id), localId: String(item.id), title: item.title, year: item.year, image: item.customCover || item.localThumbnailData || item.localPortraitData || item.image || "" }));
+      setupState.loading = false; setGrid(); return;
+    }
     if (!query && setupTrending[step.category]) { setupState.rows = setupTrending[step.category]; setupState.loading = false; setGrid(); return; }
     if (prefs.metadataMode === "offline") { setupState.rows = []; setupState.loading = false; setupState.error = "Quick setup needs an internet connection."; setGrid(); return; }
     setupState.loading = true; setGrid();
@@ -1865,6 +1873,7 @@
     window.SplitAppSetup.stepsFor(setupState).forEach((step, index) => {
       setupState.picks[index].forEach(result => {
         if (step.status === "favorite") {
+          if (result.localId) { const own = itemById(result.localId); if (own && !own.favorite) { own.favorite = true; own.updatedAt = Date.now(); persist({ ids: [own.id] }); added++; } return; }
           const before = items.length, item = addDiscoverResult(result, "Favorites", { status: roles.queued, quiet: true, favorite: true });
           if (items.length > before) added++;
           else if (item && !item.favorite) { item.favorite = true; item.updatedAt = Date.now(); persist({ ids: [item.id] }); added++; }
