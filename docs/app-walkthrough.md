@@ -32,6 +32,7 @@ Cast and character pages show a portrait and credit or appearances list skeleton
 - Opening a sheet or dialog adds a history entry: browser back or Android back closes it first; tapping outside also closes it. Android back steps back through pages and exits from the Shows Watchlist home page.
 - The Profile options menu links directly to Settings, Metadata Sources, Timeline, Quick setup, Sources, Settings and About; tapping outside the sheet closes it.
 - Refreshing `#details?id=…` reopens that title.
+- Saved titles refresh from their source when opened at most once every 24 hours (pull-to-refresh or Refresh forces it). A refresh updates only changed fields, keeps everything else and your own data, and shows which fields changed.
 
 ## Main pages
 

@@ -23,6 +23,7 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 - Discover grid text lines up with the posters, shelves share a 20 px inset, and tapping a title opens its details. "You might also like" is a left-aligned swipeable poster rail.
 - Setting a movie to Completed fills its runtime (and Watchlist clears it); vertical episode-rating columns are compact.
 - Statistics → Activity page and its Profile menu entry were removed; Timeline covers it.
+- Opening a saved title refreshes it from its source at most once a day (pull-to-refresh or Refresh forces it), and a refresh now writes only the fields that changed, leaves your status, progress and notes alone, and shows an "Updated from …" note listing what changed.
 
 ### Fixed
 
