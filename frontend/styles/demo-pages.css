@@ -1877,3 +1877,12 @@ body[data-discover-view="cards"][data-page="discover"] .discover-catalog-card.ha
 .profile-avatar-edit svg { width: 14px; height: 14px; }
 .profile-identity .profile-add-manual { margin-left: auto; }
 .setup-noimg { display: grid; place-items: center; width: 100%; height: 100%; padding: 8px; color: var(--d-t2); font: 600 11px/1.3 var(--d-font); text-align: center; }
+
+/* Library grids: shimmer while the poster loads, then the progress bar fills up to its value */
+.profile-collection-grid .profile-poster > img { position: relative; z-index: 1; }
+.profile-collection-grid .profile-poster:not(.is-loaded)::before { position: absolute; inset: 0; z-index: 0; background: linear-gradient(100deg, var(--d-surface) 30%, color-mix(in srgb, var(--d-surface) 65%, var(--d-t2)) 50%, var(--d-surface) 70%); background-size: 200% 100%; animation: poster-shimmer 1.3s linear infinite; content: ""; }
+.profile-collection-grid .demo-poster-progress { z-index: 2; }
+.profile-collection-grid .demo-poster-progress i { width: 0 !important; transition: width .9s cubic-bezier(.2,.8,.2,1) .1s; }
+.profile-collection-grid .profile-poster.is-loaded .demo-poster-progress i { width: var(--w, 0%) !important; }
+@keyframes poster-shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .profile-collection-grid .profile-poster:not(.is-loaded)::before { animation: none; } .profile-collection-grid .demo-poster-progress i { transition: none; } }

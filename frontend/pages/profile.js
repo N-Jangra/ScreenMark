@@ -36,7 +36,7 @@
     const progress = Math.max(0, Number(item.progress) || 0);
     const done = isDone(item, roles);
     const percent = done ? 100 : goal ? Math.min(100, Math.round(progress / goal * 100)) : 0;
-    const progressBar = showProgress ? `<span class="demo-poster-progress"><i class="${percent >= 100 ? "is-done" : ""}" style="width:${percent}%"></i></span>` : "";
+    const progressBar = showProgress ? `<span class="demo-poster-progress"><i class="${percent >= 100 ? "is-done" : ""}" style="width:${percent}%;--w:${percent}%"></i></span>` : "";
     return `<button type="button" class="profile-poster" data-open-details data-id="${esc(item.id)}" aria-label="Open ${esc(item.title)}">${coverMarkup(item, esc, false, imageMarkup)}<span class="profile-poster-title">${esc(item.title)}</span>${progressBar}</button>`;
   };
   const sectionHeader = (title, target, count) => `<header class="profile-section-heading"><h2>${title}${Number.isFinite(count) ? ` <small>${count}</small>` : ""}</h2><button type="button" data-go="${target}" aria-label="See all ${title}"><i data-lucide="chevron-right" aria-hidden="true"></i></button></header>`;

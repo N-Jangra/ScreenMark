@@ -1087,6 +1087,7 @@
     if (page === "setup" && !setupStarted) beginSetup(); else if (page !== "setup") setupStarted = false;
     content.innerHTML = window.SplitAppPages[page](pageContext());
     if (page === "setup") { const grid = $("#setup-grid"); if (grid) routeRemoteImages(grid); }
+    if (["series", "movies", "series-favorites", "movie-favorites"].includes(page)) trackPosterLoading(content);
     if (page === "details") prioritizeVisibleDetailImages(content);
     if (page === "series-watchlist" || page === "movie-watchlist") {
       // Above-the-fold thumbnails: fetch immediately at high priority instead of waiting for lazy-load heuristics.
@@ -1759,6 +1760,23 @@
       });
     }), { rootMargin: "300px 0px" });
     cards.forEach(card => backdropObserver.observe(card));
+  }
+  // Library posters: shimmer placeholder until the thumbnail is ready, then the progress bar animates up to its value.
+  let posterLoadingBound = false;
+  const markPosterLoaded = img => img.closest?.(".profile-collection-grid .profile-poster")?.classList.add("is-loaded");
+  function trackPosterLoading(root) {
+    if (!posterLoadingBound) {
+      posterLoadingBound = true;
+      const handler = event => { if (event.target?.tagName === "IMG") markPosterLoaded(event.target); };
+      document.addEventListener("load", handler, true); document.addEventListener("error", handler, true);
+    }
+    const posters = [...root.querySelectorAll(".profile-collection-grid .profile-poster")];
+    posters.forEach(poster => {
+      const img = poster.querySelector("img");
+      if (!img || (img.complete && img.naturalWidth > 0)) { requestAnimationFrame(() => requestAnimationFrame(() => poster.classList.add("is-loaded"))); }
+    });
+    // Slow network or missing art: never leave a bar stuck at zero.
+    setTimeout(() => posters.forEach(poster => { if (poster.isConnected) poster.classList.add("is-loaded"); }), 4000);
   }
   function discoverCatalogCard(result, index) {
     const category = result.category || currentDiscoverCategory();
