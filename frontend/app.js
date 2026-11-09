@@ -2,7 +2,7 @@
   "use strict";
 
   const config = window.APP_CONFIG;
-  const titles = { discover: "Discover", details: "Details", add: "Add title", timeline: "Timeline", statistics: "Statistics", profile: "Profile", series: "Series", movies: "Movies", "series-favorites": "Series Favorites", "movie-favorites": "Movie Favorites", "series-watchlist": "Shows Watchlist", "movie-watchlist": "Movies Watchlist", settings: "Settings", sync: "Metadata Sync" };
+  const titles = { discover: "Discover", details: "Details", add: "Add title", timeline: "Timeline", statistics: "Statistics", profile: "Profile", "profile-cover": "Profile cover", series: "Series", movies: "Movies", "series-favorites": "Series Favorites", "movie-favorites": "Movie Favorites", "series-watchlist": "Shows Watchlist", "movie-watchlist": "Movies Watchlist", settings: "Settings", sync: "Metadata Sync" };
   const hasPage = name => Object.prototype.hasOwnProperty.call(titles, name);
   const navItems = [
     { key: "series-watchlist", label: "Shows", icon: "tv" },
@@ -13,7 +13,7 @@
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
     theme: "system", textSize: "normal", dateFormat: "auto", imageStorage: "all", reduceMotion: false, animationSpeed: "fast", pageTransition: "slide", sheetAnimation: "slide", pressEffect: "shrink", progressAnimation: true, progressStyle: "smooth", skeletonShimmer: true, placeholderAnimation: "shimmer", mainColor: "default", accentColorDefaultVersion: 2,
-    showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, navIcons: { discover: "bookmark", "series-watchlist": "tv", "movie-watchlist": "clapperboard", profile: "user-round" },
+    profileCoverSource: "both", profileCoverMode: "random", profileCoverInterval: "visit", profileAvatarSource: "custom", profileAvatarMode: "random", profileAvatarInterval: "visit", profileAvatarPinned: "", profileCoverPinned: "", showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, navIcons: { discover: "bookmark", "series-watchlist": "tv", "movie-watchlist": "clapperboard", profile: "user-round" },
     navBar: { order: navKeys, visible: { "series-watchlist": true, "movie-watchlist": true, discover: true, profile: true } },
     metadataSourceOrder: ["tvmaze", "imdb", "omdb", "tvdb", "tmdb", "rottentomatoes", "anilist", "kitsu", "jikan"], customSources: [],
     dashboardDefaultCategory: "series",
@@ -568,7 +568,7 @@
   function activeNavigationKey() {
     if (page === "series-watchlist" || page === "movie-watchlist") return page;
     if (["series", "movies", "series-favorites", "movie-favorites"].includes(page)) return "profile";
-    if (page === "timeline" || page === "statistics") return "profile";
+    if (page === "timeline" || page === "statistics" || page === "profile-cover") return "profile";
     if (page === "details") {
       if (detailReturnPage === "series-watchlist" || detailReturnPage === "movie-watchlist") return detailReturnPage;
       if (["profile", "series", "movies", "series-favorites", "movie-favorites", "timeline", "statistics"].includes(detailReturnPage)) return "profile";
@@ -1043,8 +1043,8 @@
     if (page === "discover") {
       const source = discoverSource ? window.SplitAppSources.list().find(row => row.key === discoverSource) : null;
       const categories = config.categories.filter(row => !source || source.categories.includes(row.key));
-      headerType.hidden = categories.length < 2 || !(discoverSearchFocused || Boolean(discoverQuery.trim()));
-      headerType.innerHTML = categories.map(row => {
+      headerType.hidden = categories.length < 2;
+      headerType.innerHTML = [...categories].sort((a, b) => (a.key === "series" ? 0 : 1) - (b.key === "series" ? 0 : 1)).map(row => {
         const label = row.key === "movie" ? "Movies" : row.key === "series" ? "Shows" : row.label;
         const selected = currentDiscoverCategory() === row.key;
         return `<button type="button" class="lens-tab${selected ? " on" : ""}" data-discover-category="${esc(row.key)}" aria-pressed="${selected}">${esc(label)}</button>`;
@@ -1081,6 +1081,13 @@
     disposeContentResources(content);
     content.innerHTML = window.SplitAppPages[page](pageContext());
     if (page === "details") prioritizeVisibleDetailImages(content);
+    if (page === "series-watchlist" || page === "movie-watchlist") {
+      // Above-the-fold thumbnails: fetch immediately at high priority instead of waiting for lazy-load heuristics.
+      content.querySelectorAll(".watchlist-card img[loading=lazy]").forEach((img, index) => {
+        if (index >= 8) return;
+        img.loading = "eager"; img.fetchPriority = "high";
+      });
+    }
     if (enterRoute) requestAnimationFrame(() => { if (renderedRoute === route) content.classList.add("page-route-enter"); });
     const collectionToolbar = content.querySelector(".profile-filter-bar, .profile-filter-pill");
     if (collectionToolbar) {
@@ -1765,7 +1772,10 @@
       addShelf(label, matches);
     });
     const genreShelves = new Set(["Comedy", "Action", "Horror", "Romance", "Slice of Life", "Sci-Fi", "Fantasy", "Adventure"]);
-    box.innerHTML = shelves.length ? `<div class="discover-catalog-sections">${shelves.map(shelf => `<section class="discover-catalog-section${genreShelves.has(shelf.title) ? " discover-genre-shelf" : ""}"><h2>${esc(shelf.title)}</h2><div class="discover-catalog-grid">${shelf.items.map(row => discoverCatalogCard(row, all.indexOf(row))).join("")}</div></section>`).join("")}</div>` : `<p class="discover-catalog-empty">No titles match these filters.</p>`;
+    const sourceNames = new Map((window.SplitAppSources?.list?.() || []).map(row => [row.key, row.name]));
+    const multiSource = new Set(all.map(row => row.source).filter(Boolean)).size > 1;
+    const shelfSources = shelf => { if (!multiSource) return ""; const names = [...new Set(shelf.items.map(row => sourceNames.get(row.source) || row.source).filter(Boolean))]; return names.length ? `<small class="discover-shelf-sources">${esc(names.join(" · "))}</small>` : ""; };
+    box.innerHTML = shelves.length ? `<div class="discover-catalog-sections">${shelves.map(shelf => `<section class="discover-catalog-section${genreShelves.has(shelf.title) ? " discover-genre-shelf" : ""}"><h2>${esc(shelf.title)}${shelfSources(shelf)}</h2><div class="discover-catalog-grid">${shelf.items.map(row => discoverCatalogCard(row, all.indexOf(row))).join("")}</div></section>`).join("")}</div>` : `<p class="discover-catalog-empty">No titles match these filters.</p>`;
     routeRemoteImages(box);
     box._results = all;
     return all.length;
@@ -3142,6 +3152,14 @@
       try { localStorage.setItem(`${storageKey}_watchlist_views`, JSON.stringify(watchlistViews)); } catch (_) {}
       render(); syncPageNavigation(); return;
     }
+    const coverPick = eventClosest(event, "[data-cover-pick]");
+    if (coverPick) { const prefix = coverPick.dataset.coverPick === "avatar" ? "profileAvatar" : "profileCover"; prefs[prefix + "Pinned"] = coverPick.dataset.id; setPreference(prefix + "Source", "pinned"); render(); return; }
+    const coverMore = eventClosest(event, "[data-cover-more]");
+    if (coverMore) { window.SplitAppPages.moreCovers(coverMore.dataset.coverMore); render(); return; }
+    const coverTabButton = eventClosest(event, "[data-cover-tab]");
+    if (coverTabButton) { window.SplitAppPages.setCoverTab(coverTabButton.dataset.coverTab); render(); return; }
+    if (eventClosest(event, "[data-profile-avatar-remove]")) { try { localStorage.removeItem("screenmark_profile_avatar"); } catch (_) {} render(); return; }
+    if (eventClosest(event, "[data-profile-cover-shuffle]")) { window.SplitAppPages.shuffleProfileCover(items, prefs, eventClosest(event, "[data-profile-cover-shuffle]").dataset.profileCoverShuffle); render(); return; }
     if (eventClosest(event, "[data-open-profile-menu]")) { showPopup($("#profile-options-dialog")); return; }
     if (eventClosest(event, "[data-profile-add]")) { openItem(); return; }
     if (eventClosest(event, "[data-profile-menu-close]")) { closePopup($("#profile-options-dialog")); return; }
@@ -3321,10 +3339,25 @@
       list?.querySelectorAll(".setting-picker-option").forEach(option => { option.classList.remove("active"); option.setAttribute("aria-pressed", "false"); });
       return;
     }
+    if (input.matches("[data-profile-avatar-file]")) {
+      const file = input.files?.[0]; input.value = "";
+      if (!file || !file.type.startsWith("image/")) return;
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => {
+        const size = 256, canvas = document.createElement("canvas"); canvas.width = canvas.height = size;
+        const scale = Math.max(size / img.width, size / img.height), w = img.width * scale, h = img.height * scale;
+        canvas.getContext("2d").drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        URL.revokeObjectURL(url);
+        try { localStorage.setItem("screenmark_profile_avatar", canvas.toDataURL("image/jpeg", .86)); } catch (_) { toast("Could not save photo."); }
+        render();
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); toast("Could not read that image."); };
+      img.src = url; return;
+    }
     if (input.matches("[data-pref]")) {
       const key = input.dataset.pref; let value = input.type === "checkbox" ? input.checked : input.value;
       if (input.type === "number" || input.type === "range") value = Number(value);
-      setPreference(key, value); if (input.type === "range") input.nextElementSibling.value = `${value}%`;
+      setPreference(key, value); if (/^profile(Cover|Avatar)/.test(key)) { render(); return; } if (input.type === "range") input.nextElementSibling.value = `${value}%`;
     }
     if (input.matches("[data-api-key]")) { prefs.apiKeys[input.dataset.apiKey] = input.value.trim(); persist({ meta: true }); }
     if (input.matches("[data-source]")) { window.SplitAppSources.setEnabled(prefs, input.dataset.source, input.checked); persist({ meta: true }); }
@@ -3594,7 +3627,7 @@
     if (!headerType || page !== "discover") return;
     const source = discoverSource ? window.SplitAppSources.list().find(row => row.key === discoverSource) : null;
     const hasBothCategories = config.categories.filter(row => !source || source.categories.includes(row.key)).length > 1;
-    headerType.hidden = !hasBothCategories || !(discoverSearchFocused || Boolean(discoverQuery.trim()));
+    headerType.hidden = !hasBothCategories;
   }
   document.addEventListener("focusin", event => {
     if (event.target.id !== "discover-query") return;
