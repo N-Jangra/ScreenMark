@@ -1,6 +1,6 @@
 # ScreenMark data schema
 
-The canonical library is stored in IndexedDB database `screenmark_library`, with `items`, `meta` and `thumbs` object stores. `localStorage` key `splitapp_screenmark_v1` is a small startup mirror of preferences and history, not the full database. Android also keeps encrypted per-item records and metadata through the native `EncryptedStore` plugin. Folder JSON files and exports are portable snapshots.
+The canonical library is stored in IndexedDB database `screenmark_library`, with `items`, `meta`, `thumbs` and `images` object stores (schema version 7). `images` is an artwork catalog with one row per picture (`itemId`, `kind` = poster / background / logo / thumbnail / screenshot / other, `source`, `url`, `label`, `section`, `position`) and indexes `itemId`, `itemKind` (`[itemId, kind]`), `kind` and `source`; it is rewritten whenever its title is saved and backfilled during the upgrade. Use `SplitAppIDB.listImages(itemId, kind?)` and `imageCounts(itemId)` to query it. `localStorage` key `splitapp_screenmark_v1` is a small startup mirror of preferences and history, not the full database. Android also keeps encrypted per-item records and metadata through the native `EncryptedStore` plugin. Folder JSON files and exports are portable snapshots.
 
 Schema version 6 adds the `sourceCategoryProvider` compound index on `items` (`metadataSource`, `category`, `providerId`). Linked-title lookups can use this index directly instead of scanning the library; the in-memory ID and provider maps remain the synchronous fast path while the app is open.
 
@@ -38,3 +38,10 @@ The portable snapshot has `items`, `history` and `preferences`. `items` contains
 | `lastProgressAt` | Epoch milliseconds for the latest episode progress on a series; used for automatic idle status transitions. Older records derive this from episode history or their existing update timestamp. |
 
 History records are `{ itemId, title, action, status, at }`, with episode changes also carrying `type: "episode"`; the timeline joins them to saved titles for posters. Preferences also hold `customSources`, `showSidebar`, `showScrollbars`, and motion controls including `animationSpeed`, `pageTransition`, `sheetAnimation`, `pressEffect`, `progressAnimation`, `skeletonShimmer` and `reduceMotion`. A motion profile version normalizes older animation choices to the current lightweight options.
+
+## Ratings, cast and backups (0.1.5)
+
+- `facts.episodeRatings` is `[{ season, number, rating, title? }]`, `facts.ratingBreakdown` and `facts.ratingCount` are the source's rating distribution. They are saved with the title so the Ratings tab and Statistics work offline.
+- Cast & crew is never saved. It is fetched when the Cast & Crew tab is opened while online and is held in memory for that visit only.
+- Backup JSON `version: 2` adds `index: [{ id, source, providerId, category, title, year }]` and a `backupRef` of the same shape on every item. Restore matches titles by `source` + `providerId` first, then by title identity, and restores `metadataSource` / `providerId` from `backupRef` when missing. CSV exports include `Source`, `SourceID` and `ID`.
+- Profile pictures: `profileAvatarPinned` / `profileCoverPinned` hold the title id and `profileAvatarPinnedImage` / `profileCoverPinnedImage` the chosen picture URL.

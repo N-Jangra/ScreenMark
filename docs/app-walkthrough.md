@@ -65,3 +65,14 @@ Discover keeps each provider's result separate. A saved title is identified by c
 ## Backups
 
 **Settings → Backups → Export List** saves the library and preferences to a backup file. Import can restore a ScreenMark backup or import title names from a text or CSV file. Android uses the system file picker and Save as flow.
+
+## 0.1.5 behavior notes
+
+- **Quick setup** opens automatically on a fresh install (after choosing the storage folder on Android). Titles it adds are filled in the background with full details and artwork.
+- **Cast & Crew** appears only when online; tap the tab to load it. Nothing about cast is stored.
+- **Edit profile**: pick *Picked below*, choose a series or movie, then one of its pictures for the profile photo or background.
+- **Backup / restore** (Settings → Backups → Export / Import) records each title's source and source id so restore re-links titles to their source and loads artwork faster.
+- **Sync status** (`#sync`, also Metadata Sync → Refresh status): shows Quick setup and restore downloads with a progress bar and a per-title list (Downloading, Queued, Synced, Not synced) with Retry failed and Clear finished. It keeps its list across restarts and resumes unfinished titles. Finishing Quick setup with more than 8 picks opens it.
+- **Backups** (Settings → Backups): JSON (full library, gzip-compressed as `.json.gz` in the browser and the Android app), CSV (tracking fields plus source and id) and TXT (`Title (Year)`). Restore opens JSON, `.json.gz`, `.sqdb`, CSV and TXT, re-links titles by source and id, and syncs them.
+- **Settings review:** Bar background Glass / Transparent and the transparency slider work on phones; Bar style Underline draws a line; Default Status offers Watchlist or Completed; Automatic Completion applies to series and movies; Show sidebar applies to tablets and wide windows only.
+- **MyAnimeList (Jikan)** falls back to AniList when `api.jikan.moe` is unreachable.
