@@ -599,6 +599,50 @@
     } finally { if (requestTimer) clearTimeout(requestTimer); }
   }
 
+  // Cache every episode still from the saved guide, not just rows the user has
+  // scrolled into view. The detail record remains the source of truth for the
+  // remote URL; this image cache provides a persistent offline copy.
+  const episodeImageJobs = new Map();
+  const episodeThumbKey = (itemId, episodeId) => `${app.key}:episode:${String(itemId)}:${String(episodeId)}`;
+  async function cacheEpisodeThumbnails(item) {
+    if (!item?.id || imageStorage !== "all" || !window.SplitAppIDB?.getThumbs || !window.SplitAppIDB?.putThumbs) return { cached: 0, skipped: true };
+    const id = String(item.id), active = episodeImageJobs.get(id);
+    if (active) return active;
+    const urls = new Map();
+    for (const section of item.cachedDetails?.sections || []) {
+      if (section?.kind !== "episodes") continue;
+      for (const episode of section.items || []) {
+        const url = String(episode?.image || "");
+        if (episode?.id != null && /^https:\/\//i.test(url)) urls.set(String(episode.id), url);
+      }
+    }
+    const task = (async () => {
+      let cached = 0;
+      const entries = [...urls].map(([episodeId, url]) => [episodeThumbKey(id, episodeId), url]);
+      for (let offset = 0; offset < entries.length; offset += 6) {
+        const batch = entries.slice(offset, offset + 6), already = new Map(await window.SplitAppIDB.getThumbs(batch).catch(() => []));
+        const writes = [];
+        for (const [key, signature] of batch) {
+          if (already.has(key)) continue;
+          try {
+            const image = await makeThumbnail(signature);
+            if (!image?.base64Content) continue;
+            const binary = atob(image.base64Content), bytes = new Uint8Array(binary.length);
+            for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+            writes.push([key, signature, new Blob([bytes], { type: image.mimeType || "image/webp" })]);
+          } catch (_) {}
+        }
+        if (writes.length) {
+          try { await window.SplitAppIDB.putThumbs(writes); cached += writes.length; } catch (_) {}
+        }
+        if (offset + 6 < entries.length) await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      return { cached, total: entries.length };
+    })().finally(() => episodeImageJobs.delete(id));
+    episodeImageJobs.set(id, task);
+    return task;
+  }
+
   async function syncFolderTree(payload, uri) {
     const plugin = window.Capacitor?.Plugins?.BackupFolder;
     if (!uri || !plugin?.writeNestedFile || !plugin?.writeNestedBinaryFile) return;
@@ -1653,6 +1697,7 @@
     save,
     chooseFolder,
     loadItemImages,
+    cacheEpisodeThumbnails,
     hydrateThumbnails,
     setImageStorage,
     inspectFolder,

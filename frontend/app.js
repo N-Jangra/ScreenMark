@@ -2411,6 +2411,42 @@
   // What changed on the last refresh of each saved title (not persisted): field names, used for the "Updated" note.
   const metadataChanges = new Map();
   const stableJson = value => JSON.stringify(value, (key, entry) => key === "fetchedAt" || key === "localImageData" ? undefined : entry);
+  const episodeThumbCacheKey = (item, episode) => `${window.SplitAppBackend?.key || "screenmark"}:episode:${String(item.id)}:${String(episode.id)}`;
+  async function hydrateEpisodeThumbnailCache(item) {
+    const api = window.SplitAppIDB;
+    if (!item?.cachedDetails || !api?.getThumbs) return 0;
+    const rows = (item.cachedDetails.sections || []).filter(section => section?.kind === "episodes").flatMap(section => section.items || [])
+      .filter(episode => episode?.id != null && /^https:\/\//i.test(String(episode.image || "")));
+    if (!rows.length) return 0;
+    const episodeByCacheKey = new Map(rows.map(episode => [episodeThumbCacheKey(item, episode), episode]));
+    const pairs = [...episodeByCacheKey].map(([key, episode]) => [key, String(episode.image)]);
+    let blobs = [];
+    try { blobs = await api.getThumbs(pairs); } catch (_) { return 0; }
+    item.localImageData ||= {};
+    let hydrated = 0;
+    for (const [key, blob] of blobs) {
+      const episode = episodeByCacheKey.get(key);
+      if (!episode || !blob) continue;
+      const cacheKey = `${key}|${String(episode.image)}`;
+      const url = thumbUrlCache.get(cacheKey) || rememberThumbUrl(key, String(episode.image), URL.createObjectURL(blob));
+      item.localImageData[`cachedDetails.episodesById.${String(episode.id)}.image`] = url;
+      hydrated++;
+    }
+    return hydrated;
+  }
+  function queueEpisodeThumbnailCache(item) {
+    if (!item?.cachedDetails) return;
+    const cache = window.SplitAppBackend?.cacheEpisodeThumbnails;
+    // Show images already saved on this device immediately, including while
+    // offline; then fill any missing rows in the background when connected.
+    hydrateEpisodeThumbnailCache(item).then(count => {
+      if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
+    }).catch(() => {});
+    if (!navigator.onLine || typeof cache !== "function") return;
+    Promise.resolve(cache(item)).then(() => hydrateEpisodeThumbnailCache(item)).then(count => {
+      if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
+    }).catch(() => {});
+  }
   function applyLoadedMetadata(item, loaded, { cacheDetails = true, replaceFacts = false } = {}) {
     if (!item || !loaded || typeof loaded !== "object") throw new Error("Metadata source returned an invalid detail record.");
     const changes = [];
@@ -2451,6 +2487,7 @@
     metadataChanges.set(metadataKey, [...new Set(changes)]);
     while (metadataChanges.size > 600) metadataChanges.delete(metadataChanges.keys().next().value);
     reconcileEpisodes(item);
+    if (item.category === "series" && item.cachedDetails) queueEpisodeThumbnailCache(item);
     return item;
   }
   function readCustomSourceForm() {
@@ -2559,6 +2596,7 @@
     detailAbortController = controller;
     const item = detailPreview || itemById(String(targetId ?? detailItemId));
     if (item?.cachedDetails?.compact) await hydrateDetails(item);
+    if (item?.category === "series" && item.cachedDetails) queueEpisodeThumbnailCache(item);
     const requestId = ++detailRequest, useCached = Boolean(item?.cachedDetails && prefs.offlineFallback !== "none");
     detailData = useCached ? item.cachedDetails : null; detailError = "";
     if (!item) { if (detailAbortController === controller) detailAbortController = null; detailLoading = false; render(); return; }
@@ -2735,6 +2773,22 @@
     }
     if (resume.length) syncImported(resume);
   }
+  function resumeEpisodeThumbnailCaching() {
+    if (!navigator.onLine) return;
+    const cachedGuides = items.filter(item => item.category === "series" && item.cachedDetails);
+    if (!cachedGuides.length) return;
+    let index = 0;
+    const worker = async () => {
+      while (index < cachedGuides.length) {
+        const item = cachedGuides[index++];
+        try {
+          if (item.cachedDetails?.compact) await hydrateDetails(item);
+          if (item.cachedDetails && !item.cachedDetails.compact) await cacheEpisodeThumbnails(item);
+        } catch (_) {}
+      }
+    };
+    Promise.all(Array.from({ length: Math.min(2, cachedGuides.length) }, worker)).catch(() => {});
+  }
   function hydrateSavedItem(item) {
     if (!item?.metadataSource || !item.providerId || item.fullDetailsAt || hydrating.has(item.id) || prefs.metadataMode === "offline") return;
     hydrating.add(item.id); hydrateQueue.push(item); markDownload(item, "queued"); pumpHydrateQueue();
@@ -2751,6 +2805,9 @@
       const loaded = await window.SplitAppDetails.load(item, { ...detailSettings() });
       if (itemById(item.id) !== item) { setupDownloads.delete(String(item.id)); return; }
       applyLoadedMetadata(item, loaded); item.fullDetailsAt = Date.now(); persist({ ids: [item.id] }); markDownload(item, "done");
+      // Queue the complete episode guide immediately; it must not depend on
+      // which season the user happens to expand in the details view.
+      if (item.category === "series") cacheEpisodeThumbnails(item).catch(() => {});
       if (page === "details" && String(detailItemId) === String(item.id)) { detailData = item.cachedDetails; render(); }
       else if (page === "sync") scheduleHydrateRender(); // collection pages are not rebuilt while downloads run: a full re-render restarts every poster's image loading
     } catch (error) { markDownload(item, "failed", error?.message || "Could not load details."); recordLog("warning", `Could not save details for ${item.title}: ${error?.message || error}`); if (page === "sync") scheduleHydrateRender(); }
@@ -4688,7 +4745,7 @@
       const full = await restoreNativeData();
       if (full === false) finishStartup(false);
       else if (full) { applySeriesInactivityTransitions(); if (libraryStamp() !== before) { applyPreferences(); render(); } } // keep scroll position when nothing changed
-      if (full) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); }
+      if (full) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); resumeEpisodeThumbnailCaching(); }
       setTimeout(fillThumbCache, 1500);
       setTimeout(shrinkThumbCacheOnce, 8000);
       return;
@@ -4696,7 +4753,7 @@
     // null means "nothing stored yet" (a fresh install), which is a valid empty library, not a failure.
     const full = await restoreNativeData();
     finishStartup(full !== false);
-    if (full !== false) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); }
+    if (full !== false) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); resumeEpisodeThumbnailCaching(); }
     setTimeout(fillThumbCache, 3000);
     setTimeout(shrinkThumbCacheOnce, 8000);
   });
