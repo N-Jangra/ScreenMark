@@ -19,6 +19,7 @@
       detailLoading, detailError, detailEditMode, category, labelCategory, prefs, roles, esc
     } = context;
     const renderImage = context.imageMarkup || window.SplitAppImageMarkup;
+    const savedEpisodeImage = (item, episode) => episode?.id == null ? "" : item?.localImageData?.[`cachedDetails.episodesById.${String(episode.id)}.image`] || "";
 
     const detailValue = value => Array.isArray(value)
       ? value.map(detailValue).filter(Boolean).join(", ")
@@ -58,7 +59,7 @@
     const safeImage = value => /^data:image\/[a-z0-9.+-]+;base64,/i.test(String(value || "")) ? String(value) : safeUrl(value);
     const episodeCountdown = episode => {
       const airtime = Number(window.SplitAppLibrary.episodeAirTime?.(episode)) || 0;
-      if (!airtime) return "Date unknown";
+      if (!airtime) return "TBD";
       const days = Math.max(0, Math.ceil((airtime - Date.now()) / 86400000));
       return days === 0 ? "Today" : `${days} day${days === 1 ? "" : "s"}`;
     };
@@ -98,6 +99,8 @@
       return `<div class="ep-ratings" data-layout="${layout}" data-layout-mode="${manualLayout ? "manual" : "auto"}" data-season-count="${seasons.length}" data-longest="${longest}"><div class="ep-ratings-bar"><p class="ep-ratings-note">Average ★ ${average.toFixed(1)} across ${rated.length} rated episodes</p><div class="ep-layout-toggle" role="group" aria-label="Episode rating layout">${layoutControls}</div></div><div class="ep-ratings-scroll ep-ratings-h">${horizontal}</div><div class="ep-ratings-scroll ep-ratings-v">${vertical}</div></div>`;
     };
     const episodeGuide = (section, rows, watchedIds, canToggle, item, sectionIndex, imageButton, fallbackImage = "") => {
+      window.SplitAppLibrary.annotateEpisodes?.(rows); // marks trailing undated episodes as TBD before any row is drawn
+      const sourceIndexById = new Map(rows.map((row, index) => [String(row.id), index]));
       const seasons = [...new Set(rows.map(row => row.season))].sort((a, b) => a - b);
       const firstOpen = rows.find(row => !watchedIds.has(String(row.id)))?.season ?? seasons[seasons.length - 1];
       const selected = seasons.map(String).includes(String(context.detailSeason)) ? Number(context.detailSeason) : firstOpen;
@@ -112,7 +115,7 @@
         const all = list.length > 0 && done === list.length, pct = list.length ? Math.round(done / list.length * 100) : 0;
         const ids = list.map(row => row.id).join(","), year = info.premiere ? String(info.premiere).slice(0, 4) : "";
         const rowsHtml = `<ul class="episode-list">${list.map(row => {
-          const watched = watchedIds.has(String(row.id)), thumb = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${rows.indexOf(row)}.image`] || row.image) || fallbackImage;
+          const watched = watchedIds.has(String(row.id)), thumb = safeImage(savedEpisodeImage(item, row) || item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${sourceIndexById.get(String(row.id))}.image`] || row.image) || fallbackImage;
           const upcoming = Boolean(window.SplitAppLibrary.isUpcoming?.(row)) && !watched;
           const check = canToggle ? upcoming ? `<span class="episode-countdown" aria-label="Airs in ${esc(episodeCountdown(row))}">${esc(episodeCountdown(row))}</span>` : `<button type="button" class="episode-check ${watched ? "is-watched" : ""}" data-episode-toggle data-episode-id="${esc(row.id)}" data-episode-title="${esc(`S${row.season}E${row.number} ${row.title}`)}" role="checkbox" aria-checked="${watched}" aria-label="Mark ${esc(row.title)} ${watched ? "unwatched" : "watched"}">${watched ? "✓" : ""}</button>` : "";
           const meta = [window.SplitAppDates.text(row.airdate), row.runtime ? `${row.runtime}m` : ""].filter(Boolean).join("  ");
@@ -343,11 +346,12 @@
       const unifiedProgress = epInfo ? (() => {
         const episodeSectionIndex = (loaded.sections || []).findIndex(section => section.kind === "episodes");
         const episodeSection = loaded.sections?.[episodeSectionIndex];
+        const episodeIndexById = new Map((episodeSection?.items || []).map((entry, index) => [String(entry.id), index]));
         const focusIndex = epInfo.next ? epInfo.eps.findIndex(entry => String(entry.id) === String(epInfo.next.id)) : epInfo.eps.length - 1;
         const cards = epInfo.eps.map((episode, index) => {
           const watched = epInfo.watched.has(String(episode.id));
-          const sourceIndex = (episodeSection?.items || []).findIndex(entry => String(entry.id) === String(episode.id));
-          const image = safeImage(item.localImageData?.[`cachedDetails.sections.${episodeSectionIndex}.items.${sourceIndex}.image`] || episode.image) || safeImage(item.customCover || item.localThumbnailData || item.image);
+          const sourceIndex = episodeIndexById.get(String(episode.id));
+          const image = safeImage(savedEpisodeImage(item, episode) || item.localImageData?.[`cachedDetails.sections.${episodeSectionIndex}.items.${sourceIndex}.image`] || episode.image) || safeImage(item.customCover || item.localThumbnailData || item.image);
           const episodeTitle = episode.title || `Episode ${episode.number}`;
           const media = image ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : `<span class="tracking-episode-placeholder" aria-hidden="true">▶</span>`;
           const open = refButton(episode.ref || { type: "episode", id: episode.id }, "tracking-episode-open", `<span class="tracking-episode-art">${media}</span><span class="tracking-episode-copy"><strong>S${String(episode.season).padStart(2, "0")} | E${String(episode.number).padStart(2, "0")}</strong><small>${esc(episodeTitle)}</small></span>`);

@@ -1,15 +1,26 @@
 // Profile overview and poster collections.
 (() => {
+  // Lower-cased titles are computed once per title object, so typing in search does not re-lowercase 50k titles per key.
+  const lowerTitles = new WeakMap();
+  const lowerTitle = item => { let value = lowerTitles.get(item); if (value === undefined) { value = String(item.title || "").toLocaleLowerCase(); lowerTitles.set(item, value); } return value; };
   window.SplitAppPages = window.SplitAppPages || {};
   const PAGE_BATCH = 100;
   const COLLECTION_BATCH = 25;
   const titleCollator = new Intl.Collator(undefined, { sensitivity: "base" });
   const collectionVisible = new Map();
+  // Large collections are windowed: the page only draws the rows near the screen (see mountVirtualGrids in app.js), which asks
+  // for tiles by index. 10k+ titles therefore cost the same as 100, and posters load as you scroll.
+  const virtualSources = new Map();
+  const VIRTUAL_MIN = 80;
   const collectionSearchValues = new Map();
   let collectionQueryKey = "";
   const collectionSortCache = new Map();
   let collectionCacheItems = null, collectionCacheRevision, collectionCacheKey = "";
   const watchlistVisible = new Map();
+  const setBounded = (map, key, value, limit) => {
+    map.delete(key); map.set(key, value);
+    while (map.size > limit) map.delete(map.keys().next().value);
+  };
   const artOf = item => item?.customCover || item?.localThumbnailData || item?.localPortraitData || item?.image || "";
   const landscapeOf = item => item?.localLandscapeData || item?.localImageData?.["cachedDetails.landscapeImage"] || item?.localImageData?.["cachedDetails.backgroundImage"] || item?.backdrop || item?.cachedDetails?.landscapeImage || item?.cachedDetails?.backgroundImage || "";
   const stampOf = item => Number(item?.createdAt) || Number(item?.updatedAt) || 0;
@@ -102,11 +113,12 @@
   }
   const browse = { cover: "", avatar: "" };
   const pickedSrc = (item, kind, prefs) => pref(prefs, kind, "Source") === "pinned" ? pinnedSrc(item, kind, prefs) : "";
+  const cropStyle = (kind, prefs) => { const prefix = KINDS[kind].prefix, crop = prefs[prefix + "PinnedCrop"] || {}; const positionX = Number.isFinite(Number(crop.positionX)) ? Number(crop.positionX) : Math.max(0, Math.min(100, 50 - (Number(crop.x) || 0))); const positionY = Number.isFinite(Number(crop.positionY)) ? Number(crop.positionY) : Math.max(0, Math.min(100, 50 - (Number(crop.y) || 0))); return `--profile-crop-position-x:${positionX}%;--profile-crop-position-y:${positionY}%;--profile-crop-zoom:${Math.max(1, Number(crop.zoom) || 1)}`; };
   const pickCover = (items, prefs, force) => pickFor("cover", items, prefs, force);
   const avatarMarkup = (esc, items = [], prefs = {}) => {
     const source = pref(prefs, "avatar", "Source");
     if (source === "custom") { const src = readAvatar(); if (src.startsWith("data:image/")) return `<span class="avatar-img" role="img" aria-label="Profile photo" style="background-image:url('${esc(src)}')"></span>`; }
-    else if (source !== "none") { const item = pickFor("avatar", items, prefs); if (item) return `<span class="avatar-img" role="img" aria-label="${esc(item.title)}" style="background-image:url('${esc(pickedSrc(item, "avatar", prefs) || artOf(item)).replace(/'/g, "%27")}')"></span>`; }
+    else if (source !== "none") { const item = pickFor("avatar", items, prefs); if (item) return `<span class="avatar-img profile-avatar-crop" role="img" aria-label="${esc(item.title)}" style="${cropStyle("avatar", prefs)}"><img src="${esc(pickedSrc(item, "avatar", prefs) || artOf(item)).replace(/'/g, "%27")}" alt="" loading="lazy" decoding="async"></span>`; }
     return `<i data-lucide="user-round" aria-hidden="true"></i>`;
   };
   const optionLists = kind => {
@@ -121,6 +133,7 @@
   const pickerLimit = { cover: 18, avatar: 24 };
   function profileCoverPage(context) {
     const { items = [], prefs = {}, esc } = context;
+    const coverAspect = window.SplitAppPages.profileCoverAspect();
     const library = kind => {
       const k = KINDS[kind], landscape = k.landscape, noun = landscape ? "background" : "photo";
       if (pref(prefs, kind, "Source") !== "pinned") return `<section class="profile-cover-library"><p class="profile-cover-hint">Want one specific picture? Choose <strong>Picked below</strong> above, then pick a series or movie and the poster, thumbnail or background to use.</p></section>`;
@@ -129,8 +142,8 @@
       if (browsing) {
         let index = 0;
         const groups = candidatesOf(browsing, kind);
-        const body = groups.length ? groups.map(row => `<h4>${esc(row.title)} <small>${row.images.length}</small></h4><div class="profile-pick-grid ${/background|screenshot|image|still|banner/i.test(row.title) || (landscape && row.title !== "Posters & thumbnails") ? "cover" : kind}">${row.images.map(image => { const at = index++, selected = chosenId === String(browsing.id) && chosenImage === image.value; return `<button type="button" class="profile-pick-tile${selected ? " selected" : ""}" data-cover-image="${kind}" data-id="${esc(browsing.id)}" data-index="${at}" aria-label="Use ${esc(image.label)}" aria-pressed="${selected}"><img src="${esc(image.src)}" alt="" loading="lazy" decoding="async" onerror="this.closest('button').hidden=true"></button>`; }).join("")}</div>`).join("") : `<p class="profile-cover-hint">${esc(browsing.title)} has no saved pictures yet. Open it online once to download them.</p>`;
-        return `<section class="profile-cover-library"><div class="profile-pick-head"><button type="button" class="profile-cover-remove" data-cover-back="${kind}"><i data-lucide="chevron-left" aria-hidden="true"></i><span>Titles</span></button><strong>${esc(browsing.title)}</strong></div><p class="profile-cover-hint">Tap a ${noun} to use it.</p>${body}</section>`;
+        const body = groups.length ? groups.map(row => `<h4>${esc(row.title)} <small>${row.images.length}</small></h4><div class="profile-pick-grid ${/background|screenshot|image|still|banner/i.test(row.title) || (landscape && row.title !== "Posters & thumbnails") ? "cover" : kind}">${row.images.map(image => { const at = index++, selected = chosenId === String(browsing.id) && chosenImage === image.value; return `<button type="button" class="profile-pick-tile${selected ? " selected" : ""}" data-cover-image="${kind}" data-id="${esc(browsing.id)}" data-index="${at}" aria-label="Adjust ${esc(image.label)}" aria-pressed="${selected}"><img src="${esc(image.src)}" alt="" loading="lazy" decoding="async" onerror="this.closest('button').hidden=true"></button>`; }).join("")}</div>`).join("") : `<p class="profile-cover-hint">${esc(browsing.title)} has no saved pictures yet. Open it online once to download them.</p>`;
+        return `<section class="profile-cover-library"><div class="profile-pick-head"><button type="button" class="profile-cover-remove" data-cover-back="${kind}"><i data-lucide="chevron-left" aria-hidden="true"></i><span>Titles</span></button><strong>${esc(browsing.title)}</strong></div><p class="profile-cover-hint">Tap a ${noun} to adjust its position before saving.</p>${body}</section>`;
       }
       const all = items.filter(hasArt).sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), undefined, { sensitivity: "base" }));
       if (!all.length) return `<section class="profile-cover-library"><p class="profile-cover-hint">Add a series or movie first, then come back to pick its pictures.</p></section>`;
@@ -141,7 +154,7 @@
       const k = KINDS[kind], source = pref(prefs, kind, "Source"), lists = optionLists(kind), count = poolOf(items, kind, source).length;
       const group = name => `<section class="profile-cover-setting"><h3>${lists[name][0]}</h3>${lists[name][1].map(([value, label]) => `<label class="profile-cover-option"><input type="radio" name="${k.prefix}${name}" data-pref="${k.prefix}${name}" value="${value}" ${pref(prefs, kind, name) === value ? "checked" : ""}><span>${label}</span></label>`).join("")}</section>`;
       let preview;
-      if (kind === "cover") { const cover = pickCover(items, prefs); preview = `<div class="profile-cover-preview">${cover ? coverMarkup(cover, esc, true, undefined, pickedSrc(cover, "cover", prefs)) : `<span class="profile-cover-empty"></span>`}<span class="profile-cover-shade"></span><small>${cover ? esc(cover.title) : "No cover"}</small></div>`; }
+      if (kind === "cover") { const cover = pickCover(items, prefs); preview = `<div class="profile-cover-preview" style="--profile-cover-aspect:${coverAspect}"><div class="profile-cover-crop" style="${cropStyle("cover", prefs)}">${cover ? coverMarkup(cover, esc, true, undefined, pickedSrc(cover, "cover", prefs)) : `<span class="profile-cover-empty"></span>`}</div><span class="profile-cover-shade"></span><small>${cover ? esc(cover.title) : "No cover"}</small></div>`; }
       else preview = `<div class="profile-avatar-editor"><span class="profile-avatar">${avatarMarkup(esc, items, prefs)}</span>${source === "custom" ? `<label class="profile-cover-shuffle"><i data-lucide="image-plus" aria-hidden="true"></i><span>Choose photo</span><input type="file" accept="image/*" data-profile-avatar-file hidden></label>${readAvatar() ? `<button type="button" class="profile-cover-remove" data-profile-avatar-remove>Remove photo</button>` : ""}` : ""}</div>`;
       const usesPool = !["none", "custom", "pinned"].includes(source);
       return `<section class="profile-cover-block"><h2>${k.title}</h2>${preview}${usesPool ? `<button type="button" class="profile-cover-shuffle" data-profile-cover-shuffle="${kind}"><i data-lucide="shuffle" aria-hidden="true"></i><span>Shuffle now</span></button>` : ""}${group("Source")}${usesPool ? group("Mode") + group("Interval") : ""}${library(kind)}</section>`;
@@ -177,7 +190,7 @@
     const countCard = (label, count, icon) => `<a class="profile-stat-card profile-stat-count-card" href="#statistics"><span class="profile-stat-heading"><i data-lucide="${icon}" aria-hidden="true"></i><strong>${label}</strong></span><span class="profile-count-value">${Math.round(Number(count) || 0)}</span></a>`;
     const empty = `<div class="profile-empty"><i data-lucide="library" aria-hidden="true"></i><strong>Your profile is ready</strong><span>Add tracked movies and series to build your page.</span><button type="button" data-go="discover">Discover titles</button></div>`;
     const shelves = `${series.length ? `<section class="profile-shelf">${sectionHeader("Series", "series", series.length)}<div class="profile-poster-rail">${series.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div></section><section class="profile-shelf">${sectionHeader("♥ Series favorites", "series-favorites", favoriteSeries.length)}${favoriteSeries.length ? `<div class="profile-poster-rail">${favoriteSeries.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div>` : `<button type="button" class="profile-favorite-empty" data-go="series-favorites"><span class="profile-favorite-plus" aria-hidden="true">+</span><span>Add series favorites</span></button>`}</section>` : ""}${movies.length ? `<section class="profile-shelf">${sectionHeader("Movies", "movies", movies.length)}<div class="profile-poster-rail">${movies.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div></section><section class="profile-shelf">${sectionHeader("♥ Movie favorites", "movie-favorites", favoriteMovies.length)}${favoriteMovies.length ? `<div class="profile-poster-rail">${favoriteMovies.slice(0, 5).map(item => posterButton(item, esc)).join("")}</div>` : `<button type="button" class="profile-favorite-empty" data-go="movie-favorites"><span class="profile-favorite-plus" aria-hidden="true">+</span><span>Add movie favorites</span></button>`}</section>` : ""}`;
-    return `<section class="profile-page"><section class="profile-hero"><div class="profile-cover">${cover ? coverMarkup(cover, esc, true, undefined, pickedSrc(cover, "cover", context.prefs || {})) : `<span class="profile-cover-empty"></span>`}<span class="profile-cover-shade"></span></div><button type="button" class="profile-overflow-trigger" aria-label="More profile options" data-open-profile-menu><i data-lucide="ellipsis" aria-hidden="true"></i></button><div class="profile-identity"><span class="profile-avatar-wrap"><span class="profile-avatar">${avatarMarkup(esc, items, context.prefs || {})}</span><a class="profile-avatar-edit" href="#profile-cover" aria-label="Edit profile photo and cover"><i data-lucide="pencil" aria-hidden="true"></i></a></span><button type="button" class="profile-add-manual" data-profile-add><i data-lucide="plus" aria-hidden="true"></i><span>Add manually</span></button></div></section><dialog class="profile-options-dialog" id="profile-options-dialog" aria-label="Profile options"><header><strong>Profile options</strong><button type="button" data-profile-menu-close aria-label="Close options">×</button></header><nav><a href="#timeline"><i data-lucide="history" aria-hidden="true"></i><span>Timeline</span></a><a href="#setup"><i data-lucide="wand-sparkles" aria-hidden="true"></i><span>Quick setup</span></a><a href="#settings/metadata-sources"><i data-lucide="database" aria-hidden="true"></i><span>Sources</span></a><a href="#settings"><i data-lucide="settings" aria-hidden="true"></i><span>Settings</span></a><a href="#settings/app-info"><i data-lucide="circle-help" aria-hidden="true"></i><span>About</span></a></nav></dialog><section class="profile-stats"><header class="profile-section-heading"><h2>Stats</h2><a href="#statistics" aria-label="Open full statistics"><i data-lucide="chevron-right" aria-hidden="true"></i></a></header><div class="profile-stat-rail">${timeCard("Series time", seriesMinutes, "tv")} ${countCard("Episodes watched", watchedEpisodes, "tv")} ${timeCard("Movie time", movieMinutes, "clapperboard")} ${countCard("Movies watched", watchedMovies, "clapperboard")}</div></section>${shelves}${items.length ? "" : empty}</section>`;
+    return `<section class="profile-page"><section class="profile-hero"><div class="profile-cover"><div class="profile-cover-crop" style="${cropStyle("cover", context.prefs || {})}">${cover ? coverMarkup(cover, esc, true, undefined, pickedSrc(cover, "cover", context.prefs || {})) : `<span class="profile-cover-empty"></span>`}</div><span class="profile-cover-shade"></span></div><button type="button" class="profile-overflow-trigger" aria-label="More profile options" data-open-profile-menu><i data-lucide="ellipsis" aria-hidden="true"></i></button><div class="profile-identity"><span class="profile-avatar-wrap"><span class="profile-avatar">${avatarMarkup(esc, items, context.prefs || {})}</span><a class="profile-avatar-edit" href="#profile-cover" aria-label="Edit profile photo and cover"><i data-lucide="pencil" aria-hidden="true"></i></a></span><button type="button" class="profile-add-manual" data-profile-add><i data-lucide="plus" aria-hidden="true"></i><span>Add manually</span></button></div></section><dialog class="profile-options-dialog" id="profile-options-dialog" aria-label="Profile options"><header><strong>Profile options</strong><button type="button" data-profile-menu-close aria-label="Close options">×</button></header><nav><a href="#timeline"><i data-lucide="history" aria-hidden="true"></i><span>Timeline</span></a><a href="#setup"><i data-lucide="wand-sparkles" aria-hidden="true"></i><span>Quick setup</span></a><a href="#settings/metadata-sources"><i data-lucide="database" aria-hidden="true"></i><span>Sources</span></a><a href="#settings"><i data-lucide="settings" aria-hidden="true"></i><span>Settings</span></a><a href="#settings/app-info"><i data-lucide="circle-help" aria-hidden="true"></i><span>About</span></a></nav></dialog><section class="profile-stats"><header class="profile-section-heading"><h2>Stats</h2><a href="#statistics" aria-label="Open full statistics"><i data-lucide="chevron-right" aria-hidden="true"></i></a></header><div class="profile-stat-rail">${timeCard("Series time", seriesMinutes, "tv")} ${countCard("Episodes watched", watchedEpisodes, "tv")} ${timeCard("Movie time", movieMinutes, "clapperboard")} ${countCard("Movies watched", watchedMovies, "clapperboard")}</div></section>${shelves}${items.length ? "" : empty}</section>`;
   }
 
   function collectionPage(context, kind, favorites = false) {
@@ -191,6 +204,7 @@
     if (collectionCacheItems !== items || collectionCacheRevision !== context.dataRevision || collectionCacheKey !== revisionKey) {
       collectionSortCache.clear(); collectionCacheItems = items; collectionCacheRevision = context.dataRevision; collectionCacheKey = revisionKey;
     }
+    virtualSources.clear();
     const categoryItems = items.filter(item => item.category === category && (!favorites || item.favorite));
     // No favorites yet: show every title as a grid with a heart to pick favorites (same filters, search and progress bars).
     const pickMode = favorites && !categoryItems.length;
@@ -204,19 +218,27 @@
     let sorted = collectionSortCache.get(sortKey);
     if (!sorted || sorted.items !== items || sorted.revision !== context.dataRevision) {
       sorted = { items, revision: context.dataRevision, rows: sortItems(poolItems) };
-      collectionSortCache.set(sortKey, sorted);
+      setBounded(collectionSortCache, sortKey, sorted, 8);
     }
-    const matchesSearch = item => !normalizedSearch || String(item.title || "").toLocaleLowerCase().includes(normalizedSearch);
+    const matchesSearch = item => !normalizedSearch || lowerTitle(item).includes(normalizedSearch);
     const filtered = sorted.rows.filter(item => matchesSearch(item) && (selectedStatus === "all" || item.status === selectedStatus) && (profileGenreFilter === "all" || genreOf(item).some(value => String(value).toLocaleLowerCase() === profileGenreFilter.toLocaleLowerCase())));
     const queryKey = `${kind}|${favorites}|${pickMode}|${profileCollectionSort}|${selectedStatus}|${profileGenreFilter}|${profileStatusGroups}|${normalizedSearch}`;
-    if (queryKey !== collectionQueryKey) { collectionQueryKey = queryKey; if (!collectionVisible.has(queryKey)) collectionVisible.set(queryKey, COLLECTION_BATCH); }
+    if (queryKey !== collectionQueryKey) { collectionQueryKey = queryKey; if (!collectionVisible.has(queryKey)) setBounded(collectionVisible, queryKey, COLLECTION_BATCH, 32); }
     const visibleCount = collectionVisible.get(queryKey) || COLLECTION_BATCH;
     const sortChoices = [["alpha", "Alphabetical"], ["recent", "Recently added"], ["rating", "Top rated"], ["watched", "Most watched"]];
     const selectedSortLabel = sortChoices.find(([key]) => key === profileCollectionSort)?.[1] || "Recently added";
     const filtersApplied = profileCollectionSort !== "alpha" || selectedStatus !== "all" || profileGenreFilter !== "all";
     const filterDialog = `<dialog class="choice-dialog profile-filter-dialog" id="profile-filter-dialog"><div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">${category === "series" ? "SHOWS" : "MOVIES"}</p><h2>Filters</h2></div><button type="button" class="choice-dialog-close" data-profile-filter-close aria-label="Close">×</button></header><div class="profile-filter-sheet-body"><section><h3>Sort by</h3><div class="profile-filter-chips">${sortChoices.map(([value, label]) => `<button type="button" class="${profileCollectionSort === value ? "active" : ""}" data-profile-sort-choice="${value}" aria-pressed="${profileCollectionSort === value}">${label}</button>`).join("")}</div></section>${genres.length ? `<section><h3>Genres</h3><div class="profile-filter-genres">${genres.map(genre => `<button type="button" class="${profileGenreFilter.toLocaleLowerCase() === genre.toLocaleLowerCase() ? "active" : ""}" data-profile-genre-choice="${esc(genre)}" aria-pressed="${profileGenreFilter.toLocaleLowerCase() === genre.toLocaleLowerCase()}">${esc(genre)}</button>`).join("")}</div></section>` : ""}<section><h3>Status</h3><div class="profile-filter-statuses"><button type="button" data-profile-status-choice="all" aria-pressed="${selectedStatus === "all"}"><span>All</span><i></i></button>${statuses.map(status => `<button type="button" data-profile-status-choice="${esc(status)}" aria-pressed="${status === selectedStatus}"><span>${esc(status)}</span><i></i></button>`).join("")}</div></section></div><footer class="choice-dialog-actions"><button type="button" class="button secondary" data-profile-filter-reset>Reset</button><button type="button" class="button primary" data-profile-filter-close>Done</button></footer></dialog>`;
     const heart = item => `<button type="button" class="profile-fav-heart" data-action="toggle-favorite" data-id="${esc(item.id)}" aria-label="Add ${esc(item.title)} to favorites" title="Add to favorites"><i data-lucide="heart" aria-hidden="true"></i></button>`;
-    const gridFor = rows => rows.length ? `<div class="profile-collection-grid${pickMode ? " is-picking" : ""}">${rows.map(item => pickMode ? `<div class="profile-pick-wrap">${posterButton(item, esc, context.roles, true)}${heart(item)}</div>` : posterButton(item, esc, context.roles, true)).join("")}</div>` : "";
+    let virtualCount = 0;
+    const tileFor = item => pickMode ? `<div class="profile-pick-wrap">${posterButton(item, esc, context.roles, true)}${heart(item)}</div>` : posterButton(item, esc, context.roles, true);
+    const gridFor = rows => {
+      if (!rows.length) return "";
+      if (rows.length < VIRTUAL_MIN) return `<div class="profile-collection-grid${pickMode ? " is-picking" : ""}">${rows.map(tileFor).join("")}</div>`;
+      const id = `grid${virtualCount++}`;
+      virtualSources.set(id, { count: rows.length, tile: index => tileFor(rows[index]) });
+      return `<div class="profile-collection-grid is-virtual${pickMode ? " is-picking" : ""}" data-virtual-grid="${id}" data-virtual-total="${rows.length}" aria-label="${rows.length} titles"></div>`;
+    };
     const favoriteCandidateRows = [];
     const favoriteCandidates = favoriteCandidateRows.slice(0, visibleCount).map(item => `<article class="favorite-picker-row"><button type="button" class="favorite-picker-open" data-open-details data-id="${esc(item.id)}" aria-label="Open ${esc(item.title)}">${coverMarkup(item, esc)}<span><strong>${esc(item.title)}</strong>${item.year ? `<small>${esc(String(item.year).slice(0, 4))}</small>` : ""}</span></button><button type="button" class="favorite-picker-add" data-action="toggle-favorite" data-id="${esc(item.id)}" aria-label="Add ${esc(item.title)} to favorites" title="Add to favorites"><i data-lucide="heart" aria-hidden="true"></i></button></article>`).join("");
     const searchControl = kind === "movie" ? `<label class="profile-collection-search"><i data-lucide="search" aria-hidden="true"></i><input type="search" data-collection-search="${esc(searchKey)}" value="${esc(searchText)}" placeholder="Search ${favorites ? "movie favorites" : "movies"}" aria-label="Search ${favorites ? "movie favorites" : "movies"}"></label>` : "";
@@ -224,10 +246,10 @@
     if (profileStatusGroups && selectedStatus === "all") {
       const ordered = [...statuses.filter(status => status !== (roles.done || "Completed")), roles.done || "Completed"].filter(status => statuses.includes(status));
       const groupMap = new Map(ordered.map(status => [status, []]));
-      filtered.slice(0, visibleCount).forEach(item => groupMap.get(item.status)?.push(item));
+      filtered.forEach(item => groupMap.get(item.status)?.push(item));
       const grouped = ordered.map(status => ({ status, rows: groupMap.get(status) })).filter(group => group.rows.length);
       content = grouped.length ? `<div class="profile-status-groups">${grouped.map(group => `<section class="profile-status-group"><h3>${esc(group.status)}</h3>${gridFor(group.rows)}</section>`).join("")}</div>` : "";
-    } else content = gridFor(filtered.slice(0, visibleCount));
+    } else content = gridFor(filtered);
     if (pickMode && filtered.length) content = `<div class="favorite-picker-intro"><i data-lucide="heart" aria-hidden="true"></i><div><strong>Add ${category === "series" ? "shows" : "movies"} to favorites</strong><span>Tap the heart on any title in your library.</span></div></div>${content}`;
     if (!filtered.length) content = context.libraryLoading && !items.length
       ? `<div class="profile-collection-grid profile-collection-skeleton" role="status" aria-label="Loading library">${Array.from({ length: 12 }, () => `<span class="profile-collection-skeleton-card" aria-hidden="true"></span>`).join("")}</div>`
@@ -238,7 +260,7 @@
       ? `<footer class="profile-filter-bar"><button type="button" class="profile-filter-icon" data-open-profile-filters aria-label="Open filters"><i data-lucide="sliders-horizontal" aria-hidden="true"></i></button><button type="button" class="profile-sort-pill" data-open-profile-filters aria-label="Sort by ${esc(selectedSortLabel)}">${esc(selectedSortLabel)} <i data-lucide="chevron-down" aria-hidden="true"></i></button></footer>`
       : `<button type="button" class="profile-filter-pill" data-open-profile-filters><i data-lucide="sliders-horizontal" aria-hidden="true"></i><span>Filters</span></button>`;
     const moreTotal = filtered.length;
-    const more = moreTotal > visibleCount ? `<button type="button" class="watchlist-browse" data-collection-more="${esc(queryKey)}">Load more · ${Math.min(visibleCount, moreTotal)} of ${moreTotal}</button>` : "";
+    const more = ""; // nothing to "load": the grid draws more rows as you scroll
     return `<section class="profile-page profile-list-page"><header class="profile-list-header"><button type="button" data-go="profile" aria-label="Back to profile"><i data-lucide="chevron-left" aria-hidden="true"></i></button><h2>${title}</h2><div class="profile-list-header-actions"><button class="profile-visibility-toggle${profileStatusGroups ? " is-active" : ""}" type="button" data-profile-groups aria-label="${profileStatusGroups ? "Show all titles in one grid" : "Group titles by status"}" aria-pressed="${profileStatusGroups}"><i data-lucide="eye" aria-hidden="true"></i></button></div></header>${searchControl}${content}${more}${filterControl}${filterDialog}</section>`;
   }
 
@@ -249,13 +271,14 @@
   const episodeAirTime = episode => window.SplitAppLibrary.episodeAirTime?.(episode) || 0;
   const daysUntil = value => {
     const timestamp = Date.parse(value || "");
-    if (!timestamp) return "Date unknown";
+    if (!timestamp) return "TBD";
     const days = Math.max(0, Math.ceil((timestamp - Date.now()) / 86400000));
     return days === 0 ? "Today" : days === 1 ? "1 day" : `${days} days`;
   };
   function watchlistCard({ item, episode, esc, roles, imageMarkup = window.SplitAppImageMarkup, watched = false, upcoming = false, view = "list" }) {
     const isMovie = item.category === "movie";
-    const episodeArt = episode?.image || "";
+    const rawEpisodeArt = String(episode?.image || "");
+    const episodeArt = /^(?:https?:\/\/|data:image\/)/i.test(rawEpisodeArt) && !/\.invalid(?:[/:?#]|$)/i.test(rawEpisodeArt) ? rawEpisodeArt : "";
     const thumb = episodeArt || item.customCover || item.localThumbnailData || item.localPortraitData || item.image || "";
     const landscape = item.localLandscapeData || item.localImageData?.["cachedDetails.landscapeImage"] || item.localImageData?.["cachedDetails.backgroundImage"] || item.backdrop || item.cachedDetails?.landscapeImage || item.cachedDetails?.backgroundImage || thumb;
     const season = Number(episode?.season) || 0, number = Number(episode?.number) || 0;
@@ -273,7 +296,7 @@
     const remaining = isMovie ? "" : ` +${Math.max(0, (episodeProgress?.total || 0) - (episodeProgress?.done || 0))}`;
     const fallback = `<span class="watchlist-art-fallback"><i data-lucide="${isMovie ? "clapperboard" : "tv"}" aria-hidden="true"></i></span>`;
     const art = imageMarkup
-      ? imageMarkup(!episodeArt ? item : null, thumb, "", fallback)
+      ? imageMarkup(item, thumb, "", fallback)
       : thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : fallback;
     if (view === "posters") {
       const progressInfo = !isMovie ? window.SplitAppLibrary.episodeInfo(item) : null;
@@ -344,6 +367,7 @@
       if (category === "series") {
         const upcoming = relevant.flatMap(item => {
           const watched = new Set((item.watchedEpisodeIds || []).map(String));
+          (item.cachedDetails?.sections || []).filter(section => section.kind === "episodes").forEach(section => window.SplitAppLibrary.annotateEpisodes?.(section.items));
           const episode = (item.cachedDetails?.sections || []).filter(section => section.kind === "episodes").flatMap(section => section.items || []).filter(row => Boolean(window.SplitAppLibrary.isUpcoming?.(row)) && !watched.has(String(row.id))).sort((a, b) => episodeAirTime(a) - episodeAirTime(b))[0];
           return episode ? [{ item, episode }] : [];
         }).sort((a, b) => episodeAirTime(a.episode) - episodeAirTime(b.episode));
@@ -389,11 +413,19 @@
 
   window.SplitAppPages.watchlistCard = watchlistCard;
   window.SplitAppPages.loadMoreCollection = key => { const query = String(key || collectionQueryKey); collectionVisible.set(query, (collectionVisible.get(query) || COLLECTION_BATCH) + COLLECTION_BATCH); return true; };
-  window.SplitAppPages.setCollectionSearch = (key, value) => { collectionSearchValues.set(String(key), String(value || "")); return true; };
-  window.SplitAppPages.loadMoreWatchlist = key => { watchlistVisible.set(String(key), (watchlistVisible.get(String(key)) || PAGE_BATCH) + PAGE_BATCH); return true; };
+  window.SplitAppPages.setCollectionSearch = (key, value) => { setBounded(collectionSearchValues, String(key), String(value || ""), 24); return true; };
+  window.SplitAppPages.loadMoreWatchlist = key => { const id = String(key); setBounded(watchlistVisible, id, (watchlistVisible.get(id) || PAGE_BATCH) + PAGE_BATCH, 24); return true; };
 
+  window.SplitAppPages.virtualGrid = id => { const source = virtualSources.get(id); return source ? { count: source.count, tile: source.tile } : null; };
   window.SplitAppPages.profile = profilePage;
   window.SplitAppPages["profile-cover"] = profileCoverPage;
+  window.SplitAppPages.profileCoverAspect = () => {
+    const shellWidth = document.querySelector(".app-shell")?.getBoundingClientRect().width || window.innerWidth;
+    const safeArea = document.createElement("div"); safeArea.style.cssText = "position:fixed;visibility:hidden;pointer-events:none;width:0;height:env(safe-area-inset-top);"; document.body.append(safeArea);
+    const safeTop = safeArea.getBoundingClientRect().height || 0; safeArea.remove();
+    const heroHeight = (window.matchMedia("(min-width: 768px)").matches ? 300 : 244) + safeTop;
+    return Number((shellWidth / heroHeight).toFixed(4));
+  };
   window.SplitAppPages.coverCandidates = (item, kind) => flatCandidates(item, kind);
   window.SplitAppPages.browseCover = (kind, id) => { browse[kind] = id || ""; };
   window.SplitAppPages.moreCovers = kind => { pickerLimit[kind] = (pickerLimit[kind] || 18) + 24; };
