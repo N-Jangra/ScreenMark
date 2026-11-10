@@ -1,0 +1,64 @@
+<!doctype html><meta charset="utf-8"><body><pre id="out">running</pre>
+<script src="../../frontend/backend/idb-store.js"></script>
+<script>
+(async () => {
+  const log = [], ok = (name, cond, extra) => log.push({ name, pass: Boolean(cond), extra });
+  try {
+    const dbName = "screenmark_library";
+    await new Promise(resolve => { const r = indexedDB.deleteDatabase(dbName); r.onsuccess = r.onerror = r.onblocked = () => resolve(); });
+    const core = self.SplitAppIDBCore;
+    const N = 3000;
+    const bigDetails = i => ({ fetchedAt: 1, description: "d".repeat(400), genres: ["Drama"], fields: [{ label: "Genre", value: "Drama" }], raw: { junk: "x".repeat(500) },
+      sections: [
+        { kind: "episodes", title: "Episode guide (30)", items: Array.from({ length: 30 }, (_, n) => ({ id: `${i}-${n}`, title: `Ep ${n}`, season: 1 + (n / 10 | 0), number: n % 10 + 1, airdate: "2020-01-01", summary: "s".repeat(300), image: "https://x/e.jpg", raw: { z: "y".repeat(100) } })) },
+        { kind: "people", title: "Cast", items: Array.from({ length: 40 }, (_, n) => ({ title: `Actor ${n}`, bio: "b".repeat(200) })) },
+        { kind: "gallery", title: "Screenshots", items: [{ title: "a", image: "https://x/a.jpg" }] }
+      ] });
+    const items = Array.from({ length: N }, (_, i) => ({ id: String(i), title: `Dummy ${i}`, category: "series", status: "Watching", updatedAt: 1, cachedDetails: bigDetails(i) }));
+    await core.save({ items, history: [], preferences: {} });
+    // fresh session: slim load
+    // Explicitly cross the configurable threshold so this page tests the
+    // compact path even though the production default remains disabled.
+    const loaded = await core.loadAll({ slim: true, slimMin: 1 });
+    ok("loads every title", loaded.items.length === N);
+    const byId = new Map(loaded.items.map(item => [item.id, item])); const sample = byId.get("5");
+    ok("details are compact in memory", sample.cachedDetails.compact === true);
+    ok("compact keeps genres and fields", sample.cachedDetails.genres[0] === "Drama" && sample.cachedDetails.fields.length === 1);
+    ok("compact drops cast and gallery", !sample.cachedDetails.sections.some(s => s.kind !== "episodes"));
+    ok("compact episode index keeps its count and only a few schedule rows", sample.cachedDetails.sections[0].episodeCount === 30 && sample.cachedDetails.sections[0].items.length <= 3 && sample.cachedDetails.sections[0].items[0].airdate === "2020-01-01" && sample.cachedDetails.sections[0].items[0].summary === undefined && sample.cachedDetails.sections[0].items[0].raw === undefined);
+    const fullSize = JSON.stringify(items[5]).length, slimSize = JSON.stringify(sample).length;
+    ok("compact copy is much smaller", slimSize < fullSize / 4, { fullSize, slimSize });
+    // a status change on a compact title must keep the stored details
+    sample.status = "Completed"; sample.updatedAt = 2;
+    await core.saveSome({ changed: [sample], removedIds: [], history: [], preferences: {} });
+    const storedAfter = await core.getRecord("5");
+    ok("saveSome kept stored details", storedAfter && storedAfter.id === "5" && storedAfter.status === "Completed" && storedAfter.cachedDetails && !storedAfter.cachedDetails.compact && storedAfter.cachedDetails.sections.some(s => s.kind === "people" && s.items.length === 40));
+    // a whole-library save of compact items must not touch stored details either
+    byId.get("7").title = "Renamed";
+    await core.save({ items: loaded.items, history: [], preferences: {} });
+    const seven = await core.getRecord("7");
+    ok("full save kept stored details and applied the rename", seven.id === "7" && seven.title === "Renamed" && seven.cachedDetails.sections.length === 3);
+    // untouched titles are not rewritten
+    const before = await core.getDetails("9");
+    await core.save({ items: loaded.items, history: [], preferences: {} });
+    ok("getDetails returns the full copy", before.sections.length === 3 && !before.compact);
+    // hydrate a title, change its details, save as full
+    const hydrated = { ...byId.get("11"), cachedDetails: await core.getDetails("11") };
+    hydrated.cachedDetails.description = "changed";
+    await core.saveSome({ changed: [hydrated], removedIds: [], history: [], preferences: {} });
+    ok("a hydrated title writes its new details", (await core.getDetails("11")).description === "changed");
+    // new compact-only title (nothing stored): stored as given
+    await core.saveSome({ changed: [{ id: "new", title: "New", category: "series", cachedDetails: { compact: true, sections: [] } }], removedIds: [], history: [], preferences: {} });
+    ok("a brand-new title is stored", Boolean(await core.getDetails("new")));
+    // delete
+    await core.saveSome({ changed: [], removedIds: ["new"], history: [], preferences: {} });
+    ok("delete works", (await core.getDetails("new")) === null);
+    // readBatch pagination covers everything exactly once
+    let after = null, total = 0, seen = new Set();
+    for (;;) { const rows = await core.readBatch(after, 400); if (!rows.length) break; rows.forEach(r => seen.add(r.id)); total += rows.length; after = rows[rows.length - 1].id; }
+    ok("readBatch pages through all records", total === N && seen.size === N, { total });
+    log.push({ name: "heapMB", pass: true, extra: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null });
+  } catch (error) { log.push({ name: "exception", pass: false, extra: String(error && error.stack || error) }); }
+  document.getElementById("out").textContent = JSON.stringify(log);
+})();
+</script>
