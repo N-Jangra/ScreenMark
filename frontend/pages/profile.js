@@ -420,6 +420,7 @@
   window.SplitAppPages.profile = profilePage;
   window.SplitAppPages["profile-cover"] = profileCoverPage;
   window.SplitAppPages.profileCoverAspect = () => {
+    if (typeof document === "undefined") return Number(((window.innerWidth || 390) / 244).toFixed(4));
     const shellWidth = document.querySelector(".app-shell")?.getBoundingClientRect().width || window.innerWidth;
     const safeArea = document.createElement("div"); safeArea.style.cssText = "position:fixed;visibility:hidden;pointer-events:none;width:0;height:env(safe-area-inset-top);"; document.body.append(safeArea);
     const safeTop = safeArea.getBoundingClientRect().height || 0; safeArea.remove();
