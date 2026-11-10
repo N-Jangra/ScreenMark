@@ -1,6 +1,6 @@
 {
   "name": "screenmark",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "ScreenMark media tracker",
   "main": "frontend/app.js",
   "scripts": {
@@ -10,7 +10,8 @@
     "test": "node --test tests/*.test.js",
     "cap:sync": "cap sync",
     "cap:add": "cap add android",
-    "cap:open": "cap open android"
+    "cap:open": "cap open android",
+    "test:browser": "python3 tests/browser/slim-load.py 3000"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.1",

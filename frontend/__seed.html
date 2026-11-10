@@ -1,0 +1,18 @@
+<!doctype html><meta charset=utf-8><body><pre id=out>running</pre>
+<script src="backend/idb-store.js"></script>
+<script>
+(async () => {
+  const core = self.SplitAppIDBCore, N = 3000;
+  await new Promise(r => { const q = indexedDB.deleteDatabase('screenmark_library'); q.onsuccess = q.onerror = q.onblocked = () => r(); });
+  const items = Array.from({ length: N }, (_, i) => ({ id: 'dummy-' + i, title: 'Dummy Show ' + i, category: 'series', status: i % 7 === 0 ? 'In Progress' : 'Watchlist', year: String(1990 + i % 35), createdAt: 1700000000000 + i, updatedAt: 1700000000000 + i, metadataSource: 'tvmaze', providerId: String(100000 + i),
+    cachedDetails: { fetchedAt: 1700000000000, description: 'd'.repeat(600), genres: ['Drama'], fields: [{ label: 'Genre', value: 'Drama' }], raw: { junk: 'x'.repeat(800) },
+      sections: [
+        { kind: 'episodes', title: 'Episode guide (60)', items: Array.from({ length: 60 }, (_, n) => ({ id: i + '-' + n, title: 'Episode ' + n, season: 1 + (n / 12 | 0), number: n % 12 + 1, airdate: '2021-01-01', summary: 's'.repeat(400), image: 'https://example.invalid/e.jpg', raw: { z: 'y'.repeat(200) } })) },
+        { kind: 'ratings', title: 'Episode ratings', items: Array.from({ length: 60 }, (_, n) => ({ title: 'E' + n, rating: 7.5, votes: 1000 })) },
+        { kind: 'people', title: 'Cast', items: Array.from({ length: 50 }, (_, n) => ({ title: 'Actor ' + n, bio: 'b'.repeat(300) })) }
+      ] } }));
+  await core.save({ items, history: [], preferences: { } });
+  localStorage.setItem('splitapp_screenmark_v1_setup_done', '1');
+  document.getElementById('out').textContent = 'done';
+})();
+</script>
