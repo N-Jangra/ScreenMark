@@ -104,7 +104,7 @@ test("session poster cache is bounded, never revokes a poster that is on screen,
   assert.doesNotMatch(body.slice(body.indexOf("function rememberThumbUrl")), /for \(const \[[^\]]*\] of thumbUrlCache\)/, "no scan over the whole cache per insert");
   const revoked = [], cache = new Map(), index = new Map();
   const onScreen = new Set(["blob:0", "blob:1"]);
-  const remember = new Function("thumbUrlCache", "URL", "document", `${body.slice(0, body.indexOf("window.addEventListener"))}; return rememberThumbUrl;`)(cache, { revokeObjectURL: url => revoked.push(url) }, { images: [...onScreen].map(src => ({ src })) });
+  const remember = new Function("thumbUrlCache", "URL", "document", "prefs", `${body.slice(0, body.indexOf("window.addEventListener"))}; return rememberThumbUrl;`)(cache, { revokeObjectURL: url => revoked.push(url) }, { images: [...onScreen].map(src => ({ src })) }, { libraryMemory: "auto" });
   // thousands of posters: the cache stays bounded and posters that are on screen are never released
   for (let i = 0; i < 5000; i++) remember(`${i}:p`, "sig", `blob:${i}`);
   assert.ok(cache.size <= 900, `cache bounded (${cache.size})`);
