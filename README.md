@@ -1,4 +1,4 @@
-# ScreenMark 0.1.5
+# ScreenMark 0.1.6
 
 ScreenMark is a local-first tracker for **movies and TV series**. It runs as a browser single-page app and as a Capacitor Android app, with an iOS-style interface that adapts from phones to tablets and desktops, and keeps its library in an app-specific storage namespace.
 
@@ -47,7 +47,7 @@ The app lists them under **Settings → Metadata Sources**. TMDB, TheTVDB and OM
 - [Metadata sources](docs/metadata.md) — providers, API keys and fetching behavior.
 - [Storage](docs/storage.md) — library persistence, image cache and backups.
 - [Data schema](docs/db-schema.md) and [file layout](docs/file-schema.md).
-- [Release notes](CHANGELOG.md) — current 0.1.3 changes and earlier release notes.
+- [Release notes](CHANGELOG.md) — current 0.1.6 changes and earlier release notes.
 - [Frontend module map](frontend/README.md).
 
 ## Run locally

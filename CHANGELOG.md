@@ -2,6 +2,29 @@
 
 All notable changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [0.1.6] — 2026-11-10
+
+Version code 106. Release notes cover the current 0.1.6 worktree changes.
+
+### Changed
+
+- Compact in-memory details for very large libraries (off by default; switch on with the `splitapp_screenmark_v1_slim_min` setting in browser storage, e.g. `1500`). Titles keep only what list pages need (genres, fields, a short episode schedule) in memory; the full details stay in the database and are read back when a title is opened, and a save never overwrites stored details with the compact copy. In a 3,000-title dummy library (heavy details) the page heap dropped from about 640 MB to about 38 MB (compact titles are about 7 KB each against 200 KB). A huge library is also not re-read from the folder database at launch when that file is exactly the one this app last wrote (same title count and size).
+- The folder database (`database.json`) is written title by title through new native stream calls (`openFolderStream` / `writeFolderStream` / `closeFolderStream`) for large or compact libraries, and snapshots, folder item files and backups read each title's full details back one at a time.
+- Settings → Memory now offers Automatic, Low memory, Minimum and Full details. The choices control when library detail records are compacted and how many poster URLs are retained; full details remain in storage and are loaded on demand.
+- Android folder reads and writes use bounded chunks. Completed database files are published through temporary files and rename where supported; large backups are parsed incrementally from their stream, including gzip content.
+- Series, Movies and Favorites draw only rows close to the viewport while preserving the full scroll height. Poster URLs use a bounded cache; visible posters are kept while off-screen entries can be released and read again.
+- Android launch state distinguishes a task dismissed from Recents from a process restored after ordinary backgrounding. A dismissed task starts at the home list; a background restore can keep its page and scroll position. WebView renderer exit is logged and the activity schedules recovery when resumed.
+- Profile photo and cover editing includes drag, zoom and a crop preview. The cover frame follows the responsive profile hero shape used by the app; saved artwork fills the target region without leaving blank edges.
+- Episodes after the last announced air date display TBD and cannot be marked watched. Undated gaps between dated episodes and wholly undated guides remain usable.
+- Timeline no longer shows the "Collection activity / Recent activity" summary block; the filters and the list start right under the header.
+- Source health: a source that fails three times in a row is paused (2 minutes, growing to 15), so one dead catalog stops slowing searches; the Test button on a source page bypasses the pause.
+- Grid posters stored in the app database are shrunk to a 420 px WebP (new covers only), so big grids read and decode faster; the detail page still uses the full artwork.
+- Background poster caching yields between batches, and collection search reuses lowercase title keys.
+- The detail delete dialog is moved into the visible document layer before opening, so a dialog rendered from a hidden tab can be seen and used. Confirming deletion waits for the dialog's navigation entry to close before returning to the collection.
+- Folder database indexing avoids creating metadata-only per-title mirror folders when no artwork needs offline files. Episode artwork also gets a stable id-based lookup so removing optional cast sections does not shift its stored image path.
+- `npm run test:browser` runs a headless Chrome load comparison using 3,000 generated dummy titles; focused coverage also lives in `tests/folder-stream.test.js`, `tests/backup-stream.test.js`, `tests/source-health.test.js`, and the browser/device fixtures.
+- Metadata Sources drops its helper line ("Enable sources and drag to reorder.") so the list starts higher.
+
 ## [0.1.5] — 2026-11-09
 
 Version code 105 (117 automated tests). Highlights: Quick setup that works on a fresh install and fills in full details, a sync status page, much more reliable backups and restore, a two-step profile picture picker, a lazy online-only Cast & Crew tab, gzip-compressed backups on browser and Android, a database artwork index, a full review of every metadata source (IMDb, Jikan, Kitsu, TheTVDB, TMDB, AniList), fixes to the bottom bar / default status / automatic completion settings, and performance work.
