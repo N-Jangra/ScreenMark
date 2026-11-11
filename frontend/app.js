@@ -323,16 +323,20 @@
     if (/^https:\/\/static\.tvmaze\.com\/uploads\/images\/original_untouched\//.test(value)) return value.replace("/original_untouched/", "/medium_portrait/");
     return value;
   }
-  function imageMarkup(item, source, alt = "", fallback = "", className = "") {
-    const useLocalThumb = Boolean(item?.id && item.thumbnailPath && !item.localThumbnailData && !item.localPortraitData && !item.customCover);
+  function imageMarkup(item, source, alt = "", fallback = "", className = "", episode = null, cacheOwner = item) {
+    const remoteArtwork = /^https:\/\//i.test(String(source || ""));
+    const artworkEntry = remoteArtwork ? (window.SplitAppBackend?.artworkCacheEntries?.(cacheOwner) || []).find(row => row.signature === source) : null;
+    const localCacheKey = episode?.id != null ? episodeThumbKeyOf(cacheOwner, episode.id) : artworkEntry?.key || thumbKeyOf(cacheOwner || {});
+    const localCacheSignature = episode?.id != null ? String(source || "") : artworkEntry?.signature || thumbSigOf(cacheOwner || {});
+    const useLocalThumb = Boolean(cacheOwner?.id && nativeAndroid && remoteArtwork);
     if (!source && !useLocalThumb) return fallback;
     const sized = className === "detail-image" || !item ? source : smallArt(source); // landscape / hero art (no item) keeps full size
     const fullAttr = sized && sized !== source ? ` data-full-src="${esc(source)}"` : "";
     const imageSource = useLocalThumb
-      ? `data-deferred-image data-local-item-id="${esc(item.id)}" data-lazy-src="${esc(sized || "")}"${fullAttr}`
+      ? `data-deferred-image data-local-item-id="${esc(cacheOwner.id)}"${episode?.id != null ? ` data-local-episode-id="${esc(episode.id)}"` : ""} data-local-cache-key="${esc(localCacheKey)}" data-local-cache-signature="${esc(localCacheSignature)}" data-lazy-src="${esc(sized || "")}"${fullAttr}`
       : `src="${esc(sized)}"${fullAttr}`;
     const placeholder = useLocalThumb ? fallback : fallback.replace(/^(<[a-z][\w-]*)(?=[\s>])/i, "$1 hidden");
-    return `<img ${imageSource}${useLocalThumb ? " hidden" : ""}${className ? ` class="${esc(className)}"` : ""} alt="${esc(alt)}" loading="lazy" decoding="async" onerror="if(this.dataset.fullSrc&&!this.dataset.fullTried){this.dataset.fullTried=1;this.src=this.dataset.fullSrc;return}this.hidden=true;if(this.nextElementSibling)this.nextElementSibling.hidden=false">${placeholder}`;
+    return `<img ${imageSource}${useLocalThumb ? ' style="visibility:hidden"' : ""}${className ? ` class="${esc(className)}"` : ""} alt="${esc(alt)}" loading="lazy" decoding="async" onerror="if(this.dataset.fullSrc&&!this.dataset.fullTried){this.dataset.fullTried=1;this.src=this.dataset.fullSrc;return}this.hidden=true;this.style.visibility="";if(this.nextElementSibling)this.nextElementSibling.hidden=false">${placeholder}`;
   }
   window.SplitAppImageMarkup = imageMarkup;
   const category = key => config.categories.find(item => item.key === key) || config.categories[0];
@@ -901,7 +905,22 @@
   }
   const thumbUrlCache = new Map(); // "key|sig" -> blob: URL
   const thumbKeyOf = item => `${item.id}:p`;
-  const thumbSigOf = item => String(item.localImageFingerprint || item.thumbnailPath || "");
+  const episodeThumbKeyOf = (item, episodeId) => `${window.SplitAppBackend?.key || config.key}:episode:${String(item.id)}:${String(episodeId)}`;
+  const thumbSigOf = item => String(item.localImageFingerprint || item.thumbnailPath || item.customCover || item.image || "");
+  const isLiveEpisodeThumbKey = (key, liveItemIds) => {
+    const prefix = `${window.SplitAppBackend?.key || config.key}:episode:`;
+    const value = String(key || "");
+    if (!value.startsWith(prefix)) return false;
+    const itemId = value.slice(prefix.length).split(":", 1)[0];
+    return liveItemIds.has(itemId);
+  };
+  const isLiveArtworkThumbKey = (key, liveItemIds) => {
+    const prefix = `${window.SplitAppBackend?.key || config.key}:art:`;
+    const value = String(key || "");
+    if (!value.startsWith(prefix)) return false;
+    const itemId = value.slice(prefix.length).split(":", 1)[0];
+    return liveItemIds.has(itemId);
+  };
   // Session poster cache: item key -> the URL of its poster blob. Entries are kept until the app closes (or the artwork itself
   // changes), so a poster that was shown never goes blank, and lookups are O(1) even with tens of thousands of titles.
   const thumbKeyIndex = new Map(); // item key -> cache key currently held
@@ -1079,8 +1098,9 @@
     thumbFillRunning = true;
     try {
       const savedKeys = await window.SplitAppIDB.listThumbKeys();
-      const liveKeys = new Set(items.filter(item => item.thumbnailPath).map(thumbKeyOf));
-      const staleKeys = savedKeys.map(([key]) => key).filter(key => !liveKeys.has(key));
+      const liveKeys = new Set(items.map(thumbKeyOf));
+      const liveItemIds = new Set(items.map(item => String(item.id)));
+      const staleKeys = savedKeys.map(([key]) => key).filter(key => !liveKeys.has(key) && !isLiveEpisodeThumbKey(key, liveItemIds) && !isLiveArtworkThumbKey(key, liveItemIds));
       if (staleKeys.length) {
         await window.SplitAppIDB.deleteThumbs?.(staleKeys);
         for (const key of staleKeys) { const held = thumbKeyIndex.get(key); if (held) { const url = thumbUrlCache.get(held); if (url) URL.revokeObjectURL(url); thumbUrlCache.delete(held); thumbKeyIndex.delete(key); } }
@@ -1276,12 +1296,12 @@
     const detailTrigger = image.closest("[data-detail-image-src]");
     if (detailTrigger && source) detailTrigger.dataset.detailImageSrc = source;
     if (source) {
-      const reveal = () => { image.hidden = false; if (image.nextElementSibling) image.nextElementSibling.hidden = true; };
+      const reveal = () => { image.hidden = false; image.style.visibility = ""; if (image.nextElementSibling) image.nextElementSibling.hidden = true; };
       image.addEventListener("load", reveal, { once: true });
       image.src = window.SplitAppDiscovery?.imageUrl?.(source) || source;
       if (image.complete && image.naturalWidth) reveal();
     }
-    else { image.hidden = true; if (image.nextElementSibling) image.nextElementSibling.hidden = false; }
+    else { image.hidden = true; image.style.visibility = ""; if (image.nextElementSibling) image.nextElementSibling.hidden = false; }
   }
   async function drainDeferredImages() {
     if (deferredDrain) return deferredDrain;
@@ -1290,26 +1310,29 @@
       while (deferredQueue.length) {
         const batchSize = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 2 ? 16 : 40;
         const batch = deferredQueue.splice(0, batchSize);
-        const cached = await cachedThumbUrls(batch.map(record => [thumbKeyOf(record.item), thumbSigOf(record.item)]));
+        const cached = await cachedThumbUrls(batch.map(record => [record.key, record.signature]));
         const slow = [];
         for (const record of batch) {
           if (!record.image.isConnected) continue;
           if (record.image.dataset.customCover) { finishDeferredImage(record.image, record.image.dataset.customCover); continue; }
-          const hit = cached.get(thumbKeyOf(record.item));
+          const hit = cached.get(record.key);
           if (hit) finishDeferredImage(record.image, hit);
           else if (/^https?:/i.test(record.online)) finishDeferredImage(record.image, record.online); // not cached yet: online straight away
           else slow.push(record);
         }
-        if (!slow.length || typeof hydrate !== "function") { slow.forEach(record => finishDeferredImage(record.image, record.online)); continue; }
+        const folderBacked = slow.filter(record => !record.episodeId && record.key === thumbKeyOf(record.item));
+        if (!folderBacked.length || typeof hydrate !== "function") { slow.forEach(record => finishDeferredImage(record.image, record.online)); continue; }
         for (let index = slow.length - 1; index >= 0; index--) if (!slow[index].image.isConnected) slow.splice(index, 1);
-        if (!slow.length) continue;
-        const clones = slow.map(record => ({ ...record.item, localThumbnailData: "", localPortraitData: "", localLandscapeData: "", backdrop: "", cachedDetails: undefined, localImageFiles: undefined }));
+        const records = slow.filter(record => !record.episodeId);
+        if (!records.length) continue;
+        const clones = records.map(record => ({ ...record.item, localThumbnailData: "", localPortraitData: "", localLandscapeData: "", backdrop: "", cachedDetails: undefined, localImageFiles: undefined }));
         try { await hydrate(clones); } catch (error) { recordLog("warning", `Could not load saved artwork: ${error?.message || error}`); }
-        slow.forEach((record, index) => {
+        records.forEach((record, index) => {
           const local = clones[index].localThumbnailData;
           finishDeferredImage(record.image, local || record.online);
-          if (local) dataUrlToBlob(local).then(blob => blob && window.SplitAppIDB?.putThumbs?.([[thumbKeyOf(record.item), thumbSigOf(record.item), blob]])).catch(() => {});
+          if (local) dataUrlToBlob(local).then(blob => blob && window.SplitAppIDB?.putThumbs?.([[record.key, record.signature, blob]])).catch(() => {});
         });
+        slow.filter(record => record.episodeId).forEach(record => finishDeferredImage(record.image, record.online));
       }
     })().finally(() => { deferredDrain = null; });
     return deferredDrain;
@@ -1320,10 +1343,13 @@
     const online = image.dataset.lazySrc || "";
     if (!item) { finishDeferredImage(image, online); return; }
     if (image.dataset.customCover) { finishDeferredImage(image, image.dataset.customCover); return; }
-    const warm = thumbUrlCache.get(`${thumbKeyOf(item)}|${thumbSigOf(item)}`);
+    const episodeId = image.dataset.localEpisodeId || "";
+    const key = image.dataset.localCacheKey || (episodeId ? episodeThumbKeyOf(item, episodeId) : thumbKeyOf(item));
+    const signature = image.dataset.localCacheSignature || (episodeId ? online : thumbSigOf(item));
+    const warm = thumbUrlCache.get(`${key}|${signature}`);
     if (warm) { finishDeferredImage(image, warm); return; }
     if (deferredQueue.length >= 256) { finishDeferredImage(image, online); return; }
-    deferredQueue.push({ item, image, online });
+    deferredQueue.push({ item, image, online, key, signature, episodeId });
     if (!deferredTimer) deferredTimer = setTimeout(() => { deferredTimer = 0; drainDeferredImages(); }, 0);
   }
   function observeDeferredImages(root = document) {
@@ -1530,6 +1556,8 @@
       }
     }
     window.lucide?.createIcons({ root: content, attrs: { "aria-hidden": "true" } });
+    updateSyncOverlay();
+    window.lucide?.createIcons({ root: $("#sync-overlay"), attrs: { "aria-hidden": "true" } });
     window.lucide?.createIcons({ root: $("#discover-top-search"), attrs: { "aria-hidden": "true" } });
     observeDeferredImages(content);
     mountVirtualGrids(content);
@@ -1807,6 +1835,8 @@
     if (kind === "images" || kind === "temporary") {
       for (const url of thumbUrlCache.values()) URL.revokeObjectURL(url);
       thumbUrlCache.clear(); thumbKeyIndex.clear();
+    }
+    if (kind === "images") {
       await window.SplitAppIDB?.clearThumbs?.().catch(() => {});
     }
     if (kind === "temporary") {
@@ -2390,6 +2420,12 @@
     const year = String(item?.year || item?.releaseDate || "").match(/(?:19|20)\d{2}/)?.[0] || "";
     return [item?.category || "", item?.metadataSource || item?.source || "manual", normalize(item?.title), year].join("\u0000");
   };
+  const pendingLibraryItemWrites = new Map();
+  function saveLibraryItemToIDB(item) {
+    const save = window.SplitAppBackend?.saveLibraryItemToIDB;
+    if (typeof save === "function") return Promise.resolve(save.call(window.SplitAppBackend, item, { history, preferences: prefs }));
+    return persist({ ids: [item.id] });
+  }
   function addDiscoverResult(result, origin = "Discover", options = {}) {
     if (!result) return null;
     const existing = (result.source && result.providerId ? itemByProvider(result.source, result.category, result.providerId) : null) || itemByTitleIdentity(titleIdentity({ ...result, metadataSource: result.metadataSource || result.source }));
@@ -2397,7 +2433,17 @@
       if (!options.quiet) toast("That entry is already in your library."); return existing;
     }
     const item = stripLocalScores({ ...result, metadataSource: result.source, id: crypto.randomUUID(), status: options.status || ((category(result.category)?.statuses || []).includes(prefs.defaultStatus) && [roles.queued, roles.done].includes(prefs.defaultStatus) ? prefs.defaultStatus : defaultStatus(result.category)), ...(options.favorite ? { favorite: true } : {}), progress: 0, createdAt: Date.now(), updatedAt: Date.now() });
-    items.unshift(item); itemIndexItems = null; recordLibraryChange("added", `Added ${item.title} from ${origin}.`, [item.id]); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist({ ids: [item.id] }); if (!options.quiet) toast("Added to your library."); hydrateSavedItem(item); return item;
+    items.unshift(item); itemIndexItems = null; recordLibraryChange("added", `Added ${item.title} from ${origin}.`, [item.id]); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
+    // Queue immediately so progress is visible. Save the row directly first;
+    // the debounced app save can be delayed behind native snapshots of a large
+    // library and must not gate metadata/episode hydration.
+    const initialWrite = saveLibraryItemToIDB(item);
+    pendingLibraryItemWrites.set(String(item.id), initialWrite);
+    initialWrite.then(() => { if (pendingLibraryItemWrites.get(String(item.id)) === initialWrite) persist({ meta: true }); }, () => {
+      if (pendingLibraryItemWrites.get(String(item.id)) === initialWrite) pendingLibraryItemWrites.delete(String(item.id));
+    });
+    hydrateSavedItem(item);
+    if (!options.quiet) toast("Added to your library."); return item;
   }
   // Keep the best value per fact across providers (a later source never blanks out earlier data).
   function mergeFacts(previous = {}, next = {}) {
@@ -2411,12 +2457,22 @@
   // What changed on the last refresh of each saved title (not persisted): field names, used for the "Updated" note.
   const metadataChanges = new Map();
   const stableJson = value => JSON.stringify(value, (key, entry) => key === "fetchedAt" || key === "localImageData" ? undefined : entry);
+  const comparableArtworkUrl = value => {
+    try {
+      const url = new URL(String(value || ""));
+      url.hash = ""; url.search = "";
+      if (url.hostname === "image.tmdb.org") url.pathname = url.pathname.replace(/\/t\/p\/(?:original|w\d+)\//, "/t/p/{size}/");
+      return url.href;
+    } catch (_) { return String(value || ""); }
+  };
   const episodeThumbCacheKey = (item, episode) => `${window.SplitAppBackend?.key || "screenmark"}:episode:${String(item.id)}:${String(episode.id)}`;
   async function hydrateEpisodeThumbnailCache(item) {
     const api = window.SplitAppIDB;
     if (!item?.cachedDetails || !api?.getThumbs) return 0;
+    const seriesArtwork = new Set([item.image, item.customCover, item.backdrop, item.cachedDetails.image, item.cachedDetails.portraitImage, item.cachedDetails.landscapeImage, item.cachedDetails.backgroundImage]
+      .filter(value => /^https:\/\//i.test(String(value || ""))).map(comparableArtworkUrl));
     const rows = (item.cachedDetails.sections || []).filter(section => section?.kind === "episodes").flatMap(section => section.items || [])
-      .filter(episode => episode?.id != null && /^https:\/\//i.test(String(episode.image || "")));
+      .filter(episode => episode?.id != null && /^https:\/\//i.test(String(episode.image || "")) && !seriesArtwork.has(comparableArtworkUrl(episode.image)));
     if (!rows.length) return 0;
     const episodeByCacheKey = new Map(rows.map(episode => [episodeThumbCacheKey(item, episode), episode]));
     const pairs = [...episodeByCacheKey].map(([key, episode]) => [key, String(episode.image)]);
@@ -2434,6 +2490,37 @@
     }
     return hydrated;
   }
+  async function hydrateArtworkThumbnailCache(item) {
+    const api = window.SplitAppIDB, getEntries = window.SplitAppBackend?.artworkCacheEntries;
+    if (!item?.id || !api?.getThumbs || typeof getEntries !== "function") return 0;
+    const entries = getEntries(item);
+    if (!entries.length) return 0;
+    let blobs = [];
+    try { blobs = await api.getThumbs(entries.map(({ key, signature }) => [key, signature])); } catch (_) { return 0; }
+    item.localImageData ||= {};
+    let hydrated = 0;
+    for (const [key, blob] of blobs) {
+      const entry = entries.find(row => row.key === key);
+      if (!entry || !blob) continue;
+      const objectUrl = thumbUrlCache.get(`${key}|${entry.signature}`) || rememberThumbUrl(key, entry.signature, URL.createObjectURL(blob));
+      if (key === thumbKeyOf(item)) { item.localThumbnailData = objectUrl; item.localPortraitData = objectUrl; }
+      item.localImageData[`imageUrl:${entry.signature}`] = objectUrl;
+      for (const path of entry.paths) item.localImageData[path.join(".")] = objectUrl;
+      hydrated++;
+    }
+    return hydrated;
+  }
+  function queueArtworkThumbnailCache(item) {
+    if (!item?.id) return;
+    hydrateArtworkThumbnailCache(item).then(count => {
+      if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
+    }).catch(() => {});
+    const cache = window.SplitAppBackend?.cacheArtwork;
+    if (!navigator.onLine || typeof cache !== "function") return;
+    Promise.resolve(cache.call(window.SplitAppBackend, item)).then(() => hydrateArtworkThumbnailCache(item)).then(count => {
+      if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
+    }).catch(() => {});
+  }
   function queueEpisodeThumbnailCache(item) {
     if (!item?.cachedDetails) return;
     const cache = window.SplitAppBackend?.cacheEpisodeThumbnails;
@@ -2443,11 +2530,11 @@
       if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
     }).catch(() => {});
     if (!navigator.onLine || typeof cache !== "function") return;
-    Promise.resolve(cache(item)).then(() => hydrateEpisodeThumbnailCache(item)).then(count => {
+    Promise.resolve(cache.call(window.SplitAppBackend, item)).then(() => hydrateEpisodeThumbnailCache(item)).then(count => {
       if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
     }).catch(() => {});
   }
-  function applyLoadedMetadata(item, loaded, { cacheDetails = true, replaceFacts = false } = {}) {
+  function applyLoadedMetadata(item, loaded, { cacheDetails = true, replaceFacts = false, queueArtwork = true } = {}) {
     if (!item || !loaded || typeof loaded !== "object") throw new Error("Metadata source returned an invalid detail record.");
     const changes = [];
     let cachedDetails = loaded;
@@ -2487,7 +2574,7 @@
     metadataChanges.set(metadataKey, [...new Set(changes)]);
     while (metadataChanges.size > 600) metadataChanges.delete(metadataChanges.keys().next().value);
     reconcileEpisodes(item);
-    if (item.category === "series" && item.cachedDetails) queueEpisodeThumbnailCache(item);
+    if (queueArtwork && item.category === "series" && item.cachedDetails) queueEpisodeThumbnailCache(item);
     return item;
   }
   function readCustomSourceForm() {
@@ -2596,7 +2683,19 @@
     detailAbortController = controller;
     const item = detailPreview || itemById(String(targetId ?? detailItemId));
     if (item?.cachedDetails?.compact) await hydrateDetails(item);
-    if (item?.category === "series" && item.cachedDetails) queueEpisodeThumbnailCache(item);
+    if (item?.cachedDetails) {
+      // Restore device-cached episode artwork before checking network state.
+      hydrateArtworkThumbnailCache(item).then(count => {
+        if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
+      }).catch(() => {});
+      queueArtworkThumbnailCache(item);
+    }
+    if (item?.category === "series" && item.cachedDetails) {
+      hydrateEpisodeThumbnailCache(item).then(count => {
+        if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
+      }).catch(() => {});
+      queueEpisodeThumbnailCache(item);
+    }
     const requestId = ++detailRequest, useCached = Boolean(item?.cachedDetails && prefs.offlineFallback !== "none");
     detailData = useCached ? item.cachedDetails : null; detailError = "";
     if (!item) { if (detailAbortController === controller) detailAbortController = null; detailLoading = false; render(); return; }
@@ -2744,13 +2843,78 @@
     } catch (error) { castState = { key, loading: false, error: error?.message || "Could not load cast & crew." }; }
     if (page === "details" && !detailRef && castKeyNow() === key) render();
   }
-  // Quick setup can add dozens of titles at once: load full details (episodes, ratings, posters, backgrounds,
+  // Added titles load full details (episodes, ratings, posters, backgrounds,
   // screenshots) two at a time so every title is complete without hammering the providers.
   const hydrateQueue = []; let hydrateActive = 0;
-  // Progress of titles being filled in after Quick setup (shown on #sync); in memory only.
+  // Progress of added titles and their episode artwork (shown on #sync).
   const setupDownloads = new Map();
   const DOWNLOADS_KEY = `${storageKey}_sync_downloads`;
   let downloadSaveTimer = 0;
+  let syncOverlayDismissed = false;
+  let syncOverlayTimer = 0;
+  function updateSyncOverlay() {
+    const overlay = $("#sync-overlay"); if (!overlay) return;
+    if (page === "sync") { overlay.hidden = true; return; }
+    const rows = [...setupDownloads.values()];
+    const active = rows.filter(row => ["queued", "running"].includes(row.status));
+    const failed = rows.filter(row => row.status === "failed");
+    overlay.classList.toggle("has-failed", !active.length && failed.length > 0);
+    overlay.classList.toggle("is-complete", !active.length && !failed.length && rows.length > 0 && rows.every(row => row.status === "done"));
+    const running = active.find(row => row.status === "running") || active[0];
+    const title = $("[data-sync-overlay-title]", overlay);
+    const detail = $("[data-sync-overlay-detail]", overlay);
+    const progress = $("[data-sync-overlay-progress]", overlay);
+    const percentLabel = $("[data-sync-overlay-percent]", overlay);
+    const retry = $("[data-sync-overlay-retry]", overlay);
+    if (active.length) {
+      clearTimeout(syncOverlayTimer);
+      if (active.some(row => row.status === "queued" && row.at > Date.now() - 5000)) syncOverlayDismissed = false;
+      const completed = rows.filter(row => row.status === "done").length;
+      const epTotal = Number(running?.total) || 0, epDone = Number(running?.completed) || 0;
+      const imageStage = running?.stage === "images";
+      const fraction = epTotal ? Math.min(0.99, epDone / epTotal) : running?.detailsComplete ? 0.5 : 0;
+      const percent = Math.min(99, Math.round((completed + fraction) / Math.max(1, rows.length) * 100));
+      title.textContent = `Syncing ${completed + 1} of ${rows.length} titles`;
+      detail.textContent = epTotal && imageStage
+        ? `${running.title || "Title"} · S${running.season || "…"} · ${epDone}/${epTotal} images`
+        : `${running?.title || "Preparing library sync"} · ${imageStage ? "Saving episode images" : running?.stage === "seasons" ? "Syncing seasons" : "Getting details"}`;
+      progress.style.width = `${percent}%`;
+      overlay.style.setProperty("--sync-progress", `${percent}%`);
+      percentLabel.textContent = `${percent}%`;
+      retry.hidden = true;
+      overlay.hidden = syncOverlayDismissed;
+    } else if (failed.length) {
+      clearTimeout(syncOverlayTimer);
+      title.textContent = `${failed.length} ${failed.length === 1 ? "title needs" : "titles need"} attention`;
+      detail.textContent = `${failed[0].title || "Sync failed"} · ${failed[0].error || "Retry when online"}`;
+      progress.style.width = "100%";
+      overlay.style.setProperty("--sync-progress", "100%");
+      percentLabel.textContent = "!";
+      retry.hidden = false;
+      overlay.hidden = syncOverlayDismissed;
+    } else {
+      retry.hidden = true;
+      const needsArtworkSync = prefs.imageStorage === "all" && rows.some(row => {
+        const item = itemById(row.id);
+        return item?.category === "series" && item.cachedDetails && !item.cachedDetails.compact;
+      });
+      if (rows.length && rows.every(row => row.status === "done") && !needsArtworkSync && !syncOverlayDismissed) {
+        title.textContent = "Library sync complete";
+        detail.textContent = `${rows.length} ${rows.length === 1 ? "title" : "titles"} saved for offline use`;
+        progress.style.width = "100%";
+        overlay.style.setProperty("--sync-progress", "100%");
+        percentLabel.textContent = "✓";
+        overlay.hidden = false;
+        if (!syncOverlayTimer) syncOverlayTimer = setTimeout(() => { syncOverlayTimer = 0; syncOverlayDismissed = true; overlay.hidden = true; }, 5000);
+      } else overlay.hidden = true;
+    }
+  }
+  document.addEventListener("click", event => {
+    if (eventClosest(event, "[data-sync-overlay-dismiss]")) { syncOverlayDismissed = true; $("#sync-overlay").hidden = true; return; }
+    if (eventClosest(event, "[data-sync-overlay-open]")) { goto("sync"); return; }
+    const overlayRetry = eventClosest(event, "#sync-overlay [data-setup-download-retry]");
+    if (overlayRetry) retryDownloadButton(overlayRetry);
+  });
   // The list survives navigation and restarts (compact rows only), and unfinished rows resume on launch.
   function saveDownloads() {
     clearTimeout(downloadSaveTimer);
@@ -2758,8 +2922,9 @@
   }
   const markDownload = (item, status, error = "") => {
     const row = setupDownloads.get(String(item.id)) || {};
-    setupDownloads.set(String(item.id), { ...row, id: String(item.id), title: item.title, category: item.category, source: item.metadataSource, providerId: item.providerId, status, error, at: Date.now() });
-    saveDownloads(); if (page === "sync") scheduleHydrateRender();
+    setupDownloads.set(String(item.id), { ...row, id: String(item.id), title: item.title, category: item.category, source: item.metadataSource, providerId: item.providerId, status, error, stage: status === "running" ? "details" : status === "done" ? "complete" : status, detailsComplete: status === "done" || row.detailsComplete || false, at: Date.now() });
+    if (status === "queued") syncOverlayDismissed = false;
+    saveDownloads(); updateSyncOverlay(); if (page === "sync") scheduleHydrateRender();
   };
   function restoreDownloads() {
     let saved = [];
@@ -2769,29 +2934,87 @@
       const item = itemById(row?.id); if (!item) continue;
       setupDownloads.set(String(row.id), { ...row, title: item.title });
       if (["queued", "running"].includes(row.status) && !item.fullDetailsAt) resume.push(item);
+      else if (["queued", "running"].includes(row.status) && item.fullDetailsAt && item.category === "series" && prefs.imageStorage === "all") resume.push(item);
       else if (row.status === "done" || item.fullDetailsAt) setupDownloads.set(String(row.id), { ...row, status: "done", error: "" });
     }
+    updateSyncOverlay();
     if (resume.length) syncImported(resume);
   }
-  function resumeEpisodeThumbnailCaching() {
-    if (!navigator.onLine) return;
-    const cachedGuides = items.filter(item => item.category === "series" && item.cachedDetails);
+  function resumeArtworkCaching() {
+    if (!navigator.onLine || prefs.imageStorage !== "all") return;
+    const cachedGuides = items.filter(item => item.cachedDetails);
     if (!cachedGuides.length) return;
     let index = 0;
     const worker = async () => {
       while (index < cachedGuides.length) {
         const item = cachedGuides[index++];
         try {
+          const currentDownload = setupDownloads.get(String(item.id));
+          if (hydrating.has(String(item.id)) || ["queued", "running"].includes(currentDownload?.status)) continue;
           if (item.cachedDetails?.compact) await hydrateDetails(item);
-          if (item.cachedDetails && !item.cachedDetails.compact) await cacheEpisodeThumbnails(item);
-        } catch (_) {}
+          if (item.cachedDetails && !item.cachedDetails.compact && navigator.onLine) {
+            const artworkEntries = window.SplitAppBackend?.artworkCacheEntries?.(item) || [];
+            const artworkHits = await window.SplitAppIDB?.getThumbs?.(artworkEntries.map(({ key, signature }) => [key, signature])) || [];
+            const seriesArtwork = new Set([item.image, item.customCover, item.backdrop, item.cachedDetails.image, item.cachedDetails.portraitImage, item.cachedDetails.landscapeImage, item.cachedDetails.backgroundImage]
+              .filter(value => /^https:\/\//i.test(String(value || ""))).map(comparableArtworkUrl));
+            const episodeEntries = item.category === "series" ? (item.cachedDetails.sections || []).filter(section => section?.kind === "episodes").flatMap(section => section.items || [])
+              .filter(episode => episode?.id != null && /^https:\/\//i.test(String(episode.image || "")) && !seriesArtwork.has(comparableArtworkUrl(episode.image)))
+              .map(episode => [episodeThumbKeyOf(item, episode.id), String(episode.image)]) : [];
+            const episodeHits = episodeEntries.length ? await window.SplitAppIDB?.getThumbs?.(episodeEntries) || [] : [];
+            const needsArtwork = artworkHits.length < artworkEntries.length || episodeHits.length < episodeEntries.length;
+            if (!needsArtwork) continue;
+            if (!setupDownloads.has(String(item.id)) || setupDownloads.get(String(item.id)).status === "done") markDownload(item, "queued");
+            const artwork = await window.SplitAppBackend?.cacheArtwork?.(item, progress => updateArtworkProgress(item, progress));
+            if (!artwork || artwork.skipped) throw new Error("Title artwork could not be saved on this device.");
+            if (artwork.failed) throw new Error(`${artwork.failed} artwork image${artwork.failed === 1 ? "" : "s"} could not be saved. Retry when online.`);
+            if (item.category !== "series") { markDownload(item, "done"); continue; }
+            const result = await window.SplitAppBackend?.cacheEpisodeThumbnails?.(item, progress => updateArtworkProgress(item, progress));
+      if (result?.skipped) throw new Error("Episode thumbnails could not be saved on this device.");
+      if (result?.failed) throw new Error(`${result.failed} episode still${result.failed === 1 ? "" : "s"} could not be saved. Retry when online.`);
+            markDownload(item, "done");
+          }
+        } catch (error) {
+          if (setupDownloads.has(String(item.id))) markDownload(item, "failed", error?.message || "Could not save episode artwork.");
+        }
       }
     };
     Promise.all(Array.from({ length: Math.min(2, cachedGuides.length) }, worker)).catch(() => {});
   }
+  function updateArtworkProgress(item, progress) {
+    const row = setupDownloads.get(String(item?.id));
+    if (!row || row.status === "failed") return;
+    setupDownloads.set(String(item.id), { ...row, ...progress, stage: progress.status, status: "running", at: Date.now() });
+    saveDownloads();
+    updateSyncOverlay();
+    if (page === "sync") scheduleHydrateRender();
+  }
   function hydrateSavedItem(item) {
     if (!item?.metadataSource || !item.providerId || item.fullDetailsAt || hydrating.has(item.id) || prefs.metadataMode === "offline") return;
     hydrating.add(item.id); hydrateQueue.push(item); markDownload(item, "queued"); pumpHydrateQueue();
+  }
+  function retryDownloadButton(button) {
+    const ids = button.dataset.setupDownloadRetry ? [button.dataset.setupDownloadRetry] : [...setupDownloads.values()].filter(row => row.status === "failed").map(row => row.id);
+    ids.forEach(id => { const entry = itemById(id); if (entry) { hydrating.delete(entry.id); resumeSavedDownload(entry); } });
+    if (page === "sync") render();
+  }
+  function resumeSavedDownload(item) {
+    if (!item || hydrating.has(item.id)) return;
+    if (!navigator.onLine) { markDownload(item, "failed", "Offline. Retry when connected."); return; }
+    if (!item.fullDetailsAt) { hydrateSavedItem(item); return; }
+    if (item.category !== "series" || prefs.imageStorage !== "all" || !item.cachedDetails || item.cachedDetails.compact) return;
+    hydrating.add(item.id); markDownload(item, "queued");
+    const run = async () => {
+      try {
+        if (item.cachedDetails?.compact) await hydrateDetails(item);
+        if (!item.cachedDetails || item.cachedDetails.compact) throw new Error("Saved episode details are not available on this device.");
+        const result = await window.SplitAppBackend?.cacheEpisodeThumbnails?.(item, progress => updateArtworkProgress(item, progress));
+        if (!result || result.skipped) throw new Error("Episode thumbnails could not be saved on this device.");
+        if (result.failed) throw new Error(`${result.failed} episode still${result.failed === 1 ? "" : "s"} could not be saved. Retry when online.`);
+        markDownload(item, "done");
+      } catch (error) { markDownload(item, "failed", error?.message || "Could not save episode artwork."); }
+      finally { hydrating.delete(item.id); }
+    };
+    run();
   }
   function pumpHydrateQueue() {
     while (hydrateActive < 2 && hydrateQueue.length) {
@@ -2802,12 +3025,35 @@
   async function hydrateOne(item) {
     try {
       if (!navigator.onLine) { markDownload(item, "failed", "Offline. Retry when connected."); return; }
-      const loaded = await window.SplitAppDetails.load(item, { ...detailSettings() });
+      const initialWrite = pendingLibraryItemWrites.get(String(item.id));
+      if (initialWrite) await initialWrite;
+      pendingLibraryItemWrites.delete(String(item.id));
+      const savedItem = itemById(item.id);
+      if (!savedItem) { setupDownloads.delete(String(item.id)); return; }
+      item = savedItem;
+      const loaded = await window.SplitAppDetails.load(item, { ...detailSettings(), librarySync: true });
       if (itemById(item.id) !== item) { setupDownloads.delete(String(item.id)); return; }
-      applyLoadedMetadata(item, loaded); item.fullDetailsAt = Date.now(); persist({ ids: [item.id] }); markDownload(item, "done");
+      applyLoadedMetadata(item, loaded, { queueArtwork: false });
+      await saveLibraryItemToIDB(item);
+      item.fullDetailsAt = Date.now();
+      if (item.cachedDetails && !item.cachedDetails.compact && window.SplitAppIDB?.getDetails) {
+        const savedDetails = await window.SplitAppIDB.getDetails(item.id);
+        if (!savedDetails) throw new Error("Title details could not be saved on this device.");
+      }
+      persist({ ids: [item.id] });
+      markDownload(item, "running");
       // Queue the complete episode guide immediately; it must not depend on
       // which season the user happens to expand in the details view.
-      if (item.category === "series") cacheEpisodeThumbnails(item).catch(() => {});
+      if (prefs.imageStorage === "all" && item.cachedDetails && !item.cachedDetails.compact) {
+        const artwork = await window.SplitAppBackend?.cacheArtwork?.(item, progress => updateArtworkProgress(item, progress));
+        if (artwork?.failed) throw new Error(`${artwork.failed} artwork image${artwork.failed === 1 ? "" : "s"} could not be saved. Retry when online.`);
+      }
+      if (item.category === "series" && prefs.imageStorage === "all" && item.cachedDetails && !item.cachedDetails.compact) {
+        const result = await window.SplitAppBackend?.cacheEpisodeThumbnails?.(item, progress => updateArtworkProgress(item, progress));
+        if (result?.skipped) throw new Error("Episode thumbnails could not be saved on this device.");
+        if (result?.failed) throw new Error(`${result.failed} episode still${result.failed === 1 ? "" : "s"} could not be saved. Retry when online.`);
+      }
+      markDownload(item, "done");
       if (page === "details" && String(detailItemId) === String(item.id)) { detailData = item.cachedDetails; render(); }
       else if (page === "sync") scheduleHydrateRender(); // collection pages are not rebuilt while downloads run: a full re-render restarts every poster's image loading
     } catch (error) { markDownload(item, "failed", error?.message || "Could not load details."); recordLog("warning", `Could not save details for ${item.title}: ${error?.message || error}`); if (page === "sync") scheduleHydrateRender(); }
@@ -4016,11 +4262,7 @@
     }
     if (eventClosest(event, "[data-setup-download-clear]")) { [...setupDownloads].forEach(([id, row]) => { if (row.status === "done") setupDownloads.delete(id); }); saveDownloads(); render(); return; }
     const retryDownload = eventClosest(event, "[data-setup-download-retry]");
-    if (retryDownload) {
-      const ids = retryDownload.dataset.setupDownloadRetry ? [retryDownload.dataset.setupDownloadRetry] : [...setupDownloads.values()].filter(row => row.status === "failed").map(row => row.id);
-      ids.forEach(id => { const entry = itemById(id); if (entry) { delete entry.fullDetailsAt; hydrating.delete(entry.id); syncImported([entry]); } });
-      render(); return;
-    }
+    if (retryDownload) { retryDownloadButton(retryDownload); return; }
     if (eventClosest(event, "[data-cast-load]")) { loadDetailCast(true); return; }
     const seasonPill = eventClosest(event, "[data-season-pill]");
     if (seasonPill) {
@@ -4721,6 +4963,13 @@
   restoreNativeData({ fast: true }).then(async fastResult => {
     if (fastResult === true) {
       finishStartup(true);
+      // Hydrate episode stills already stored on this device immediately;
+      // later full restore may start online cache-fill work if needed.
+      const openSeries = page === "details" && detailItemId ? itemById(detailItemId) : null;
+      if (openSeries?.category === "series" && openSeries.cachedDetails) {
+        if (openSeries.cachedDetails.compact) hydrateDetails(openSeries).then(() => hydrateEpisodeThumbnailCache(openSeries)).catch(() => {});
+        else hydrateEpisodeThumbnailCache(openSeries).catch(() => {});
+      }
       // Upgrade old inline detail rows after the first paint, in small
       // transactions so migration never competes with startup or scrolling.
       const migrateStoredDetails = async () => {
@@ -4745,7 +4994,7 @@
       const full = await restoreNativeData();
       if (full === false) finishStartup(false);
       else if (full) { applySeriesInactivityTransitions(); if (libraryStamp() !== before) { applyPreferences(); render(); } } // keep scroll position when nothing changed
-      if (full) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); resumeEpisodeThumbnailCaching(); }
+      if (full) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); resumeArtworkCaching(); }
       setTimeout(fillThumbCache, 1500);
       setTimeout(shrinkThumbCacheOnce, 8000);
       return;
@@ -4753,7 +5002,7 @@
     // null means "nothing stored yet" (a fresh install), which is a valid empty library, not a failure.
     const full = await restoreNativeData();
     finishStartup(full !== false);
-    if (full !== false) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); resumeEpisodeThumbnailCaching(); }
+    if (full !== false) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); resumeArtworkCaching(); }
     setTimeout(fillThumbCache, 3000);
     setTimeout(shrinkThumbCacheOnce, 8000);
   });

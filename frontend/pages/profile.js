@@ -38,7 +38,7 @@
   const coverMarkup = (item, esc, landscape = false, imageMarkup = window.SplitAppImageMarkup, override = "") => {
     const art = override || (landscape ? landscapeOf(item) : artOf(item));
     const fallback = `<span class="profile-art-placeholder"><i data-lucide="clapperboard" aria-hidden="true"></i></span>`;
-    if (imageMarkup) return imageMarkup(landscape ? null : item, art, `${item.title} cover`, fallback);
+    if (imageMarkup) return imageMarkup(landscape ? null : item, art, `${item.title} cover`, fallback, "", null, item);
     return art ? `<img src="${esc(art)}" alt="${esc(item.title)} cover" loading="lazy" decoding="async" onerror="this.hidden=true">` : fallback;
   };
   const posterButton = (item, esc, roles = {}, showProgress = false, imageMarkup = window.SplitAppImageMarkup) => {
@@ -296,7 +296,7 @@
     const remaining = isMovie ? "" : ` +${Math.max(0, (episodeProgress?.total || 0) - (episodeProgress?.done || 0))}`;
     const fallback = `<span class="watchlist-art-fallback"><i data-lucide="${isMovie ? "clapperboard" : "tv"}" aria-hidden="true"></i></span>`;
     const art = imageMarkup
-      ? imageMarkup(item, thumb, "", fallback)
+      ? imageMarkup(item, thumb, "", fallback, "", episode)
       : thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : fallback;
     if (view === "posters") {
       const progressInfo = !isMovie ? window.SplitAppLibrary.episodeInfo(item) : null;

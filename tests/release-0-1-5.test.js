@@ -30,6 +30,25 @@ test("sync page lists Quick setup downloads with synced / not synced counts and 
   assert.doesNotMatch(window.SplitAppPages.sync({ esc, itemById: () => null, setupDownloads: [] }), /Quick setup/);
 });
 
+test("persistent sync overlay shows season episode progress, opens Sync, and retries failures", () => {
+  const html = read("frontend/index.html"), css = read("frontend/styles/ui-polish.css"), app = read("frontend/app.js");
+  assert.match(html, /id="sync-overlay"[^]*data-sync-overlay-open/);
+  assert.match(html, /data-sync-overlay-progress/);
+  assert.match(html, /data-sync-overlay-retry/);
+  assert.match(css, /\.sync-overlay\s*\{\s*position:fixed/);
+  assert.match(app, /function updateSyncOverlay\(\)/);
+  assert.match(app, /if \(page === "sync"\) \{ overlay\.hidden = true; return; \}/);
+  assert.match(app, /createIcons\(\{ root: content, attrs: \{ "aria-hidden": "true" \} \}\);\s*updateSyncOverlay\(\)/);
+  assert.match(app, /const imageStage = running\?\.stage === "images"/);
+  assert.match(app, /\$\{running\.title \|\| "Title"\} · S\$\{running\.season \|\| "…"\} · \$\{epDone\}\/\$\{epTotal\} images/);
+  assert.match(css, /\.sync-overlay-copy small \{[^}]*-webkit-line-clamp:2/);
+  assert.match(app, /result\?\.skipped\) throw new Error\("Episode thumbnails could not be saved on this device\."\)/);
+  assert.match(app, /eventClosest\(event, "\[data-sync-overlay-open\]"\)\) \{ goto\("sync"\); return; \}/);
+  assert.match(app, /#sync-overlay \[data-setup-download-retry\][\s\S]{0,100}retryDownloadButton\(overlayRetry\)/);
+  assert.match(app, /saveDownloads\(\); updateSyncOverlay\(\)/);
+  assert.match(app, /needsArtworkSync = prefs\.imageStorage === "all"/);
+});
+
 test("Edit profile library picker is two steps and only opens for Picked below", () => {
   const window = loadPage("frontend/pages/profile.js");
   const items = [{ id: "1", title: "Alpha", category: "series", image: "https://x/p.jpg", backdrop: "https://x/b.jpg", cachedDetails: { sections: [{ kind: "gallery", title: "Screenshots (2)", items: [{ title: "a", image: "https://x/s1.jpg" }, { title: "b", image: "https://x/s2.jpg" }] }] } }];

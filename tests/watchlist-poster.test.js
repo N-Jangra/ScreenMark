@@ -43,3 +43,8 @@ test("watchlist poster CSS defines a portrait grid and overlays instead of list 
   assert.match(css, /\.watchlist-poster-episode/);
   assert.match(css, /\.watchlist-poster-progress > i/);
 });
+
+test("profile cover images keep their title owner so Android can load local backdrop blobs", () => {
+  const source = fs.readFileSync(path.join(root, "frontend/pages/profile.js"), "utf8");
+  assert.match(source, /imageMarkup\(landscape \? null : item, art, `\$\{item\.title\} cover`, fallback, "", null, item\)/);
+});

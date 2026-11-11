@@ -289,7 +289,7 @@
           .map(row => ({ row, score: (row.genres || []).filter(genre => genres.has(genre)).length * 10 + (row.rating?.average || 0) + (row.weight || 0) / 100 }))
           .sort((a, b) => b.score - a.score).slice(0, 14).map(({ row }) => ({ title: row.name, meta: [row.premiered?.slice(0, 4), row.rating?.average ? `★ ${row.rating.average}` : ""].filter(Boolean).join(" · "), image: row.image?.medium || row.image?.original, url: row.url, ref: { type: "show", id: row.id, title: row.name } }));
       };
-      const similar = s.background ? [] : await alsoLike().catch(() => []);
+      const similar = s.background || s.librarySync ? [] : await alsoLike().catch(() => []);
       return details("tvmaze", item, {
         title: show.name, description: show.summary, image: show.image?.original || show.image?.medium, landscapeImage: images.find(row => row.type === "background")?.resolutions?.original?.url, year: show.premiered?.slice(0, 4), rating: show.rating?.average, url: show.url, goal: eps.length,
         links, tags: show.genres, watch: { runtimeMinutes: show.runtime || show.averageRuntime || 0, episodeCount: eps.length, seasonCount: seasons.length },
@@ -419,7 +419,7 @@
       const voiceActors = unique(characters.flatMap(row => (row.voice_actors || []).map(actor => ({ actor, character: row.character?.name }))), row => row.actor.person?.mal_id).slice(0, 60).map(({ actor, character }) => ({ title: actor.person?.name || "Voice actor", meta: [actor.language, character ? `as ${character}` : ""].filter(Boolean).join(" · "), image: actor.person?.images?.jpg?.image_url || actor.person?.images?.webp?.image_url || "", url: actor.person?.url, ref: actor.person?.mal_id ? { type: "person", id: `jikan-person:${actor.person.mal_id}`, title: actor.person.name, extra: { source: "jikan" } } : null }));
       const episodes = (episodeResponse.data || []).map((ep, index) => {
         const number = Number(ep.mal_id) || index + 1, name = ep.title || ep.title_romanji || ep.title_japanese || `Episode ${index + 1}`;
-        return { id: `jikan-episode:${id}:${number}`, season: 1, number: index + 1, title: name, airdate: ep.aired?.from || "", rating: Number(ep.score) || 0, description: clean(ep.synopsis), image: anime.images?.webp?.large_image_url || "", ref: { type: "episode", id: number, title: name, extra: { source: "jikan", animeId: id, number: index + 1, series: title, category: item.category } } };
+        return { id: `jikan-episode:${id}:${number}`, season: 1, number: index + 1, title: name, airdate: ep.aired?.from || "", rating: Number(ep.score) || 0, description: clean(ep.synopsis), image: "", ref: { type: "episode", id: number, title: name, extra: { source: "jikan", animeId: id, number: index + 1, series: title, category: item.category } } };
       });
       const genres = [...(anime.genres || []), ...(anime.themes || [])].map(row => row.name).filter(Boolean);
       const image = anime.images?.webp?.large_image_url || anime.images?.jpg?.large_image_url || "";
@@ -457,7 +457,7 @@
       }
       const episodes = episodeRows.map((row, index) => {
         const ep = row.attributes || {}, number = Number(ep.number) || index + 1, name = ep.canonicalTitle || ep.titles?.en || `Episode ${number}`;
-        return { id: `kitsu-episode:${row.id}`, season: 1, number, title: name, airdate: ep.airDate || "", image: ep.thumbnail?.original || ep.thumbnail?.large || poster.large || "", description: clean(ep.synopsis || ep.description), ref: { type: "episode", id: row.id, title: name, extra: { source: "kitsu", animeId: id, number, series: title, category: item.category } } };
+        return { id: `kitsu-episode:${row.id}`, season: 1, number, title: name, airdate: ep.airDate || "", image: ep.thumbnail?.original || ep.thumbnail?.large || "", description: clean(ep.synopsis || ep.description), ref: { type: "episode", id: row.id, title: name, extra: { source: "kitsu", animeId: id, number, series: title, category: item.category } } };
       });
       let genreRows = [];
       if (!s.background) try { const genres = await get(`https://kitsu.io/api/edge/anime/${id}/genres?page[limit]=20`, s); genreRows = (genres.data || []).map(row => row.attributes?.name).filter(Boolean); } catch (_) {}
@@ -1099,7 +1099,7 @@
       const asRef = person => person?.id ? { type: "person", id: person.id, title: person.name } : null;
       const guests = unique(guestCast, row => `${row.person?.id}:${row.character?.id}`).map(row => ({ title: row.person?.name, meta: row.character?.name ? `as ${row.character.name}` : "", image: row.person?.image?.medium || "", url: row.person?.url, ref: asRef(row.person) }));
       const crewRows = unique(guestCrew, row => `${row.person?.id}:${row.type}`).map(row => ({ title: row.person?.name, meta: row.type, image: row.person?.image?.medium || "", url: row.person?.url, ref: asRef(row.person) }));
-      return { type: "episode", source: "TVmaze", title: ep.name, subtitle: `${parent?.name ? `${parent.name} · ` : ""}S${ep.season}E${ep.number}`, image: ep.image?.original || ep.image?.medium || parent?.image?.original || "", landscape: !!ep.image, url: ep.url, description: clean(ep.summary),
+      return { type: "episode", source: "TVmaze", title: ep.name, subtitle: `${parent?.name ? `${parent.name} · ` : ""}S${ep.season}E${ep.number}`, image: ep.image?.original || ep.image?.medium || "", landscape: !!ep.image, url: ep.url, description: clean(ep.summary),
         facts: [["Aired", ep.airdate], ["Runtime", ep.runtime ? `${ep.runtime} min` : ""], ["Rating", ep.rating?.average ? `★ ${ep.rating.average}` : ""], ["Type", ep.type !== "regular" ? ep.type : ""]].filter(([, value]) => value),
         sections: [{ title: "Show", kind: "shows", items: parent ? [showCard(parent)] : [] }, { title: "Guest cast", kind: "people", items: guests }, { title: "Guest crew", kind: "people", items: crewRows }].filter(section => section.items.length) };
     }
@@ -1121,7 +1121,50 @@
     if (!metadata.isEnabled(source.key, settings)) throw new Error(`${source.name} is disabled in Metadata Sources.`);
     const id = String(item.providerId);
     const normalizedItem = id.startsWith(`${source.key}:`) ? { ...item, providerId: id.slice(source.key.length + 1) } : item;
-    return loaders[source.key](normalizedItem, settings);
+    const loaded = await loaders[source.key](normalizedItem, settings);
+    return await fillMissingEpisodeStills(normalizedItem, loaded, settings);
+  };
+
+  // Some catalogue sources expose the series cover but no episode stills. Resolve
+  // those gaps from an exact TVmaze title match, preserving the original episode
+  // IDs and never substituting series artwork for a still.
+  const normalizeTitle = value => String(value || "").normalize("NFKD").toLocaleLowerCase().replace(/[\p{M}\p{P}\p{S}\p{Z}]+/gu, "");
+  const fillMissingEpisodeStills = async (item, loaded, settings) => {
+    const guide = loaded?.sections?.find(section => section.kind === "episodes"), rows = guide?.items || [];
+    // IMDb already resolves its guide from the exact IMDb ID. A title search
+    // here could attach stills from a different series with a duplicate name.
+    if (item.category !== "series" || item.metadataSource === "imdb" || !rows.some(row => !row.image) || settings.background) return loaded;
+    const aliases = [...new Set([loaded.title, item.title].map(value => String(value || "").trim()).filter(Boolean))].slice(0, 2);
+    const candidates = new Map();
+    for (const alias of aliases) {
+      let results;
+      try { results = await get(`https://api.tvmaze.com/search/shows?q=${encode(alias)}`, settings); } catch (_) { continue; }
+      for (const result of Array.isArray(results) ? results : []) {
+        const show = result?.show;
+        if (!show?.id || normalizeTitle(show.name) !== normalizeTitle(alias)) continue;
+        const expectedYear = String(loaded.year || item.year || "").slice(0, 4), actualYear = String(show.premiered || "").slice(0, 4);
+        if (expectedYear && actualYear && expectedYear !== actualYear) continue;
+        candidates.set(String(show.id), show);
+      }
+      if (candidates.size > 1) break;
+    }
+    if (candidates.size !== 1) return loaded;
+    const show = [...candidates.values()][0];
+    let episodes;
+    try { episodes = (await get(`https://api.tvmaze.com/shows/${encode(show.id)}?embed[]=episodes`, settings))._embedded?.episodes || []; }
+    catch (_) { return loaded; }
+    if (!episodes.length) return loaded;
+    const stillByPosition = new Map(episodes.filter(ep => ep.image?.original || ep.image?.medium)
+      .map(ep => [`${Number(ep.season) || 1}:${Number(ep.number) || 0}`, ep.image?.original || ep.image?.medium]));
+    let changed = false;
+    guide.items = rows.map(row => {
+      if (row.image) return row;
+      const still = stillByPosition.get(`${Number(row.season) || 1}:${Number(row.number) || 0}`);
+      if (!still) return row;
+      changed = true;
+      return { ...row, image: still, imageSource: "TVmaze" };
+    });
+    return changed ? { ...loaded, sections: loaded.sections.map(section => section === guide ? guide : section) } : loaded;
   };
   window.SplitAppDetailController = Object.freeze({ appKey, load, loadRef });
 })();

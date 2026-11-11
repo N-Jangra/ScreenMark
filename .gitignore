@@ -35,3 +35,6 @@ tests/browser/__pycache__/
 android/keystore.properties
 *.jks
 *.keystore
+
+# Local worktree review reports
+report.md

@@ -60,6 +60,22 @@ test("each built-in metadata source dispatches its title detail endpoint and ret
   }
 });
 
+test("library background sync keeps the TVmaze episode guide without loading recommendation pages", async () => {
+  const { controller, calls } = makeDetailController({ requestJson: async target => {
+    if (target.hostname !== "api.tvmaze.com") return undefined;
+    if (target.pathname.startsWith("/shows/101")) return { id: 101, name: "TVmaze Show", premiered: "2024-01-01", genres: ["Drama"], image: { medium: "https://images.example/poster.jpg" }, _embedded: {
+      episodes: [{ id: 7001, season: 1, number: 1, name: "Pilot", image: { medium: "https://images.example/episode-1.jpg" } }],
+      seasons: [{ number: 1, name: "Season 1" }], cast: [], crew: [], akas: [], images: []
+    } };
+    if (target.pathname === "/shows" && target.searchParams.has("page")) return [];
+    return undefined;
+  } });
+  const loaded = await controller.load({ metadataSource: "tvmaze", category: "series", providerId: "101", title: "TVmaze Show" }, { librarySync: true });
+  const guide = loaded.sections.find(section => section.kind === "episodes");
+  assert.equal(guide.items[0].image, "https://images.example/episode-1.jpg");
+  assert.equal(calls.filter(call => call.url.includes("/shows?page=")).length, 0, "background sync skips four optional catalogue pages");
+});
+
 test("AniList series loads its episode guide from the MAL cross-reference and opens episodes in app", async () => {
   let failedFirstPageOnce = false;
   const { controller, calls } = makeDetailController({ requestJson: async (target, options) => {
@@ -110,6 +126,32 @@ test("AniList TVmaze episode fallback searches alternate titles when MAL episode
   const guide = loaded.sections.find(section => section.kind === "episodes");
   assert.equal(guide?.items[0]?.title, "First Wind");
   assert.ok(calls.some(call => call.url.includes("q=Kaze%20no%20Tabi")), "romaji title was searched");
+});
+
+test("Kitsu episode rows keep only episode thumbnails and never substitute the series poster", async () => {
+  const { controller } = makeDetailController({ requestJson: async target => {
+    if (target.hostname === "api.tvmaze.com" && target.pathname === "/search/shows") return [{ show: { id: 700, name: "Anime Show", premiered: "2020-01-01" } }];
+    if (target.hostname === "api.tvmaze.com" && target.pathname === "/shows/700") return { _embedded: { episodes: [
+      { season: 1, number: 1, image: { original: "https://tvmaze.test/episode-one.jpg" } },
+      { season: 1, number: 2, image: { original: "https://tvmaze.test/episode-two.jpg" } }
+    ] } };
+    if (target.hostname !== "kitsu.io") return undefined;
+    if (target.pathname === "/api/edge/anime/77") return { data: { id: "77", attributes: {
+      canonicalTitle: "Anime Show", subtype: "TV", episodeCount: 2,
+      posterImage: { large: "https://media.test/series-poster.jpg" }, startDate: "2020-01-01"
+    } } };
+    if (target.pathname === "/api/edge/anime/77/episodes") return { data: [
+      { id: "ep1", attributes: { number: 1, canonicalTitle: "One", thumbnail: {} } },
+      { id: "ep2", attributes: { number: 2, canonicalTitle: "Two", thumbnail: { large: "https://media.test/episode-two.jpg" } } }
+    ], links: { next: null } };
+    if (target.pathname === "/api/edge/anime/77/genres") return { data: [] };
+    return undefined;
+  } });
+  const loaded = await controller.load({ metadataSource: "kitsu", category: "series", providerId: "77", title: "Anime Show" });
+  const guide = loaded.sections.find(section => section.kind === "episodes");
+  assert.equal(loaded.image, "https://media.test/series-poster.jpg");
+  assert.equal(guide.items[0].image, "https://tvmaze.test/episode-one.jpg", "missing Kitsu still is resolved from an exact TVmaze episode match");
+  assert.equal(guide.items[1].image, "https://media.test/episode-two.jpg", "Kitsu's native still remains preferred");
 });
 
 test("detail dispatch rejects missing, unsupported and disabled source identities", async () => {

@@ -604,43 +604,134 @@
   // remote URL; this image cache provides a persistent offline copy.
   const episodeImageJobs = new Map();
   const episodeThumbKey = (itemId, episodeId) => `${app.key}:episode:${String(itemId)}:${String(episodeId)}`;
-  async function cacheEpisodeThumbnails(item) {
+  const comparableArtworkUrl = value => {
+    try {
+      const url = new URL(String(value || ""));
+      url.hash = ""; url.search = "";
+      if (url.hostname === "image.tmdb.org") url.pathname = url.pathname.replace(/\/t\/p\/(?:original|w\d+)\//, "/t/p/{size}/");
+      return url.href;
+    } catch (_) { return String(value || ""); }
+  };
+  async function cacheEpisodeThumbnails(item, onProgress = () => {}) {
     if (!item?.id || imageStorage !== "all" || !window.SplitAppIDB?.getThumbs || !window.SplitAppIDB?.putThumbs) return { cached: 0, skipped: true };
     const id = String(item.id), active = episodeImageJobs.get(id);
-    if (active) return active;
-    const urls = new Map();
+    if (active) { active.listeners.add(onProgress); return active.promise; }
+    const urls = new Map(), episodeSeasons = new Map();
+    const seriesArtwork = new Set([
+      item.image, item.customCover, item.backdrop, item.cachedDetails?.image,
+      item.cachedDetails?.portraitImage, item.cachedDetails?.landscapeImage,
+      item.cachedDetails?.backgroundImage
+    ].filter(value => /^https:\/\//i.test(String(value || ""))).map(comparableArtworkUrl));
     for (const section of item.cachedDetails?.sections || []) {
       if (section?.kind !== "episodes") continue;
       for (const episode of section.items || []) {
         const url = String(episode?.image || "");
-        if (episode?.id != null && /^https:\/\//i.test(url)) urls.set(String(episode.id), url);
+        if (episode?.id != null && /^https:\/\//i.test(url) && !seriesArtwork.has(comparableArtworkUrl(url))) {
+          const id = String(episode.id);
+          urls.set(id, url);
+          episodeSeasons.set(id, String(episode.season ?? section.season ?? section.title?.match(/season\s*(\d+)/i)?.[1] ?? "?"));
+        }
       }
     }
+    const listeners = new Set([onProgress]), report = value => listeners.forEach(listener => { try { listener(value); } catch (_) {} });
     const task = (async () => {
-      let cached = 0;
-      const entries = [...urls].map(([episodeId, url]) => [episodeThumbKey(id, episodeId), url]);
+      let cached = 0, completed = 0, failed = 0;
+      const seasonOf = episodeId => episodeSeasons.get(episodeId) || "?";
+      const entries = [...urls].map(([episodeId, url]) => [episodeThumbKey(id, episodeId), url, episodeId]);
+      const seasons = new Set(entries.map(([, , episodeId]) => seasonOf(episodeId)));
+      const seasonsDone = new Set();
+      report({ status: "images", total: entries.length, completed: 0, failed: 0, seasons: seasons.size, seasonsDone: 0, season: "", cached: 0 });
       for (let offset = 0; offset < entries.length; offset += 6) {
-        const batch = entries.slice(offset, offset + 6), already = new Map(await window.SplitAppIDB.getThumbs(batch).catch(() => []));
+        const batch = entries.slice(offset, offset + 6);
+        let already;
+        try { already = new Map(await window.SplitAppIDB.getThumbs(batch.map(([key, url]) => [key, url]))); }
+        catch (_) {
+          failed += batch.length;
+          completed += batch.length;
+          report({ status: "images", total: entries.length, completed, failed, seasons: seasons.size, seasonsDone: seasonsDone.size, season: seasonOf(batch.at(-1)?.[2]), cached });
+          continue;
+        }
         const writes = [];
-        for (const [key, signature] of batch) {
-          if (already.has(key)) continue;
-          try {
-            const image = await makeThumbnail(signature);
-            if (!image?.base64Content) continue;
-            const binary = atob(image.base64Content), bytes = new Uint8Array(binary.length);
-            for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
-            writes.push([key, signature, new Blob([bytes], { type: image.mimeType || "image/webp" })]);
-          } catch (_) {}
+        let activeSeason = "";
+        for (const [key, signature, episodeId] of batch) {
+          activeSeason = seasonOf(episodeId);
+          if (!already.has(key)) try {
+              const image = await makeThumbnail(signature);
+              if (image?.base64Content) {
+                const binary = atob(image.base64Content), bytes = new Uint8Array(binary.length);
+                for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+                writes.push([key, signature, new Blob([bytes], { type: image.mimeType || "image/webp" })]);
+              } else failed++;
+            } catch (_) { failed++; }
+          else cached++;
+          completed++;
         }
         if (writes.length) {
-          try { await window.SplitAppIDB.putThumbs(writes); cached += writes.length; } catch (_) {}
+          try { await window.SplitAppIDB.putThumbs(writes); cached += writes.length; }
+          catch (_) { failed += writes.length; }
         }
+        const remainingSeasons = new Set(entries.slice(offset + 6).map(([, , episodeId]) => seasonOf(episodeId)));
+        new Set(batch.map(([, , episodeId]) => seasonOf(episodeId))).forEach(season => {
+          if (!remainingSeasons.has(season)) seasonsDone.add(season);
+        });
+        report({ status: "images", total: entries.length, completed, failed, seasons: seasons.size, seasonsDone: seasonsDone.size, season: activeSeason, cached });
         if (offset + 6 < entries.length) await new Promise(resolve => setTimeout(resolve, 0));
       }
-      return { cached, total: entries.length };
+      return { cached, total: entries.length, failed };
     })().finally(() => episodeImageJobs.delete(id));
-    episodeImageJobs.set(id, task);
+    episodeImageJobs.set(id, { promise: task, listeners });
     return task;
+  }
+
+  // Persist the rest of a title's artwork beside episode stills. Keys are
+  // derived from the metadata path so detail pages can restore galleries and
+  // backdrops without depending on WebView's disposable HTTP cache.
+  async function cacheArtwork(item, onProgress = () => {}) {
+    if (!item?.id || imageStorage !== "all" || !window.SplitAppIDB?.getThumbs || !window.SplitAppIDB?.putThumbs) return { cached: 0, skipped: true };
+    const entries = artworkCacheEntries(item).map(({ key, signature }) => [key, signature]);
+    let cached = 0, failed = 0;
+    for (let offset = 0; offset < entries.length; offset += 6) {
+      const batch = entries.slice(offset, offset + 6);
+      let existing;
+      try { existing = new Map(await window.SplitAppIDB.getThumbs(batch)); }
+      catch (_) { failed += batch.length; continue; }
+      const writes = [];
+      for (const [key, signature] of batch) {
+        if (existing.has(key)) { cached++; continue; }
+        try {
+          const image = await makeThumbnail(signature);
+          if (!image?.base64Content) { failed++; continue; }
+          const binary = atob(image.base64Content), bytes = new Uint8Array(binary.length);
+          for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+          writes.push([key, signature, new Blob([bytes], { type: image.mimeType || "image/webp" })]);
+        } catch (_) { failed++; }
+      }
+      if (writes.length) {
+        try { await window.SplitAppIDB.putThumbs(writes); cached += writes.length; }
+        catch (_) { failed += writes.length; }
+      }
+      onProgress({ status: "artwork", total: entries.length, completed: Math.min(offset + batch.length, entries.length), cached, failed });
+      if (offset + batch.length < entries.length) await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    return { cached, total: entries.length, failed };
+  }
+
+  function artworkCacheEntries(item) {
+    if (!item?.id) return [];
+    const id = String(item.id), primary = String(item.customCover || item.localThumbnailData || item.localPortraitData || item.image || item.cachedDetails?.portraitImage || ""), used = new Set();
+    return collectAllImageCandidates(item).filter(candidate => /^https:\/\//i.test(candidate.source)).map(candidate => {
+      const hasImagePath = candidate.paths.some(path => path.length === 1 && path[0] === "image");
+      const detailPath = candidate.paths.find(path => !(path.length === 1 && path[0] === "image"));
+      let key = hasImagePath && candidate.source === primary ? `${id}:p`
+        : `${app.key}:art:${id}:${(detailPath || ["alternate", candidate.source]).map(part => encodeURIComponent(String(part))).join(".")}`;
+      if (used.has(key)) {
+        let hash = 0x811c9dc5;
+        for (let index = 0; index < candidate.source.length; index++) hash = Math.imul(hash ^ candidate.source.charCodeAt(index), 0x01000193);
+        key = `${key}:alt:${(hash >>> 0).toString(16)}`;
+      }
+      used.add(key);
+      return { key, signature: candidate.source, paths: candidate.paths.filter(path => key === `${id}:p` || !(path.length === 1 && path[0] === "image")) };
+    });
   }
 
   async function syncFolderTree(payload, uri) {
@@ -1439,6 +1530,16 @@
     return write;
   }
 
+  // Persist a single title directly to IndexedDB for background sync. The
+  // normal save queue also mirrors to native snapshots and folder storage; a
+  // slow snapshot must not hold episode hydration behind the full-library
+  // queue, so callers schedule that mirror separately with the app persist.
+  async function saveLibraryItemToIDB(item, state = {}) {
+    if (!isLibraryItem(item) || !window.SplitAppIDB?.saveSome) throw new Error("IndexedDB is unavailable for this library item.");
+    const stored = activeFolderUri ? portableItem(item) : browserData({ items: [item] }).items[0];
+    await window.SplitAppIDB.saveSome({ changed: [stored], history: state.history, preferences: state.preferences });
+  }
+
   let lastMetaJson = "";
   async function saveScoped(payload) {
     const stored = payload.changed.map(item => (activeFolderUri ? portableItem(item) : browserData({ items: [item] }).items[0]));
@@ -1695,9 +1796,12 @@
     databaseFileName,
     load,
     save,
+    saveLibraryItemToIDB,
     chooseFolder,
     loadItemImages,
     cacheEpisodeThumbnails,
+    cacheArtwork,
+    artworkCacheEntries,
     hydrateThumbnails,
     setImageStorage,
     inspectFolder,
