@@ -1,6 +1,6 @@
 # ScreenMark documentation
 
-These guides describe ScreenMark 0.1.6: a local-first movie and TV-series tracker with source-separated discovery, title and episode details, progress history, lazy artwork, section-specific loading placeholders, adaptive low-resource motion and Android storage.
+These guides describe ScreenMark 0.1.6: a local-first movie and TV-series tracker with source-separated discovery, title and episode details, progress history, resumable detail and episode-artwork sync, lazy artwork, section-specific loading placeholders, adaptive low-resource motion and Android storage.
 
 - [App walkthrough](app-walkthrough.md) — current pages, status behavior and main settings.
 - [Metadata sources](metadata.md) — provider coverage, API keys and source behavior.

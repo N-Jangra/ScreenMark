@@ -16,8 +16,21 @@ Version code 106. Release notes cover the current 0.1.6 worktree changes.
 - Android launch state distinguishes a task dismissed from Recents from a process restored after ordinary backgrounding. A dismissed task starts at the home list; a background restore can keep its page and scroll position. WebView renderer exit is logged and the activity schedules recovery when resumed.
 - Profile photo and cover editing includes drag, zoom and a crop preview. The cover frame follows the responsive profile hero shape used by the app; saved artwork fills the target region without leaving blank edges.
 - Episodes after the last announced air date display TBD and cannot be marked watched. Undated gaps between dated episodes and wholly undated guides remain usable.
-- Episode stills from the saved guide are now downloaded into the persistent artwork cache in small background batches after details sync or when opening a saved series. Cached stills are linked back to episodes by stable episode ID, so episodes that have never been scrolled into view can still show their thumbnail offline. This follows the selected Image storage setting; Online only does not download stills.
+- Newly added metadata-backed movies and series enter a resumable library sync queue. Series fetch and save their complete episode guide without requiring a season to be opened; with **Save all images**, episode stills then download in small batches and Sync status shows episode and season progress. Work resumes while ScreenMark is open and online, and failed detail or artwork work can be retried.
+- A compact sync overlay stays visible across screens, follows the active title
+  and episode/season thumbnail progress, opens Sync status when tapped, and
+  offers Retry for failed work. The main app and the Android `.test` package use
+  the same frontend and queue behavior; the separate Kotlin package is not the
+  load-test app.
+- Episode-artwork sync now reports failed image downloads and IndexedDB writes as incomplete, leaving the title available for retry instead of marking a partially cached guide as synced.
+- The background sync popup uses SavePoint's radial progress indicator while retaining the active title, season and image count, plus retry and dismiss actions.
+- A completed sync popup stays dismissed after its automatic hide, even when later progress updates repaint the status.
+- Progress reads the thumbnail worker's actual season counters. A missing device thumbnail-cache API is reported as a retryable failure rather than a successful offline sync.
+- New library rows and full episode guides are written to IndexedDB before thumbnail work begins, independent of the slower native snapshot queue. Library sync skips optional TVmaze recommendation pages while retaining the complete episode guide and episode stills. Season progress counts every season when an image batch crosses a season boundary.
+- Episode stills from saved guides are downloaded into the persistent artwork cache after detail sync or when opening a saved series. Cached stills are linked back to episodes by stable episode ID, so episodes that have never been scrolled into view can still show their thumbnail offline. This follows the selected Image storage setting; Online only and Posters and covers only do not download stills.
+- Related title, episode, cast, character and person detail pages now use a nested Back history, returning through the detail pages before leaving for the originating collection. The walkthrough documents the history and the difference between clearing temporary cache and clearing saved artwork.
 - Timeline no longer shows the "Collection activity / Recent activity" summary block; the filters and the list start right under the header.
+- Discover's empty state is presented as a centered, full-width card with a clear next action, matching the page's loading and results surfaces.
 - Source health: a source that fails three times in a row is paused (2 minutes, growing to 15), so one dead catalog stops slowing searches; the Test button on a source page bypasses the pause.
 - Grid posters stored in the app database are shrunk to a 420 px WebP (new covers only), so big grids read and decode faster; the detail page still uses the full artwork.
 - Background poster caching yields between batches, and collection search reuses lowercase title keys.
@@ -25,6 +38,10 @@ Version code 106. Release notes cover the current 0.1.6 worktree changes.
 - Folder database indexing avoids creating metadata-only per-title mirror folders when no artwork needs offline files. Episode artwork also gets a stable id-based lookup so removing optional cast sections does not shift its stored image path.
 - `npm run test:browser` runs a headless Chrome load comparison using 3,000 generated dummy titles; focused coverage also lives in `tests/folder-stream.test.js`, `tests/backup-stream.test.js`, `tests/source-health.test.js`, and the browser/device fixtures.
 - Metadata Sources drops its helper line ("Enable sources and drag to reorder.") so the list starts higher.
+- Android now persists title posters, portrait covers, backdrops, screenshots, poster galleries, and episode stills in IndexedDB. Existing saved titles backfill missing art after startup; new titles save art in the background as part of sync.
+- Android collection, watchlist, detail, profile, and episode views resolve saved image blobs before remote URLs, so cached artwork remains visible offline after the temporary WebView cache is cleared.
+- **Clear all temporary cache** now preserves persistent IndexedDB artwork. **Clear image cache** remains the action that removes saved image blobs.
+- The device offline validation added coverage for artwork key retention, gallery lookup, background backfill, and temporary-cache semantics.
 
 ## [0.1.5] — 2026-11-09
 
@@ -37,16 +54,16 @@ Version code 105 (117 automated tests). Highlights: Quick setup that works on a 
 - Edit profile: the library picker is a two-step flow. Choose **Picked below**, pick a series or movie (with search), then pick one of its posters, thumbnails, backgrounds or screenshots. The exact picture is remembered (`profileAvatarPinnedImage` / `profileCoverPinnedImage`) and prefers the on-device copy so it shows offline.
 - Episode ratings, the rating breakdown and the rating count are saved explicitly in each title's `facts` (`episodeRatings`, `ratingBreakdown`, `ratingCount`) in IndexedDB, folder JSON and exports.
 
-- Sync status page (`#sync`) for Quick setup and backup restore: progress bar, per-title Downloading / Queued / Synced / Not synced list with errors, Retry failed and Clear finished; it survives restarts and resumes unfinished titles.
+- Sync status page (`#sync`) for newly added titles, Quick setup and backup restore: progress bar, per-title Queued / Syncing / Synced / Not synced list with errors, Retry failed and Clear finished; it survives restarts and resumes unfinished work. Series show episode-still and season progress while full image storage is enabled.
 - Restore sync: restored titles with a source and id download through the queue, and names-only titles (TXT, CSV, old backups) are matched to a source by exact title and year first.
 - Compressed backups: JSON can be saved as `.json.gz` in the browser and the importer opens `.json`, `.json.gz` and `.sqdb`. CSV exports carry year, status, progress, goal, favorite, review, source, source id, id and dates; TXT is `Title (Year)`.
 - MyAnimeList (Jikan) mirror through AniList, new sections for Jikan (staff, pictures, recommendations, episode ratings) and a developer source probe (`tests/tools/`).
 
 ### Changed
 
-- Quick setup downloads show on the Refresh status page (`#sync`): a progress bar plus a per-title list (Downloading, Queued, Synced, Not synced with the error and a Retry button). Finishing Quick setup with more than 8 picks opens that page.
+- Newly added source-linked titles load full details (episodes, ratings, posters, backgrounds, screenshots) two at a time through the background queue and save their artwork. Series episode stills are cached after the episode guide is saved, without waiting for a season menu to open. Quick setup uses the same queue; finishing with more than 8 picks opens Sync status.
 - Cast & Crew is lazy: the tab appears only while online (and the source is enabled), loads from the source when you tap it with a placeholder skeleton and a Try again button, and is never written to the database or backups. It disappears when offline.
-- Titles added by Quick setup now load full details (episodes, ratings, posters, backgrounds, screenshots) two at a time in the background and save their artwork straight away; opening a title that only has lightweight details refreshes it once automatically instead of needing pull-to-refresh.
+- Opening a title that only has lightweight details refreshes it once automatically instead of needing pull-to-refresh.
 - Restoring a backup matches titles by source + source id first (then by title) and rebuilds the metadata link from the backup, so restored titles sync with their source.
 - Restore primes the device artwork cache directly from the restored data in one batched write, and the background artwork fill uses larger batches, so posters in Watchlist, Profile, Series/Movies and Favorites appear quickly.
 
@@ -94,7 +111,7 @@ Version code 105 (117 automated tests). Highlights: Quick setup that works on a 
 ### Fixed
 
 - Discover search placeholders now look like the results that replace them: one shelf per source (source name header and a rail of cards) when searching all sources, and one three-column grid with the source name when a single source is selected. They used to be a generic grid unlike the page.
-- Sync status page (Quick setup and restore): it updates every moment a title changes state (not only when one finishes), keeps its list across navigation and restarts and resumes unfinished titles on launch, hides the empty "No refresh history" box while downloads exist, goes back to the library, and has Retry failed and Clear finished buttons.
+- Sync status page (new additions, Quick setup and restore): it updates as title and episode-artwork progress changes, keeps its list across navigation and restarts, resumes unfinished work on launch, hides the empty "No refresh history" box while downloads exist, goes back to the library, and has Retry failed and Clear finished buttons.
 - Backup formats: **CSV** now exports year, status, progress, goal, favorite, review, source, source id, id and dates (not just names) and imports them back; **TXT** exports `Title (Year)` and reads that form; **JSON** can be saved gzip-compressed (`.json.gz`, about 10x smaller in browsers) and the importer opens `.json`, `.json.gz` and `.sqdb`.
 - Restore now syncs: every restored title with a source and id is downloaded through the queue (progress on Metadata Sync → Refresh status), and names-only titles (TXT, CSV or old backups) are first matched to a source by an exact title (+ year) search, with a clear "No exact match" status and Retry when none is found.
 - Quick setup shows "Please wait while the sources load data…" with a spinner above the loading placeholders.
@@ -359,6 +376,7 @@ First tracked release: a local-first tracker for **movies and TV series** that r
 
 ### Fixed
 
+- Episode thumbnail sync no longer copies the Jikan series cover onto every episode. Missing stills are filled only from one exact TVmaze title/year match and matching season/episode numbers; native stills keep priority. Synced local stills now appear on episode detail pages, including offline, instead of falling back to the series poster.
 - Android: startup now asks for the storage folder whenever none is chosen (or the old one is gone) instead of silently running without one.
 - Covers saved in the chosen storage folder now load on start, so they still show offline after the app cache is cleared (previously they only came from the cache or the internet).
 - Backup import file picker being blocked; Discover rows clipped on tablets; Details header not spanning the page; empty Timeline text showing raw placeholders; Metadata & Storage missing from the Settings index; renamed titles keeping the old name on Details.
