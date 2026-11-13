@@ -8,7 +8,7 @@ const path = require("node:path");
 const settings = fs.readFileSync(path.join(__dirname, "../frontend/pages/settings.js"), "utf8");
 const sourceOptions = settings.slice(settings.indexOf("function renderSourceOptions()"), settings.indexOf("function renderMetadataSources()"));
 
-test("source options keep concise field guidance and omit empty help rows", () => {
+test("source options omit helper text and empty help rows", () => {
   assert.ok(sourceOptions.includes('${help ? `<small>${help}</small>` : ""}'));
   for (const text of [
     "Leave blank for the default. Choose a mirror below if needed.",
@@ -16,7 +16,7 @@ test("source options keep concise field guidance and omit empty help rows", () =
     "Sent with requests. Leave blank for the device default.",
     "Only needed if this source requires a session.",
     "Browsers ignore custom User-Agent and cookies. Use Android or local preview."
-  ]) assert.ok(sourceOptions.includes(text), `expected concise hint: ${text}`);
+  ]) assert.ok(!sourceOptions.includes(text), `unexpected helper text: ${text}`);
 });
 
 test("source options do not expose the full device User-Agent in its placeholder", () => {
