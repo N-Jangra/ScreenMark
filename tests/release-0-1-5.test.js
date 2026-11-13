@@ -22,11 +22,14 @@ test("sync page lists Quick setup downloads with synced / not synced counts and 
     { id: "2", title: "Broken show", status: "failed", error: "Offline", category: "series" },
     { id: "3", title: "Busy movie", status: "running", category: "movie" }
   ] });
-  assert.match(html, /1 synced · 1 not synced · 1 remaining of 3/);
-  assert.match(html, /Not synced/);
+  assert.match(html, /sync-hero/);
+  assert.match(html, /<strong>1<\/strong><span>Synced<\/span>/);
+  assert.match(html, /<strong>1<\/strong><span>Remaining<\/span>/);
+  assert.match(html, /<strong>1<\/strong><span>Failed<\/span>/);
+  assert.match(html, /<b>33%<\/b>/, "a running title does not count as finished, a done one does");
   assert.match(html, /data-setup-download-retry="2"/);
   assert.match(html, /data-setup-download-retry=""/);
-  assert.ok(html.indexOf("Broken show") < html.indexOf("Done show"), "failed titles are listed first");
+  assert.ok(html.indexOf("Broken show") < html.indexOf("Done show"), "failed titles are listed before finished ones");
   assert.doesNotMatch(window.SplitAppPages.sync({ esc, itemById: () => null, setupDownloads: [] }), /Quick setup/);
 });
 
@@ -41,7 +44,7 @@ test("persistent sync overlay shows season episode progress, opens Sync, and ret
   assert.match(app, /createIcons\(\{ root: content, attrs: \{ "aria-hidden": "true" \} \}\);\s*updateSyncOverlay\(\)/);
   assert.match(app, /const imageStage = running\?\.stage === "images"/);
   assert.match(app, /\$\{running\.title \|\| "Title"\} · S\$\{running\.season \|\| "…"\} · \$\{epDone\}\/\$\{epTotal\} images/);
-  assert.match(css, /\.sync-overlay-copy small \{[^}]*-webkit-line-clamp:2/);
+  assert.match(css, /\.sync-overlay-open \{[^}]*width:58px[^}]*border-radius:50%/);
   assert.match(app, /result\?\.skipped\) throw new Error\("Episode thumbnails could not be saved on this device\."\)/);
   assert.match(app, /eventClosest\(event, "\[data-sync-overlay-open\]"\)\) \{ goto\("sync"\); return; \}/);
   assert.match(app, /#sync-overlay \[data-setup-download-retry\][\s\S]{0,100}retryDownloadButton\(overlayRetry\)/);
