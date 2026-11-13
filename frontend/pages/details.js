@@ -19,6 +19,22 @@
       detailLoading, detailError, detailEditMode, category, labelCategory, prefs, roles, esc
     } = context;
     const renderImage = context.imageMarkup || window.SplitAppImageMarkup;
+    const comparableArtworkUrl = value => {
+      try {
+        const url = new URL(String(value || ""));
+        url.hash = ""; url.search = "";
+        if (url.hostname === "image.tmdb.org") url.pathname = url.pathname.replace(/\/t\/p\/(?:original|w\d+)\//, "/t/p/{size}/");
+        return url.href;
+      } catch { return String(value || ""); }
+    };
+    const isSeriesArtwork = (item, value) => {
+      if (!value) return false;
+      const artwork = [item?.image, item?.customCover, item?.backdrop, item?.localThumbnailData,
+        item?.cachedDetails?.image, item?.cachedDetails?.portraitImage, item?.cachedDetails?.landscapeImage,
+        item?.cachedDetails?.backgroundImage];
+      return artwork.some(candidate => candidate && comparableArtworkUrl(candidate) === comparableArtworkUrl(value));
+    };
+    const savedEpisodeImage = (item, episode) => episode?.id == null || isSeriesArtwork(item, episode.image) ? "" : item?.localImageData?.[`cachedDetails.episodesById.${String(episode.id)}.image`] || "";
 
     const detailValue = value => Array.isArray(value)
       ? value.map(detailValue).filter(Boolean).join(", ")
@@ -55,10 +71,10 @@
         return esc(token);
       }).join("").replace(/\s+-\s+/g, " · ");
     };
-    const safeImage = value => /^data:image\/[a-z0-9.+-]+;base64,/i.test(String(value || "")) ? String(value) : safeUrl(value);
+    const safeImage = value => /^data:image\/[a-z0-9.+-]+;base64,/i.test(String(value || "")) || /^blob:/i.test(String(value || "")) ? String(value) : safeUrl(value);
     const episodeCountdown = episode => {
       const airtime = Number(window.SplitAppLibrary.episodeAirTime?.(episode)) || 0;
-      if (!airtime) return "Date unknown";
+      if (!airtime) return "TBD";
       const days = Math.max(0, Math.ceil((airtime - Date.now()) / 86400000));
       return days === 0 ? "Today" : `${days} day${days === 1 ? "" : "s"}`;
     };
@@ -97,7 +113,9 @@
       const layoutControls = ["horizontal", "vertical"].map(direction => `<button type="button" class="ep-layout-option${layout === direction ? " is-active" : ""}" data-ratings-layout="${direction}" aria-pressed="${layout === direction}" aria-label="${direction} ratings layout" title="${direction[0].toUpperCase()}${direction.slice(1)} layout${manualLayout ? "" : " · automatic"}">${ratingsLayoutIcon(direction)}<span>${direction[0].toUpperCase()}${direction.slice(1)}</span></button>`).join("");
       return `<div class="ep-ratings" data-layout="${layout}" data-layout-mode="${manualLayout ? "manual" : "auto"}" data-season-count="${seasons.length}" data-longest="${longest}"><div class="ep-ratings-bar"><p class="ep-ratings-note">Average ★ ${average.toFixed(1)} across ${rated.length} rated episodes</p><div class="ep-layout-toggle" role="group" aria-label="Episode rating layout">${layoutControls}</div></div><div class="ep-ratings-scroll ep-ratings-h">${horizontal}</div><div class="ep-ratings-scroll ep-ratings-v">${vertical}</div></div>`;
     };
-    const episodeGuide = (section, rows, watchedIds, canToggle, item, sectionIndex, imageButton, fallbackImage = "") => {
+    const episodeGuide = (section, rows, watchedIds, canToggle, item, sectionIndex, imageButton) => {
+      window.SplitAppLibrary.annotateEpisodes?.(rows); // marks trailing undated episodes as TBD before any row is drawn
+      const sourceIndexById = new Map(rows.map((row, index) => [String(row.id), index]));
       const seasons = [...new Set(rows.map(row => row.season))].sort((a, b) => a - b);
       const firstOpen = rows.find(row => !watchedIds.has(String(row.id)))?.season ?? seasons[seasons.length - 1];
       const selected = seasons.map(String).includes(String(context.detailSeason)) ? Number(context.detailSeason) : firstOpen;
@@ -112,7 +130,7 @@
         const all = list.length > 0 && done === list.length, pct = list.length ? Math.round(done / list.length * 100) : 0;
         const ids = list.map(row => row.id).join(","), year = info.premiere ? String(info.premiere).slice(0, 4) : "";
         const rowsHtml = `<ul class="episode-list">${list.map(row => {
-          const watched = watchedIds.has(String(row.id)), thumb = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${rows.indexOf(row)}.image`] || row.image) || fallbackImage;
+          const watched = watchedIds.has(String(row.id)), rowImage = isSeriesArtwork(item, row.image) ? "" : row.image, thumb = safeImage(savedEpisodeImage(item, row) || item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${sourceIndexById.get(String(row.id))}.image`] || rowImage);
           const upcoming = Boolean(window.SplitAppLibrary.isUpcoming?.(row)) && !watched;
           const check = canToggle ? upcoming ? `<span class="episode-countdown" aria-label="Airs in ${esc(episodeCountdown(row))}">${esc(episodeCountdown(row))}</span>` : `<button type="button" class="episode-check ${watched ? "is-watched" : ""}" data-episode-toggle data-episode-id="${esc(row.id)}" data-episode-title="${esc(`S${row.season}E${row.number} ${row.title}`)}" role="checkbox" aria-checked="${watched}" aria-label="Mark ${esc(row.title)} ${watched ? "unwatched" : "watched"}">${watched ? "✓" : ""}</button>` : "";
           const meta = [window.SplitAppDates.text(row.airdate), row.runtime ? `${row.runtime}m` : ""].filter(Boolean).join("  ");
@@ -151,8 +169,12 @@
       }
       if (!data) return `<div class="${refClass}">${back}<div class="detail-error"><p>${esc(context.refError || "Could not load this page.")}</p><span class="detail-error-actions">${context.detailRef?.extra?.source === "imdb" || /^imdb-episode:tt/i.test(String(context.detailRef?.id || "")) ? `<button class="button secondary small" type="button" data-review-provider-session="imdb">Open IMDb</button>` : ""}<button class="button secondary small" data-detail-ref-retry>Try again</button></span></div></div>`;
       const image = safeImage(data.image);
-      const episodeFallback = safeImage(savedItem?.customCover || savedItem?.localThumbnailData || savedItem?.image) || safeImage((data.sections || []).flatMap(section => section.items || []).find(row => /poster|screenshot|still/i.test(`${row.title || ""} ${row.meta || ""}`) && row.image)?.image);
-      const episodeImage = image || episodeFallback;
+      const savedEpisodeStill = savedItem && refEpisode?.id != null && !isSeriesArtwork(savedItem, refEpisode.image)
+        ? savedItem.localImageData?.[`cachedDetails.episodesById.${String(refEpisode.id)}.image`] || refEpisode.image || ""
+        : "";
+      const episodeImage = kind === "episode"
+        ? safeImage(savedEpisodeStill) || (isSeriesArtwork(savedItem, image) ? "" : image)
+        : image;
       const actorPortrait = image ? `<button type="button" class="demo-actor-portrait detail-image-trigger" data-detail-image-src="${esc(image)}" data-detail-image-label="${esc(data.title)}"><img src="${esc(image)}" alt="${esc(data.title)}" onerror="this.hidden=true"></button>` : `<span class="demo-actor-portrait" aria-hidden="true"><svg class="person-placeholder" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg></span>`;
       const actorHero = `<header class="demo-actor-hero">${actorPortrait}<div class="demo-actor-copy"><span class="demo-source-label">${kind === "character" ? "Character profile" : data.source ? `${esc(data.source)} cast profile` : "Actor &amp; crew profile"}</span><h1>${esc(data.title)}</h1>${data.subtitle ? `<p>${esc(data.subtitle)}</p>` : ""}<div class="demo-fact-pills">${(data.facts || []).map(([label, value]) => `<span>${esc(label)} · ${esc(window.SplitAppDates.text(value))}</span>`).join("")}</div></div></header>`;
       const hero = `<article class="detail-hero ios-hero ref-hero demo-ref-hero"><div class="ios-hero-bg"${image ? ` style="background-image:url('${esc(image)}')"` : ""}></div><div class="ios-hero-body">${image ? `<button type="button" class="detail-image-trigger detail-cover-trigger${data.landscape ? " is-landscape" : ""}" data-detail-image-src="${esc(image)}" data-detail-image-label="${esc(data.title)}"><img class="detail-image" src="${esc(image)}" alt="" onerror="this.hidden=true"></button>` : `<div class="detail-image-placeholder">✦</div>`}<div class="detail-hero-copy"><p class="eyebrow">${esc(refSource)} · ${esc(kind)}</p><h2>${esc(data.title)}</h2>${data.subtitle ? `<p class="detail-description">${esc(data.subtitle)}</p>` : ""}<div class="detail-badges">${(data.facts || []).map(([label, value]) => `<span>${esc(label)}: ${esc(window.SplitAppDates.text(value))}</span>`).join("")}</div></div></div>${epIndex >= 0 ? (() => { const prev = epInfo.eps[epIndex - 1], next = epInfo.eps[epIndex + 1]; const nav = (entry, label) => entry ? refButton(episodeRef(entry), "button secondary", label, true) : `<button type="button" class="button secondary" disabled>${label}</button>`; return `<div class="ep-nav-row">${nav(prev, "‹ Prev ep")}${nav(next, "Next ep ›")}</div>`; })() : ""}</article>`;
@@ -160,7 +182,10 @@
       const epCode = /^(.*?)\s*·\s*S(\d+)E(\d+)\s*$/i.exec(String(data.subtitle || ""));
       const epKicker = epCode ? `${epCode[1]} · Season ${epCode[2]} · Episode ${epCode[3]}` : data.subtitle || "Episode";
       const epFacts = (data.facts || []).map(([label, value]) => { const text = window.SplitAppDates.text(value); return /rating/i.test(label) ? `<span class="is-rating">${esc(String(text).replace(/^★?\s*/, "★ "))}</span>` : /aired|date/i.test(label) ? `<span>Aired ${esc(text)}</span>` : /runtime/i.test(label) ? `<span>${esc(String(text).replace(/\s*min.*/i, ""))} min</span>` : `<span>${esc(label)}: ${esc(text)}</span>`; }).join("");
-      const epHero = kind === "episode" ? `<article class="ep-hero"><div class="ep-still">${episodeImage ? `<button type="button" class="detail-image-trigger" data-detail-image-src="${esc(episodeImage)}" data-detail-image-label="${esc(data.title)}"><img src="${esc(episodeImage)}" alt="" onerror="this.hidden=true"></button>` : ""}<div class="ep-still-copy"><span class="ep-kicker">${esc(epKicker)}</span><h1>${esc(data.title)}</h1><div class="demo-episode-facts ep-pills">${epFacts}</div></div></div></article>` : "";
+      const epFallbackLandscape = kind === "episode" && !episodeImage && savedItem ? safeImage(savedItem.localLandscapeData || savedItem.localImageData?.["cachedDetails.landscapeImage"] || savedItem.localImageData?.["cachedDetails.backgroundImage"] || savedItem.backdrop || savedItem.cachedDetails?.landscapeImage || savedItem.cachedDetails?.backgroundImage) : "";
+      const epFallbackPoster = kind === "episode" && !episodeImage && !epFallbackLandscape && savedItem ? safeImage(savedItem.customCover || savedItem.localThumbnailData || savedItem.localPortraitData || savedItem.image) : "";
+      const epFallbackStyle = epFallbackLandscape || epFallbackPoster ? ` style="background-image:url('${esc(epFallbackLandscape || epFallbackPoster)}')"` : "";
+      const epHero = kind === "episode" ? `<article class="ep-hero"><div class="ep-still${epFallbackLandscape ? " has-fallback" : epFallbackPoster ? " has-fallback is-poster" : ""}"${epFallbackStyle}>${episodeImage ? `<button type="button" class="detail-image-trigger" data-detail-image-src="${esc(episodeImage)}" data-detail-image-label="${esc(data.title)}"><img src="${esc(episodeImage)}" alt="" onerror="this.hidden=true"></button>` : ""}<div class="ep-still-copy"><span class="ep-kicker">${esc(epKicker)}</span><h1>${esc(data.title)}</h1><div class="demo-episode-facts ep-pills">${epFacts}</div></div></div></article>` : "";
       const epNavCard = kind === "episode" && epIndex >= 0 ? `<section class="ep-checkin-card"><span class="db-label">Episode navigation &amp; check-in</span><div class="ep-nav-row">${navButton(epInfo.eps[epIndex - 1], "‹ Prev")}${refUpcoming ? `<span class="ep-nav-button ep-upcoming-countdown">${esc(episodeCountdown(refEpisode))}</span>` : `<button type="button" class="ep-nav-button ep-center-check${epWatched ? " is-watched" : ""}" data-episode-toggle data-item-id="${esc(savedItem.id)}" data-episode-id="${esc(epId)}" data-episode-title="${esc(data.title)}" aria-pressed="${epWatched}">${epWatched ? "✓ Watched" : "＋ Mark watched"}</button>`}${navButton(epInfo.eps[epIndex + 1], "Next ›")}</div></section>` : "";
       const seriesGuide = kind === "episode" && savedItem ? (() => { const art = safeImage(savedItem.customCover || savedItem.localThumbnailData || savedItem.image); return `<button type="button" class="detail-section detail-card series-guide-card" data-detail-back><span class="sg-art">${art ? `<img src="${esc(art)}" alt="" onerror="this.hidden=true">` : ""}</span><span class="sg-copy"><small>Series guide</small><strong>${esc(savedItem.title)}</strong><em>${epInfo ? `${epInfo.done}/${epInfo.total} episodes watched · ` : ""}Return to full season list ›</em></span></button>`; })() : "";
       const reactionCard = "";
@@ -178,7 +203,7 @@
         const rows = kind === "person" ? sourceRows.slice(Math.max(0, refPage * refPageSize - start), Math.max(0, (refPage + 1) * refPageSize - start)) : sourceRows;
         if (kind === "person" && !rows.length) return "";
         const body = section.kind === "episodes-list"
-          ? `<ul class="episode-list">${rows.map(row => { const thumb = safeImage(row.image) || episodeFallback; return `<li class="episode-row">${refButton(row.ref, "episode-main", `<span class="episode-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : ""}</span><span class="episode-text"><strong>${esc(row.title)}</strong>${row.meta ? `<small>${esc(window.SplitAppDates.text(row.meta))}</small>` : ""}</span>`)}</li>`; }).join("")}</ul>`
+          ? `<ul class="episode-list">${rows.map(row => { const thumb = safeImage(isSeriesArtwork(item, row.image) ? "" : row.image); return `<li class="episode-row">${refButton(row.ref, "episode-main", `<span class="episode-thumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : ""}</span><span class="episode-text"><strong>${esc(row.title)}</strong>${row.meta ? `<small>${esc(window.SplitAppDates.text(row.meta))}</small>` : ""}</span>`)}</li>`; }).join("")}</ul>`
           : `<div class="detail-carousel">${rows.map(row => {
               const art = safeImage(row.image), isCast = section.kind === "people" || /^(cast|characters|staff|guest cast|guest crew)/i.test(section.title || ""), fallback = isCast ? `<svg class="person-placeholder" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>` : "", inner = isCast ? `<span class="detail-carousel-art rt-cast-art">${art ? `<img src="${esc(art)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : fallback}</span><span class="rt-cast-copy"><strong>${esc(row.title)}</strong>${row.meta ? `<small>${esc(row.meta)}</small>` : ""}</span>` : `<span class="detail-carousel-art">${art ? `<img src="${esc(art)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : fallback}</span><strong>${esc(row.title)}</strong>${row.meta ? `<small>${esc(row.meta)}</small>` : ""}`;
               const ref = row.ref || (section.kind === "shows" ? { type: "show", id: row.id, title: row.title } : section.kind === "people" || /^(cast|characters|staff|guest cast|guest crew)/i.test(section.title || "") ? { type: "person", id: `preview:${encodeURIComponent(row.title || "unknown")}`, title: row.title, extra: { previewOnly: true, source: data.source || "ScreenMark", image: row.image || "", role: row.meta || "", url: row.url || "" } } : null);
@@ -195,12 +220,12 @@
       return `<div class="${refClass}">${back}${refHero}${epNavCard}${reactionCard}${data.description ? `<section class="detail-section detail-card"><h3>${kind === "episode" ? "Synopsis" : "Overview"}</h3><p class="detail-description${isAniListProfile ? " anilist-overview" : ""}">${overview}</p></section>` : ""}${seriesGuide}${sections}${creditsPager}${refLinks}<dialog class="detail-image-modal" id="detail-image-modal" aria-label="Image viewer"><button type="button" class="detail-image-modal-close" data-detail-image-close aria-label="Close image">×</button><button type="button" class="detail-image-modal-nav detail-image-modal-prev" data-detail-image-prev aria-label="Previous image">‹</button><figure><img data-detail-modal-img alt=""><figcaption data-detail-modal-caption></figcaption></figure><button type="button" class="detail-image-modal-nav detail-image-modal-next" data-detail-image-next aria-label="Next image">›</button></dialog></div>`;
     };
 
-    const renderSection = (section, watchedIds = new Set(), canToggleEpisodes = false, item = null, sectionIndex = 0, imageButton = () => "", fallbackEpisodeImage = "") => {
+    const renderSection = (section, watchedIds = new Set(), canToggleEpisodes = false, item = null, sectionIndex = 0, imageButton = () => "") => {
       const items = section.items || [];
       const body = section.kind === "carousel" || section.kind === "people"
         ? `<div class="detail-carousel">${items.map((entry, entryIndex) => {
             const href = safeUrl(entry.url);
-            const image = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || entry.image);
+            const image = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || item?.localImageData?.[`imageUrl:${entry.image || entry.url || ""}`] || entry.image);
             const isCast = section.kind === "people" || /^(cast|characters|staff|guest cast|guest crew)/i.test(section.title || "");
             const placeholder = isCast ? `<svg class="person-placeholder" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>` : "";
             const inner = isCast ? `<span class="detail-carousel-art rt-cast-art">${image ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : placeholder}</span><span class="rt-cast-copy"><strong>${esc(entry.title || "Untitled")}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}</span>` : `<span class="detail-carousel-art">${image ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : placeholder}</span><strong>${esc(entry.title || "Untitled")}</strong>${entry.meta ? `<small>${esc(detailValue(entry.meta))}</small>` : ""}`;
@@ -209,15 +234,15 @@
             return ref ? refButton(ref, cardClass, inner) : href ? `<a class="${cardClass}" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : `<div class="${cardClass}">${inner}</div>`;
           }).join("")}</div>`
         : section.kind === "ratings" ? ratingsGrid(items)
-        : section.kind === "episodes" ? episodeGuide(section, items, watchedIds, canToggleEpisodes, item, sectionIndex, imageButton, fallbackEpisodeImage)
+        : section.kind === "episodes" ? episodeGuide(section, items, watchedIds, canToggleEpisodes, item, sectionIndex, imageButton)
         : section.kind === "gallery"
         ? `<div class="detail-gallery">${items.map((entry, entryIndex) => {
-            const image = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || entry.image || entry.url);
+            const image = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || item?.localImageData?.[`imageUrl:${entry.image || entry.url || ""}`] || entry.image || entry.url);
             return image ? imageButton(image, entry.title || "Screenshot", `<img src="${esc(image)}" alt="${esc(entry.title || "Source image")}" loading="lazy" decoding="async" onerror="this.hidden=true"><span>${esc(entry.title || "")}</span>`, "detail-gallery-image") : "";
           }).join("")}</div>`
         : `<div class="detail-source-list">${items.map((entry, entryIndex) => {
             const href = safeUrl(entry.url);
-            const image = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || entry.image);
+            const image = safeImage(item?.localImageData?.[`cachedDetails.sections.${sectionIndex}.items.${entryIndex}.image`] || item?.localImageData?.[`imageUrl:${entry.image || ""}`] || entry.image);
             const title = esc(entry.title || "Untitled");
             const episodeId = String(entry.id ?? entry.title ?? "");
             const watched = watchedIds.has(episodeId);
@@ -241,8 +266,8 @@
 
       const source = window.SplitAppMetadata.providers.find(row => row.key === (item.metadataSource || item.source));
       const loaded = detailData || {};
-      const image = safeImage(item.customCover || item.localThumbnailData || item.localImageData?.["image"] || item.localImageData?.["cachedDetails.portraitImage"] || item.localImageData?.["cachedDetails.image"] || loaded.portraitImage || loaded.image || item.image);
-      const landscape = safeImage(item.localImageData?.["cachedDetails.landscapeImage"] || item.localImageData?.["cachedDetails.backgroundImage"] || loaded.landscapeImage || loaded.backgroundImage);
+      const image = safeImage(item.customCover || item.localThumbnailData || item.localImageData?.["image"] || item.localImageData?.[`imageUrl:${item.image || loaded.portraitImage || loaded.image || ""}`] || item.localImageData?.["cachedDetails.portraitImage"] || item.localImageData?.["cachedDetails.image"] || loaded.portraitImage || loaded.image || item.image);
+      const landscape = safeImage(item.localImageData?.["cachedDetails.landscapeImage"] || item.localImageData?.["cachedDetails.backgroundImage"] || item.localImageData?.[`imageUrl:${item.backdrop || loaded.landscapeImage || loaded.backgroundImage || ""}`] || loaded.landscapeImage || loaded.backgroundImage);
       const hasSummary = Boolean(loaded.description || item.description || item.summary);
       const summary = loaded.description || item.description || item.summary || "No description is available for this entry yet.";
       const sourceUrl = safeUrl(loaded.url || item.url || item.providerUrl);
@@ -291,8 +316,7 @@
       const castLazy = context.detailCastOnline !== false && !!(item.metadataSource && item.providerId) && !takeSlotPeek(/^(cast|characters|staff)/i);
       const slots = { media: takeSlot(/^(trailers|images|screenshots|posters)/i), cast: context.detailCastOnline === false ? [] : takeSlot(/^(cast|characters|staff)/i), ratings: indexedSections.filter(({ section, index }) => !taken.has(index) && section.kind === "ratings" && taken.add(index)), episodes: indexedSections.filter(({ section, index }) => !taken.has(index) && section.kind === "episodes" && taken.add(index)), related: takeSlot(/^(related|you might also like|same series)/i) };
       slots.other = indexedSections.filter(({ index }) => !taken.has(index));
-      const fallbackEpisodeImage = safeImage(item.customCover || item.localThumbnailData || item.image || item.backdrop) || safeImage(slots.media.flatMap(({ section, index }) => (section.items || []).map((entry, entryIndex) => item.localImageData?.[`cachedDetails.sections.${index}.items.${entryIndex}.image`] || entry.image)).find(Boolean));
-      const renderRows = rows => rows.map(({ section, index }) => renderSection(section, watchedSet, canProgress, item, index, popupImageButton, fallbackEpisodeImage)).join("");
+      const renderRows = rows => rows.map(({ section, index }) => renderSection(section, watchedSet, canProgress, item, index, popupImageButton)).join("");
       const useSynopsisLayout = item.category === "series" || item.category === "movie";
       const synopsisTrailerUrl = safeUrl(loaded.trailer?.url) || `https://www.youtube.com/results?search_query=${encodeURIComponent(`${loaded.title || item.title} ${loaded.year || item.year || ""} official trailer`.trim())}`;
       const synopsisTrailer = useSynopsisLayout ? `<a class="demo-synopsis-trailer" href="${esc(synopsisTrailerUrl)}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▶</span> Watch official ${item.category === "series" ? "series" : "movie"} trailer (YouTube)</a>` : "";
@@ -343,11 +367,14 @@
       const unifiedProgress = epInfo ? (() => {
         const episodeSectionIndex = (loaded.sections || []).findIndex(section => section.kind === "episodes");
         const episodeSection = loaded.sections?.[episodeSectionIndex];
+        const episodeIndexById = new Map((episodeSection?.items || []).map((entry, index) => [String(entry.id), index]));
         const focusIndex = epInfo.next ? epInfo.eps.findIndex(entry => String(entry.id) === String(epInfo.next.id)) : epInfo.eps.length - 1;
         const cards = epInfo.eps.map((episode, index) => {
           const watched = epInfo.watched.has(String(episode.id));
-          const sourceIndex = (episodeSection?.items || []).findIndex(entry => String(entry.id) === String(episode.id));
-          const image = safeImage(item.localImageData?.[`cachedDetails.sections.${episodeSectionIndex}.items.${sourceIndex}.image`] || episode.image) || safeImage(item.customCover || item.localThumbnailData || item.image);
+          const sourceIndex = episodeIndexById.get(String(episode.id));
+          const episodeImageUrl = isSeriesArtwork(item, episode.image) ? "" : episode.image;
+          const sectionImageUrl = isSeriesArtwork(item, item.localImageData?.[`cachedDetails.sections.${episodeSectionIndex}.items.${sourceIndex}.image`]) ? "" : item.localImageData?.[`cachedDetails.sections.${episodeSectionIndex}.items.${sourceIndex}.image`];
+          const image = safeImage(savedEpisodeImage(item, episode) || sectionImageUrl || episodeImageUrl);
           const episodeTitle = episode.title || `Episode ${episode.number}`;
           const media = image ? `<img src="${esc(image)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : `<span class="tracking-episode-placeholder" aria-hidden="true">▶</span>`;
           const open = refButton(episode.ref || { type: "episode", id: episode.id }, "tracking-episode-open", `<span class="tracking-episode-art">${media}</span><span class="tracking-episode-copy"><strong>S${String(episode.season).padStart(2, "0")} | E${String(episode.number).padStart(2, "0")}</strong><small>${esc(episodeTitle)}</small></span>`);

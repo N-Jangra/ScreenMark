@@ -96,6 +96,28 @@ test("episode loading holds the still, synopsis, cast and saved-series guide pos
   assert.match(html, /role="status"[^>]*>Loading episode details from TVmaze/);
 });
 
+test("episode detail hero uses the saved episode still and never the series cover", () => {
+  const episode = { id: "kitsu-episode:ep1", title: "Pilot", season: 1, number: 1, image: "https://images.example/pilot.jpg", ref: { type: "episode", id: "ep1" } };
+  const item = { id: "show-1", title: "Example series", category: "series", image: "https://images.example/series-poster.jpg",
+    cachedDetails: { sections: [{ kind: "episodes", items: [episode] }] },
+    localImageData: { "cachedDetails.episodesById.kitsu-episode:ep1.image": "blob:saved-episode-still" } };
+  const window = { SplitAppDates: { text: value => String(value ?? "") },
+    SplitAppLibrary: { episodeInfo: () => ({ eps: [episode], watched: new Set(), done: 0, total: 1, mark: () => "" }) } };
+  const contextVm = vm.createContext({ window, URL, Promise, Map, Set, Object, Array, String, Number, Math, Date, RegExp, Error, JSON, encodeURIComponent });
+  vm.runInContext(metadataSource, contextVm, { filename: "metadata.js" });
+  vm.runInContext(pageSource, contextVm, { filename: "details.js" });
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+  const html = window.SplitAppPages.details({
+    detailPreview: null, items: [item], detailItemId: item.id, detailReturnPage: "library", detailData: null, detailLoading: false,
+    detailError: "", detailEditMode: false, category: () => null, labelCategory: value => value, prefs: {}, roles: {}, esc,
+    detailRef: { type: "episode", id: "ep1", title: "Pilot", extra: { source: "kitsu" } }, detailRefOffset: 0,
+    refData: { type: "episode", source: "Kitsu", title: "Pilot", subtitle: "Example series · Episode 1", image: "" },
+    refLoading: false, refError: "", refItem: item
+  });
+  assert.match(html, /data-detail-image-src="blob:saved-episode-still"/);
+  assert.doesNotMatch(html, /data-detail-image-src="https:\/\/images\.example\/series-poster\.jpg"/);
+});
+
 function renderLoadedDetails(categoryKey, { castOnline, sections = [] }) {
   const window = { SplitAppDates: { text: value => String(value ?? "") }, SplitAppLibrary: { episodeInfo: () => null } };
   const contextVm = vm.createContext({ window, URL, Promise, Map, Set, Object, Array, String, Number, Math, Date, RegExp, Error, JSON, encodeURIComponent });

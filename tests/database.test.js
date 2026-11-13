@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
-const { IDBFactory } = require("fake-indexeddb");
+const { IDBFactory, IDBKeyRange } = require("fake-indexeddb");
 
 const idbSource = fs.readFileSync(path.join(__dirname, "../frontend/backend/idb-store.js"), "utf8");
 const workerSource = fs.readFileSync(path.join(__dirname, "../frontend/backend/data-worker.js"), "utf8");
@@ -15,7 +15,7 @@ const plain = value => JSON.parse(JSON.stringify(value));
 function makeCore() {
   const indexedDB = new IDBFactory();
   const self = { indexedDB };
-  const context = vm.createContext({ self, indexedDB, Blob, Promise, Map, Set, Object, Array, String, Math, JSON, Error, setTimeout, clearTimeout });
+  const context = vm.createContext({ self, indexedDB, IDBKeyRange, Blob, Promise, Map, Set, Object, Array, String, Math, JSON, Error, setTimeout, clearTimeout });
   vm.runInContext(idbSource, context, { filename: "idb-store.js" });
   return { core: self.SplitAppIDBCore, indexedDB, context, self };
 }
@@ -48,8 +48,8 @@ test("creates current stores, migrates old indexes and removes the retired share
   old.close();
   await core.open();
   const db = await core.open();
-  assert.equal(db.version, 7);
-  assert.deepEqual(Array.from(db.objectStoreNames).sort(), ["images", "items", "meta", "thumbs"]);
+  assert.equal(db.version, 8);
+  assert.deepEqual(Array.from(db.objectStoreNames).sort(), ["details", "images", "items", "meta", "thumbs"]);
   const items = db.transaction("items").objectStore("items");
   assert.deepEqual(Array.from(items.indexNames), ["sourceCategoryProvider"]);
   db.close();
@@ -78,6 +78,84 @@ test("loads empty state, saves changed rows, skips no-op writes and returns pers
   assert.deepEqual(plain(loaded.items), []);
   assert.deepEqual(plain(loaded.history), []);
   assert.deepEqual(plain(loaded.preferences), {});
+});
+
+test("full details live separately while list rows stay compact and hydrate on demand", async () => {
+  const { core } = makeCore();
+  const details = { description: "long description", raw: { data: "large" }, sections: [
+    { kind: "episodes", items: [{ id: "e1", title: "Pilot", summary: "long episode text" }] },
+    { kind: "people", items: [{ name: "Actor" }] }
+  ] };
+  await core.save({ items: [{ id: "split", title: "Split", cachedDetails: details }], history: [], preferences: {} });
+  const db = await core.open();
+  const tx = db.transaction(["items", "details"], "readonly");
+  const [row, storedDetails] = await Promise.all([
+    new Promise(resolve => { const r = tx.objectStore("items").get("split"); r.onsuccess = () => resolve(r.result); }),
+    new Promise(resolve => { const r = tx.objectStore("details").get("split"); r.onsuccess = () => resolve(r.result); })
+  ]);
+  assert.equal(row.cachedDetails, undefined);
+  assert.equal(row.detailsStore, true);
+  assert.equal(storedDetails.cachedDetails.sections[1].kind, "people");
+  assert.equal((await core.getDetails("split")).description, "long description");
+  const loaded = await core.loadAll({ slim: true, slimMin: 1 });
+  assert.equal(loaded.items[0].cachedDetails.compact, true);
+  assert.equal(loaded.items[0].cachedDetails.sections[0].items[0].summary, undefined);
+  const batch = await core.readBatch(null, 10);
+  assert.equal(batch[0].cachedDetails.sections[1].kind, "people", "exports hydrate complete details");
+  assert.equal((await core.getDetailsBatch(["split", "missing"]))[0].sections[1].kind, "people");
+  assert.equal((await core.getDetailsBatch(["split", "missing"]))[1], null);
+});
+
+test("compact episode indexes keep next and upcoming rows without loading full guides", async () => {
+  const { core } = makeCore();
+  const episodes = Array.from({ length: 60 }, (_, index) => ({ id: `e${index}`, title: `Episode ${index}`, season: 1, number: index + 1, airdate: "2020-01-01", summary: "long episode synopsis" }));
+  episodes[40].airdate = "2099-01-01";
+  episodes.slice(41).forEach(row => { delete row.airdate; });
+  const details = { sections: [{ kind: "episodes", title: "Episode guide", items: episodes }] };
+  await core.save({ items: [{ id: "indexed", title: "Indexed", category: "series", goal: 60, watchedEpisodeIds: episodes.slice(0, 10).map(row => row.id), cachedDetails: details }], history: [], preferences: {} });
+  // Emulate rows persisted by the prior compact projection, which marked the
+  // details compact but retained every compact episode row.
+  const db = await core.open(), legacyTx = db.transaction("items", "readwrite"), store = legacyTx.objectStore("items");
+  const legacyRow = await new Promise(resolve => { const request = store.get("indexed"); request.onsuccess = () => resolve(request.result); });
+  legacyRow.listDetails = { compact: true, sections: [{ kind: "episodes", title: "Episode guide", episodeCount: 2, items: episodes.map(({ summary, ...row }) => row) }] };
+  store.put(legacyRow);
+  await new Promise((resolve, reject) => { legacyTx.oncomplete = resolve; legacyTx.onerror = () => reject(legacyTx.error); });
+  const loaded = await core.loadAll({ slim: true, slimMin: 1 });
+  const section = loaded.items[0].cachedDetails.sections[0];
+  assert.equal(section.episodeCount, 60);
+  assert.ok(section.items.length <= 4, "the list projection retains only progress and schedule candidates");
+  assert.ok(section.items.some(row => row.id === "e10"), "the next unwatched episode remains available");
+  assert.ok(section.items.some(row => row.id === "e40" && row.compactUpcoming), "the nearest future episode remains available");
+  assert.ok(section.items.some(row => row.id === "e41" && row.compactUpcoming), "an unannounced episode after the schedule remains available");
+  assert.equal((await core.loadAll({ slim: true, slimMin: 1 })).items[0].cachedDetails.sections[0].episodeCount, 60, "repeat loads preserve the full count");
+  const full = await core.getDetails("indexed");
+  assert.equal(full.sections[0].items.length, 60);
+  assert.equal(full.sections[0].items[0].summary, "long episode synopsis");
+});
+
+test("legacy inline details migrate in resumable batches and remain readable", async () => {
+  const { core, indexedDB } = makeCore();
+  const db = await openRaw(indexedDB, "screenmark_library", 7, database => {
+    const items = database.createObjectStore("items", { keyPath: "id" });
+    items.createIndex("sourceCategoryProvider", ["metadataSource", "category", "providerId"]);
+    database.createObjectStore("meta", { keyPath: "key" });
+    database.createObjectStore("images", { keyPath: "key" });
+    database.createObjectStore("thumbs", { keyPath: "key" });
+  });
+  const tx = db.transaction(["items", "meta", "images", "thumbs"], "readwrite");
+  for (let i = 0; i < 5; i++) tx.objectStore("items").put({ id: String(i), title: "Legacy " + i, cachedDetails: { description: "detail " + i, sections: [{ kind: "people", items: [{ name: "Actor" }] }] } });
+  await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); });
+  db.close();
+  await core.open();
+  const first = await core.migrateDetailsBatch(2);
+  assert.deepEqual(plain(first), { migrated: 2, done: false, lastId: "1", completed: 2, total: 5 });
+  const second = await core.migrateDetailsBatch(2);
+  assert.deepEqual(plain(second), { migrated: 2, done: false, lastId: "3", completed: 4, total: 5 });
+  const third = await core.migrateDetailsBatch(2);
+  assert.deepEqual(plain(third), { migrated: 1, done: true, lastId: "4", completed: 5, total: 5 });
+  assert.equal((await core.getDetails("4")).description, "detail 4");
+  assert.equal((await core.getRecord("4")).cachedDetails.sections[0].kind, "people");
+  assert.equal((await core.loadAll()).items.length, 5);
 });
 
 test("saveSome inserts, updates and deletes only requested records", async () => {

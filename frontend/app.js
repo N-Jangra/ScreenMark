@@ -12,7 +12,7 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
-    theme: "system", textSize: "normal", dateFormat: "auto", imageStorage: "all", reduceMotion: false, animationSpeed: "fast", pageTransition: "slide", sheetAnimation: "slide", pressEffect: "shrink", progressAnimation: true, progressStyle: "smooth", skeletonShimmer: true, placeholderAnimation: "shimmer", mainColor: "default", accentColorDefaultVersion: 2,
+    theme: "system", textSize: "normal", dateFormat: "auto", imageStorage: "all", libraryMemory: "auto", reduceMotion: false, animationSpeed: "fast", pageTransition: "slide", sheetAnimation: "slide", pressEffect: "shrink", progressAnimation: true, progressStyle: "smooth", skeletonShimmer: true, placeholderAnimation: "shimmer", mainColor: "default", accentColorDefaultVersion: 2,
     profileCoverSource: "both", profileCoverMode: "random", profileCoverInterval: "visit", profileAvatarSource: "custom", profileAvatarMode: "random", profileAvatarInterval: "visit", profileAvatarPinned: "", profileCoverPinned: "", profileAvatarPinnedImage: "", profileCoverPinnedImage: "", showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, navIcons: { discover: "bookmark", "series-watchlist": "tv", "movie-watchlist": "clapperboard", profile: "user-round" },
     navBar: { order: navKeys, visible: { "series-watchlist": true, "movie-watchlist": true, discover: true, profile: true } },
     metadataSourceOrder: ["tvmaze", "imdb", "omdb", "tvdb", "tmdb", "rottentomatoes", "anilist", "kitsu", "jikan"], customSources: [],
@@ -37,6 +37,59 @@
     return window.lucide?.icons?.[exportName] ? name : fallback;
   }
   const storageKey = window.SplitAppBackend?.storageKey || `splitapp_${config.key}_v1`;
+  const sessionUiKey = `${storageKey}_session_ui_v1`;
+  const validMemoryModes = ["auto", "low", "minimum", "off"];
+  let savedSessionUi = null;
+  try {
+    const saved = JSON.parse(localStorage.getItem(sessionUiKey) || "null");
+    if (saved && typeof saved.hash === "string" && saved.hash.startsWith("#") && Date.now() - Number(saved.at) < 86400000) savedSessionUi = saved;
+  } catch (_) {}
+  if (!location.hash && savedSessionUi) window.history.replaceState({}, "", savedSessionUi.hash);
+  let sessionUiTimer = 0;
+  let lastSessionUiWriteAt = 0;
+  let lastVisibleScrollHash = location.hash || savedSessionUi?.hash || "#series-watchlist";
+  let lastVisibleScrollY = Number(savedSessionUi?.scrollY) || window.scrollY || 0;
+  let lastScrollInputAt = 0;
+  let lastScrollToTopKeyAt = 0;
+  const markScrollInput = () => { lastScrollInputAt = Date.now(); };
+  window.addEventListener("touchstart", markScrollInput, { passive: true });
+  window.addEventListener("touchmove", markScrollInput, { passive: true });
+  window.addEventListener("wheel", markScrollInput, { passive: true });
+  window.addEventListener("keydown", event => {
+    if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) markScrollInput();
+    if (event.key === "Home") lastScrollToTopKeyAt = Date.now();
+  });
+  const saveSessionUi = () => {
+    const hash = location.hash || "#series-watchlist";
+    let scrollY = Math.max(0, Math.round(window.scrollY || 0));
+    if (scrollY === 0 && lastVisibleScrollHash === hash && lastVisibleScrollY > 0) scrollY = lastVisibleScrollY;
+    // Some Android WebViews reset scrollY to zero as the activity becomes hidden.
+    // Keep the last visible offset for that transition, while respecting an actual
+    // user scroll to the top that occurred before the page was hidden.
+    if (document.hidden && scrollY === 0 && lastVisibleScrollHash === hash) scrollY = lastVisibleScrollY;
+    try { localStorage.setItem(sessionUiKey, JSON.stringify({ hash, scrollY, at: Date.now() })); } catch (_) {}
+  };
+  window.addEventListener("scroll", () => {
+    if (!document.hidden) {
+      const hash = location.hash || "#series-watchlist", nextY = Math.max(0, Math.round(window.scrollY || 0));
+      const recentTouchScrollNearTop = Date.now() - lastScrollInputAt < 500 && lastVisibleScrollY < 12000;
+      const explicitScrollToTop = Date.now() - lastScrollToTopKeyAt < 1000;
+      // Ignore the zero-position scroll some Android WebViews emit while the
+      // activity is being paused; a real touch/key scroll to the top is kept.
+      if (hash !== lastVisibleScrollHash || nextY > 0 || lastVisibleScrollY === 0 || recentTouchScrollNearTop || explicitScrollToTop) {
+        lastVisibleScrollY = nextY;
+        lastVisibleScrollHash = hash;
+        if (Date.now() - lastSessionUiWriteAt >= 200) { saveSessionUi(); lastSessionUiWriteAt = Date.now(); }
+      }
+    }
+    clearTimeout(sessionUiTimer);
+    sessionUiTimer = setTimeout(saveSessionUi, 350);
+  }, { passive: true });
+  window.addEventListener("hashchange", saveSessionUi);
+  window.addEventListener("pagehide", saveSessionUi);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") { lastVisibleScrollY = Math.max(0, Math.round(window.scrollY || 0)); lastVisibleScrollHash = location.hash || "#series-watchlist"; }
+  });
   const removedPreferenceKeys = ["iconStyle", "bottomBarLayout", "progressIncrement", "animationCustom", "animationEasing", "cardEntrance", "animationStagger", "hoverLift", "navBounce"];
   const librarySnapshotKey = `${storageKey}_snapshot`;
   let librarySnapshotTimer = 0;
@@ -45,6 +98,15 @@
   try { const parsed = JSON.parse(localStorage.getItem(storageKey) || "{}"); if (isRecord(parsed)) stored = parsed; } catch (_) {}
   const storedPreferences = isRecord(stored.preferences) ? stored.preferences : {};
   const prefs = { ...prefsDefaults, ...storedPreferences };
+  if (!validMemoryModes.includes(prefs.libraryMemory)) prefs.libraryMemory = prefsDefaults.libraryMemory;
+  const applyLibraryMemoryThreshold = mode => {
+    try {
+      const thresholds = { auto: 2000, low: 500, minimum: 1 };
+      if (mode === "off") localStorage.removeItem(`${storageKey}_slim_min`);
+      else localStorage.setItem(`${storageKey}_slim_min`, String(thresholds[mode] || thresholds.auto));
+    } catch (_) {}
+  };
+  applyLibraryMemoryThreshold(prefs.libraryMemory);
   const migrateAccentColorDefault = Number(storedPreferences.accentColorDefaultVersion) < 2;
   if (migrateAccentColorDefault && (!storedPreferences.mainColor || storedPreferences.mainColor === "#6366f1")) prefs.mainColor = "default";
   const motionIsReduced = () => Boolean(prefs.reduceMotion) || prefs.animationSpeed === "off" || Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
@@ -261,16 +323,20 @@
     if (/^https:\/\/static\.tvmaze\.com\/uploads\/images\/original_untouched\//.test(value)) return value.replace("/original_untouched/", "/medium_portrait/");
     return value;
   }
-  function imageMarkup(item, source, alt = "", fallback = "", className = "") {
-    const useLocalThumb = Boolean(item?.id && item.thumbnailPath && !item.localThumbnailData && !item.localPortraitData && !item.customCover);
+  function imageMarkup(item, source, alt = "", fallback = "", className = "", episode = null, cacheOwner = item) {
+    const remoteArtwork = /^https:\/\//i.test(String(source || ""));
+    const artworkEntry = remoteArtwork ? (window.SplitAppBackend?.artworkCacheEntries?.(cacheOwner) || []).find(row => row.signature === source) : null;
+    const localCacheKey = episode?.id != null ? episodeThumbKeyOf(cacheOwner, episode.id) : artworkEntry?.key || thumbKeyOf(cacheOwner || {});
+    const localCacheSignature = episode?.id != null ? String(source || "") : artworkEntry?.signature || thumbSigOf(cacheOwner || {});
+    const useLocalThumb = Boolean(cacheOwner?.id && nativeAndroid && remoteArtwork);
     if (!source && !useLocalThumb) return fallback;
     const sized = className === "detail-image" || !item ? source : smallArt(source); // landscape / hero art (no item) keeps full size
     const fullAttr = sized && sized !== source ? ` data-full-src="${esc(source)}"` : "";
     const imageSource = useLocalThumb
-      ? `data-deferred-image data-local-item-id="${esc(item.id)}" data-lazy-src="${esc(sized || "")}"${fullAttr}`
+      ? `data-deferred-image data-local-item-id="${esc(cacheOwner.id)}"${episode?.id != null ? ` data-local-episode-id="${esc(episode.id)}"` : ""} data-local-cache-key="${esc(localCacheKey)}" data-local-cache-signature="${esc(localCacheSignature)}" data-lazy-src="${esc(sized || "")}"${fullAttr}`
       : `src="${esc(sized)}"${fullAttr}`;
     const placeholder = useLocalThumb ? fallback : fallback.replace(/^(<[a-z][\w-]*)(?=[\s>])/i, "$1 hidden");
-    return `<img ${imageSource}${useLocalThumb ? " hidden" : ""}${className ? ` class="${esc(className)}"` : ""} alt="${esc(alt)}" loading="lazy" decoding="async" onerror="if(this.dataset.fullSrc&&!this.dataset.fullTried){this.dataset.fullTried=1;this.src=this.dataset.fullSrc;return}this.hidden=true;if(this.nextElementSibling)this.nextElementSibling.hidden=false">${placeholder}`;
+    return `<img ${imageSource}${useLocalThumb ? ' style="visibility:hidden"' : ""}${className ? ` class="${esc(className)}"` : ""} alt="${esc(alt)}" loading="lazy" decoding="async" onerror="if(this.dataset.fullSrc&&!this.dataset.fullTried){this.dataset.fullTried=1;this.src=this.dataset.fullSrc;return}this.hidden=true;this.style.visibility="";if(this.nextElementSibling)this.nextElementSibling.hidden=false">${placeholder}`;
   }
   window.SplitAppImageMarkup = imageMarkup;
   const category = key => config.categories.find(item => item.key === key) || config.categories[0];
@@ -336,9 +402,9 @@
     return changed.size > 0;
   }
   // Each open sheet/dialog gets a history entry so the back button (or Android back) closes it first.
-  let dialogEntries = 0, skipNextPop = false, closingFromPop = false;
+  let dialogEntries = 0, skipNextPop = false, closingFromPop = false, dialogPopCallback = null;
   function pushDialogEntry() { try { window.history.pushState({ dialog: true }, "", location.href); dialogEntries += 1; } catch (_) {} }
-  function popDialogEntry() { if (dialogEntries > 0 && window.history.state?.dialog) { dialogEntries -= 1; skipNextPop = true; window.history.back(); } }
+  function popDialogEntry(afterPop) { if (dialogEntries > 0 && window.history.state?.dialog) { dialogEntries -= 1; skipNextPop = true; dialogPopCallback = afterPop || null; window.history.back(); } else afterPop?.(); }
   // In-app confirmation sheet (replaces the browser's window.confirm). Resolves true or false.
   function appConfirm(message, { title = "Are you sure?", confirmLabel = "Confirm", danger = false } = {}) {
     return new Promise(resolve => {
@@ -365,7 +431,53 @@
     dialog.dataset.popupFallback = "true";
     document.body.dataset.popupFallback = "true";
   }
-  function closePopup(dialog, { preserveHistory = false, immediate = false, fromPop = false } = {}) {
+  let profileCropState = null;
+  function openProfileCrop({ kind, src, title = "", onApply }) {
+    if (!src) return;
+    profileCropState?.dispose?.();
+    const landscape = kind === "cover", width = landscape ? 1200 : 720;
+    const aspect = landscape ? window.SplitAppPages.profileCoverAspect() : 1, height = landscape ? Math.round(width / aspect) : 720;
+    const dialog = document.createElement("dialog");
+    dialog.className = `choice-dialog profile-crop-dialog${landscape ? " is-cover" : " is-avatar"}`;
+    if (landscape) dialog.style.setProperty("--profile-crop-aspect", String(aspect));
+    dialog.setAttribute("aria-label", landscape ? "Adjust profile background" : "Adjust profile photo");
+    dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">EDIT PROFILE</p><h2>${landscape ? "Adjust background" : "Adjust profile photo"}</h2></div><button type="button" class="choice-dialog-close" data-profile-crop-cancel aria-label="Cancel">×</button></header><p class="profile-crop-hint">Drag to reposition and use the slider to zoom. ${landscape ? "The frame shows how your background will appear." : "Keep the subject inside the circle."}</p><div class="profile-crop-viewport"><img alt="${esc(title || (landscape ? "Background" : "Profile photo"))}"><div class="profile-crop-frame${landscape ? " is-cover" : " is-avatar"}" aria-hidden="true"></div></div><label class="profile-crop-zoom"><span>Zoom</span><input type="range" min="1" max="3" step="0.01" value="1" aria-label="Zoom image"><output>1×</output></label><footer class="choice-dialog-actions"><button type="button" class="button secondary" data-profile-crop-cancel>Cancel</button><button type="button" class="button primary" data-profile-crop-apply>Use image</button></footer>`;
+    document.body.append(dialog);
+    const image = dialog.querySelector(".profile-crop-viewport img"), viewport = dialog.querySelector(".profile-crop-viewport"), frame = dialog.querySelector(".profile-crop-frame"), zoom = dialog.querySelector("input[type=range]"), output = dialog.querySelector("output");
+    if (landscape) frame.style.aspectRatio = String(aspect);
+    let scale = 1, x = 0, y = 0, drag = null, closed = false, baseWidth = 0, baseHeight = 0;
+    const clampPan = () => { const frameBounds = frame.getBoundingClientRect(), renderedWidth = baseWidth * scale, renderedHeight = baseHeight * scale; x = Math.max(-Math.max(0, (renderedWidth - frameBounds.width) / 2), Math.min(Math.max(0, (renderedWidth - frameBounds.width) / 2), x)); y = Math.max(-Math.max(0, (renderedHeight - frameBounds.height) / 2), Math.min(Math.max(0, (renderedHeight - frameBounds.height) / 2), y)); };
+    const update = () => { clampPan(); image.style.width = `${baseWidth * scale}px`; image.style.height = `${baseHeight * scale}px`; image.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`; output.value = `${scale.toFixed(1)}×`; output.textContent = output.value; };
+    const cleanup = () => { if (closed) return; closed = true; URL.revokeObjectURL(src.startsWith("blob:") ? src : ""); try { if (dialog.open) dialog.close(); } catch (_) {} dialog.remove(); profileCropState = null; };
+    const cancel = () => { cleanup(); };
+    image.onload = () => { const bounds = frame.getBoundingClientRect(); const fit = Math.max(bounds.width / image.naturalWidth, bounds.height / image.naturalHeight); baseWidth = image.naturalWidth * fit; baseHeight = image.naturalHeight * fit; update(); };
+    image.onerror = () => { toast("Could not read that image."); cleanup(); };
+    image.src = src;
+    zoom.addEventListener("input", () => { scale = Number(zoom.value) || 1; update(); });
+    viewport.addEventListener("pointerdown", event => { drag = { id: event.pointerId, x: event.clientX, y: event.clientY, ox: x, oy: y }; viewport.setPointerCapture?.(event.pointerId); });
+    viewport.addEventListener("pointermove", event => { if (!drag || drag.id !== event.pointerId) return; const bounds = viewport.getBoundingClientRect(), frameBounds = frame.getBoundingClientRect(), renderedWidth = baseWidth * scale, renderedHeight = baseHeight * scale; const maxX = Math.max(0, (renderedWidth - frameBounds.width) / 2), maxY = Math.max(0, (renderedHeight - frameBounds.height) / 2); x = Math.max(-maxX, Math.min(maxX, drag.ox + event.clientX - drag.x)); y = Math.max(-maxY, Math.min(maxY, drag.oy + event.clientY - drag.y)); update(); });
+    const stopDrag = event => { if (drag?.id === event.pointerId) drag = null; };
+    viewport.addEventListener("pointerup", stopDrag); viewport.addEventListener("pointercancel", stopDrag);
+    dialog.addEventListener("click", event => { if (event.target === dialog || event.target.closest("[data-profile-crop-cancel]")) { cancel(); return; } if (!event.target.closest("[data-profile-crop-apply]")) return;
+      const bounds = viewport.getBoundingClientRect(), frameBounds = frame.getBoundingClientRect(), renderedWidth = baseWidth * scale, renderedHeight = baseHeight * scale;
+      const outputCanvas = document.createElement("canvas"); outputCanvas.width = width; outputCanvas.height = height;
+      const ctx = outputCanvas.getContext("2d");
+      const left = (bounds.width - renderedWidth) / 2 + x, top = (bounds.height - renderedHeight) / 2 + y;
+      const frameX = frameBounds.left - bounds.left, frameY = frameBounds.top - bounds.top;
+      const sourceX = (frameX - left) * image.naturalWidth / renderedWidth, sourceY = (frameY - top) * image.naturalHeight / renderedHeight;
+      const sourceWidth = frameBounds.width * image.naturalWidth / renderedWidth, sourceHeight = frameBounds.height * image.naturalHeight / renderedHeight;
+      const positionX = Math.max(0, Math.min(100, (sourceX / Math.max(1, image.naturalWidth - sourceWidth) * 100)));
+      const positionY = Math.max(0, Math.min(100, (sourceY / Math.max(1, image.naturalHeight - sourceHeight) * 100)));
+      try { ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, width, height); onApply({ image: outputCanvas.toDataURL("image/jpeg", .88), crop: null }); }
+      catch (_) { onApply({ image: src, crop: { positionX: Number(positionX.toFixed(2)), positionY: Number(positionY.toFixed(2)), zoom: Number(scale.toFixed(3)) } }); }
+      cleanup();
+    });
+    dialog.addEventListener("cancel", event => { event.preventDefault(); cancel(); });
+    dialog.addEventListener("close", cleanup);
+    profileCropState = { dispose: cleanup };
+    showPopup(dialog);
+  }
+  function closePopup(dialog, { preserveHistory = false, immediate = false, fromPop = false, afterPop } = {}) {
     if (!dialog) return;
     if (!immediate && dialog.matches?.(".choice-dialog, dialog.ios-action-sheet") && dialog.open && !dialog.dataset.closeAnimating) {
       const reduced = motionIsReduced();
@@ -375,14 +487,14 @@
       if (duration) {
         const popped = fromPop || closingFromPop;
         dialog.dataset.closeAnimating = "true"; dialog.classList.add("is-closing");
-        dialog._closeTimer = window.setTimeout(() => { dialog._closeTimer = 0; dialog.classList.remove("is-closing"); delete dialog.dataset.closeAnimating; closePopup(dialog, { preserveHistory, immediate: true, fromPop: popped }); }, duration);
+        dialog._closeTimer = window.setTimeout(() => { dialog._closeTimer = 0; dialog.classList.remove("is-closing"); delete dialog.dataset.closeAnimating; closePopup(dialog, { preserveHistory, immediate: true, fromPop: popped, afterPop }); }, duration);
         return;
       }
     }
     if (typeof dialog.close === "function") {
       try {
         const wasOpen = dialog.open; dialog.close();
-        if (wasOpen && !closingFromPop && !fromPop) { if (preserveHistory) dialogEntries = Math.max(0, dialogEntries - 1); else popDialogEntry(); }
+        if (wasOpen && !closingFromPop && !fromPop) { if (preserveHistory) dialogEntries = Math.max(0, dialogEntries - 1); else popDialogEntry(afterPop); }
         return;
       } catch (_) {}
     }
@@ -710,6 +822,7 @@
     if (`${location.pathname}${location.search}${location.hash}` !== nextUrl) {
       try { window.history[replace ? "replaceState" : "pushState"]({ page, settingsGroup }, "", nextUrl); } catch (_) {}
     }
+    saveSessionUi();
   }
 
   // Cheap size estimate (sampled) instead of serialising the whole library on every Settings render.
@@ -791,41 +904,155 @@
     return titleIndex.get(identity);
   }
   const thumbUrlCache = new Map(); // "key|sig" -> blob: URL
-  const thumbUrlCacheLimit = nativeAndroid ? 48 : 128;
   const thumbKeyOf = item => `${item.id}:p`;
-  const thumbSigOf = item => String(item.localImageFingerprint || item.thumbnailPath || "");
+  const episodeThumbKeyOf = (item, episodeId) => `${window.SplitAppBackend?.key || config.key}:episode:${String(item.id)}:${String(episodeId)}`;
+  const thumbSigOf = item => String(item.localImageFingerprint || item.thumbnailPath || item.customCover || item.image || "");
+  const isLiveEpisodeThumbKey = (key, liveItemIds) => {
+    const prefix = `${window.SplitAppBackend?.key || config.key}:episode:`;
+    const value = String(key || "");
+    if (!value.startsWith(prefix)) return false;
+    const itemId = value.slice(prefix.length).split(":", 1)[0];
+    return liveItemIds.has(itemId);
+  };
+  const isLiveArtworkThumbKey = (key, liveItemIds) => {
+    const prefix = `${window.SplitAppBackend?.key || config.key}:art:`;
+    const value = String(key || "");
+    if (!value.startsWith(prefix)) return false;
+    const itemId = value.slice(prefix.length).split(":", 1)[0];
+    return liveItemIds.has(itemId);
+  };
+  // Session poster cache: item key -> the URL of its poster blob. Entries are kept until the app closes (or the artwork itself
+  // changes), so a poster that was shown never goes blank, and lookups are O(1) even with tens of thousands of titles.
+  const thumbKeyIndex = new Map(); // item key -> cache key currently held
+  // Bounded session cache: past the limit, the oldest poster URLs that are not on screen are released (the poster blob stays in
+  // the database and is re-read in a moment if it scrolls back), so memory stays flat however far you scroll.
+  function trimThumbCache() {
+    const { max, keep } = ({ auto: { max: 900, keep: 600 }, low: { max: 400, keep: 250 }, minimum: { max: 150, keep: 100 }, off: { max: 900, keep: 600 } }[prefs.libraryMemory] || { max: 900, keep: 600 });
+    if (thumbUrlCache.size <= max) return;
+    const live = new Set([...document.images].map(image => image.currentSrc || image.src));
+    for (const [cacheKey, url] of thumbUrlCache) {
+      if (thumbUrlCache.size <= keep) break;
+      if (live.has(url)) continue;
+      URL.revokeObjectURL(url); thumbUrlCache.delete(cacheKey);
+      const key = cacheKey.slice(0, cacheKey.lastIndexOf("|"));
+      if (thumbKeyIndex.get(key) === cacheKey) thumbKeyIndex.delete(key);
+    }
+  }
   function rememberThumbUrl(key, sig, url) {
     const cacheKey = `${key}|${sig}`;
-    for (const [oldKey, oldUrl] of thumbUrlCache) if (oldKey.startsWith(`${key}|`) && oldKey !== cacheKey) { URL.revokeObjectURL(oldUrl); thumbUrlCache.delete(oldKey); }
-    if (thumbUrlCache.has(cacheKey)) URL.revokeObjectURL(thumbUrlCache.get(cacheKey));
-    thumbUrlCache.delete(cacheKey); thumbUrlCache.set(cacheKey, url);
-    while (thumbUrlCache.size > thumbUrlCacheLimit) { const [oldKey, oldUrl] = thumbUrlCache.entries().next().value; URL.revokeObjectURL(oldUrl); thumbUrlCache.delete(oldKey); }
+    const existing = thumbUrlCache.get(cacheKey);
+    // Two reads of the same poster can finish together: keep the URL that may already be on screen, drop the extra one.
+    if (existing) { URL.revokeObjectURL(url); return existing; }
+    const previous = thumbKeyIndex.get(key);
+    if (previous && previous !== cacheKey) { const old = thumbUrlCache.get(previous); if (old) URL.revokeObjectURL(old); thumbUrlCache.delete(previous); }
+    thumbUrlCache.set(cacheKey, url); thumbKeyIndex.set(key, cacheKey);
+    trimThumbCache();
+    return url;
+  }
+  window.addEventListener("pagehide", () => { for (const url of thumbUrlCache.values()) URL.revokeObjectURL(url); thumbUrlCache.clear(); thumbKeyIndex.clear(); });
+  // ---- Windowed poster grids -------------------------------------------------------------------------------------
+  // A collection with thousands of titles draws only the rows near the screen. The grid keeps its full height with
+  // padding, so the scrollbar, "back" scroll restore and jumping around all behave as if every row existed.
+  let virtualGrids = [], virtualScrollBound = false, virtualFrame = 0, virtualTimer = 0;
+  function virtualMetrics(grid) {
+    const style = getComputedStyle(grid), tracks = style.gridTemplateColumns.split(" ").map(parseFloat).filter(value => value > 0);
+    const columns = Math.max(1, tracks.length), width = tracks[0] || 0, gap = parseFloat(style.rowGap) || 0;
+    // Posters are 2:3, so a row's height is known without drawing it.
+    return { columns, tile: width * 1.5, row: width * 1.5 + gap };
+  }
+  function updateVirtualGrid(entry, force = false) {
+    const { grid, source } = entry;
+    if (!grid.isConnected) return false;
+    const metrics = virtualMetrics(grid);
+    if (!(metrics.row > 0)) return false;
+    const total = source.count, rows = Math.ceil(total / metrics.columns);
+    const top = -grid.getBoundingClientRect().top, viewport = window.innerHeight || document.documentElement.clientHeight || 800;
+    const buffer = viewport * 1.5;
+    const first = Math.max(0, Math.min(rows, Math.floor((top - buffer) / metrics.row)));
+    const last = Math.max(first, Math.min(rows, Math.ceil((top + viewport + buffer) / metrics.row)));
+    const needFirst = Math.max(0, Math.floor(top / metrics.row)), needLast = Math.min(rows, Math.ceil((top + viewport) / metrics.row));
+    // Redraw only when the visible rows are no longer inside the drawn window (or the column count / size changed).
+    if (!force && entry.start !== undefined && entry.columns === metrics.columns && entry.row === metrics.row && needFirst >= entry.start && needLast <= entry.end) return false;
+    const start = Math.max(0, first - 2), end = Math.min(rows, last + 2);
+    entry.start = start; entry.end = end; entry.columns = metrics.columns; entry.row = metrics.row;
+    grid.style.gridAutoRows = `${metrics.tile}px`;
+    grid.style.paddingTop = `${start * metrics.row}px`;
+    grid.style.paddingBottom = `${Math.max(0, (rows - end) * metrics.row)}px`;
+    const from = start * metrics.columns, to = Math.min(total, end * metrics.columns);
+    let html = "";
+    for (let index = from; index < to; index++) html += source.tile(index);
+    // Virtual rows are recycled on scroll. Release the previous window's image
+    // observations and queued image records before replacing its DOM.
+    disposeContentResources(grid);
+    grid.innerHTML = html;
+    window.lucide?.createIcons({ root: grid, attrs: { "aria-hidden": "true" } });
+    observeDeferredImages(grid);
+    trackPosterLoading(grid.parentElement || grid);
+    prioritizeVisibleCollectionImages(grid.parentElement || grid);
+    return true;
+  }
+  function scheduleVirtualUpdate() {
+    if (virtualFrame || virtualTimer) return;
+    // requestAnimationFrame is the normal path; the timer covers hidden / throttled frames so the window still catches up.
+    const run = () => { cancelAnimationFrame(virtualFrame); clearTimeout(virtualTimer); virtualFrame = 0; virtualTimer = 0; virtualGrids.forEach(entry => updateVirtualGrid(entry)); };
+    virtualFrame = requestAnimationFrame(run); virtualTimer = setTimeout(run, 100);
+  }
+  function mountVirtualGrids(root) {
+    virtualGrids = [...(root?.querySelectorAll?.("[data-virtual-grid]") || [])].map(grid => ({ grid, source: window.SplitAppPages.virtualGrid?.(grid.dataset.virtualGrid) })).filter(entry => entry.source);
+    if (!virtualScrollBound) {
+      virtualScrollBound = true;
+      window.addEventListener("scroll", scheduleVirtualUpdate, { passive: true });
+      window.addEventListener("resize", () => { virtualGrids.forEach(entry => { entry.start = undefined; }); scheduleVirtualUpdate(); }, { passive: true });
+    }
+    virtualGrids.forEach(entry => updateVirtualGrid(entry, true));
   }
   async function cachedThumbUrls(entries) {
     const found = new Map(), need = [], seen = new Set();
     entries.forEach(([key, sig]) => {
-      const cacheKey = `${key}|${sig}`, prefix = `${key}|`;
-      for (const [oldKey, oldUrl] of thumbUrlCache) if (oldKey.startsWith(prefix) && oldKey !== cacheKey) { URL.revokeObjectURL(oldUrl); thumbUrlCache.delete(oldKey); found.delete(key); }
+      const cacheKey = `${key}|${sig}`;
+      const previous = thumbKeyIndex.get(key);
+      if (previous && previous !== cacheKey) { const stale = thumbUrlCache.get(previous); if (stale) URL.revokeObjectURL(stale); thumbUrlCache.delete(previous); thumbKeyIndex.delete(key); }
       const url = thumbUrlCache.get(cacheKey);
-      if (url) { thumbUrlCache.delete(cacheKey); thumbUrlCache.set(cacheKey, url); found.set(key, url); }
+      if (url) found.set(key, url);
       else if (!seen.has(key)) { need.push([key, sig]); seen.add(key); }
     });
     if (need.length && window.SplitAppIDB?.getThumbs) {
       try {
         const sigByKey = new Map(need);
         (await window.SplitAppIDB.getThumbs(need)).forEach(([key, blob]) => {
-          const url = URL.createObjectURL(blob);
-          rememberThumbUrl(key, sigByKey.get(key), url);
-          found.set(key, url);
+          found.set(key, rememberThumbUrl(key, sigByKey.get(key), URL.createObjectURL(blob)));
         });
       } catch (_) {}
     }
     return found;
   }
   // fetch() decodes data: URLs natively, off the JS thread.
+  // Grid posters are shown at about 130 css px, so the stored grid copy is shrunk to a 420 px long edge (WebP). That makes each
+  // poster several times smaller to read from the database and decode, which is what keeps big grids smooth. The detail page
+  // keeps using the full artwork.
+  const THUMB_EDGE = 420;
+  async function shrinkThumbBlob(blob) {
+    try {
+      if (!blob || blob.size < 24000 || typeof createImageBitmap !== "function") return blob;
+      const bitmap = await createImageBitmap(blob);
+      const scale = Math.min(1, THUMB_EDGE / Math.max(bitmap.width, bitmap.height));
+      if (scale >= 1) { bitmap.close?.(); return blob; }
+      const width = Math.max(1, Math.round(bitmap.width * scale)), height = Math.max(1, Math.round(bitmap.height * scale));
+      let out = null;
+      if (typeof OffscreenCanvas === "function") {
+        const canvas = new OffscreenCanvas(width, height); canvas.getContext("2d").drawImage(bitmap, 0, 0, width, height);
+        out = await canvas.convertToBlob({ type: "image/webp", quality: 0.82 });
+      } else {
+        const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height; canvas.getContext("2d").drawImage(bitmap, 0, 0, width, height);
+        out = await new Promise(resolve => canvas.toBlob(resolve, "image/webp", 0.82));
+      }
+      bitmap.close?.();
+      return out && out.size && out.size < blob.size ? out : blob;
+    } catch (_) { return blob; }
+  }
   async function dataUrlToBlob(dataUrl) {
     if (!/^data:[^;,]+;base64,/i.test(dataUrl || "")) return null;
-    try { return await (await fetch(dataUrl)).blob(); } catch (_) { return null; }
+    try { return await shrinkThumbBlob(await (await fetch(dataUrl)).blob()); } catch (_) { return null; }
   }
   // Background work waits for an idle moment and for pending taps/scrolls.
   function yieldToUser() {
@@ -871,12 +1098,12 @@
     thumbFillRunning = true;
     try {
       const savedKeys = await window.SplitAppIDB.listThumbKeys();
-      const liveKeys = new Set(items.filter(item => item.thumbnailPath).map(thumbKeyOf));
-      const staleKeys = savedKeys.map(([key]) => key).filter(key => !liveKeys.has(key));
+      const liveKeys = new Set(items.map(thumbKeyOf));
+      const liveItemIds = new Set(items.map(item => String(item.id)));
+      const staleKeys = savedKeys.map(([key]) => key).filter(key => !liveKeys.has(key) && !isLiveEpisodeThumbKey(key, liveItemIds) && !isLiveArtworkThumbKey(key, liveItemIds));
       if (staleKeys.length) {
         await window.SplitAppIDB.deleteThumbs?.(staleKeys);
-        const stalePrefixes = staleKeys.map(key => `${key}|`);
-        for (const [cacheKey, url] of thumbUrlCache) if (stalePrefixes.some(prefix => cacheKey.startsWith(prefix))) { URL.revokeObjectURL(url); thumbUrlCache.delete(cacheKey); }
+        for (const key of staleKeys) { const held = thumbKeyIndex.get(key); if (held) { const url = thumbUrlCache.get(held); if (url) URL.revokeObjectURL(url); thumbUrlCache.delete(held); thumbKeyIndex.delete(key); } }
       }
       const have = new Map(savedKeys.filter(([key]) => liveKeys.has(key)));
       const missing = items.filter(item => item.thumbnailPath && have.get(thumbKeyOf(item)) !== thumbSigOf(item));
@@ -884,7 +1111,7 @@
       // Restored titles: reuse the in-memory poster instead of re-reading it from the storage folder.
       const primedEntries = [];
       for (const item of missing) { const blob = primedThumbs.get(String(item.id)); if (blob) { primedEntries.push([thumbKeyOf(item), thumbSigOf(item), blob]); primedThumbs.delete(String(item.id)); } }
-      if (primedEntries.length) { try { await window.SplitAppIDB.putThumbs(primedEntries); } catch (_) {} thumbUrlCache.clear(); }
+      if (primedEntries.length) { try { await window.SplitAppIDB.putThumbs(primedEntries); } catch (_) {} thumbUrlCache.clear(); thumbKeyIndex.clear(); }
       const primedKeys = new Set(primedEntries.map(entry => entry[0]));
       missing.splice(0, missing.length, ...missing.filter(item => !primedKeys.has(thumbKeyOf(item))));
       for (let offset = 0; offset < missing.length; offset += batchSize) {
@@ -911,8 +1138,39 @@
           if (blob) entries.push([thumbKeyOf(original), thumbSigOf(original), blob]);
         }
         if (entries.length) { try { await window.SplitAppIDB.putThumbs(entries); } catch (_) {} }
+        // A short breather between batches keeps scrolling and taps smooth while a large library is being cached.
+        await new Promise(resolve => setTimeout(resolve, 250));
       }
     } finally { thumbFillRunning = false; }
+  }
+  let thumbShrinkRunning = false;
+  async function shrinkThumbCacheOnce() {
+    if (!nativeAndroid || thumbShrinkRunning || !window.SplitAppIDB?.getMetaValue || !window.SplitAppIDB?.setMetaValue) return;
+    thumbShrinkRunning = true;
+    try {
+      if (await window.SplitAppIDB.getMetaValue("thumbsShrunkV1")) return;
+      const rows = await window.SplitAppIDB.listThumbKeys();
+      for (let offset = 0; offset < rows.length; offset += 12) {
+        if (document.hidden) {
+          await new Promise(resolve => {
+            const onVisible = () => { if (!document.hidden) { document.removeEventListener("visibilitychange", onVisible); resolve(); } };
+            document.addEventListener("visibilitychange", onVisible);
+            if (!document.hidden) onVisible();
+          });
+        }
+        await yieldToUser();
+        const page = rows.slice(offset, offset + 12), blobs = await window.SplitAppIDB.getThumbs(page);
+        const smaller = [];
+        for (const [key, blob] of blobs) {
+          const shrunk = await shrinkThumbBlob(blob);
+          if (shrunk && shrunk !== blob && shrunk.size < blob.size) smaller.push([key, page.find(row => row[0] === key)?.[1], shrunk]);
+        }
+        if (smaller.length) await window.SplitAppIDB.putThumbs(smaller);
+        await new Promise(resolve => setTimeout(resolve, 80));
+      }
+      await window.SplitAppIDB.setMetaValue("thumbsShrunkV1", true);
+    } catch (error) { console.warn("Could not finish the one-time thumbnail optimization", error); }
+    finally { thumbShrinkRunning = false; }
   }
   const deferredQueue = [];
   let deferredTimer = 0, deferredDrain = null, deferredObserver = null;
@@ -1038,12 +1296,12 @@
     const detailTrigger = image.closest("[data-detail-image-src]");
     if (detailTrigger && source) detailTrigger.dataset.detailImageSrc = source;
     if (source) {
-      const reveal = () => { image.hidden = false; if (image.nextElementSibling) image.nextElementSibling.hidden = true; };
+      const reveal = () => { image.hidden = false; image.style.visibility = ""; if (image.nextElementSibling) image.nextElementSibling.hidden = true; };
       image.addEventListener("load", reveal, { once: true });
       image.src = window.SplitAppDiscovery?.imageUrl?.(source) || source;
       if (image.complete && image.naturalWidth) reveal();
     }
-    else { image.hidden = true; if (image.nextElementSibling) image.nextElementSibling.hidden = false; }
+    else { image.hidden = true; image.style.visibility = ""; if (image.nextElementSibling) image.nextElementSibling.hidden = false; }
   }
   async function drainDeferredImages() {
     if (deferredDrain) return deferredDrain;
@@ -1052,26 +1310,29 @@
       while (deferredQueue.length) {
         const batchSize = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 2 ? 16 : 40;
         const batch = deferredQueue.splice(0, batchSize);
-        const cached = await cachedThumbUrls(batch.map(record => [thumbKeyOf(record.item), thumbSigOf(record.item)]));
+        const cached = await cachedThumbUrls(batch.map(record => [record.key, record.signature]));
         const slow = [];
         for (const record of batch) {
           if (!record.image.isConnected) continue;
           if (record.image.dataset.customCover) { finishDeferredImage(record.image, record.image.dataset.customCover); continue; }
-          const hit = cached.get(thumbKeyOf(record.item));
+          const hit = cached.get(record.key);
           if (hit) finishDeferredImage(record.image, hit);
           else if (/^https?:/i.test(record.online)) finishDeferredImage(record.image, record.online); // not cached yet: online straight away
           else slow.push(record);
         }
-        if (!slow.length || typeof hydrate !== "function") { slow.forEach(record => finishDeferredImage(record.image, record.online)); continue; }
+        const folderBacked = slow.filter(record => !record.episodeId && record.key === thumbKeyOf(record.item));
+        if (!folderBacked.length || typeof hydrate !== "function") { slow.forEach(record => finishDeferredImage(record.image, record.online)); continue; }
         for (let index = slow.length - 1; index >= 0; index--) if (!slow[index].image.isConnected) slow.splice(index, 1);
-        if (!slow.length) continue;
-        const clones = slow.map(record => ({ ...record.item, localThumbnailData: "", localPortraitData: "", localLandscapeData: "", backdrop: "", cachedDetails: undefined, localImageFiles: undefined }));
+        const records = slow.filter(record => !record.episodeId);
+        if (!records.length) continue;
+        const clones = records.map(record => ({ ...record.item, localThumbnailData: "", localPortraitData: "", localLandscapeData: "", backdrop: "", cachedDetails: undefined, localImageFiles: undefined }));
         try { await hydrate(clones); } catch (error) { recordLog("warning", `Could not load saved artwork: ${error?.message || error}`); }
-        slow.forEach((record, index) => {
+        records.forEach((record, index) => {
           const local = clones[index].localThumbnailData;
           finishDeferredImage(record.image, local || record.online);
-          if (local) dataUrlToBlob(local).then(blob => blob && window.SplitAppIDB?.putThumbs?.([[thumbKeyOf(record.item), thumbSigOf(record.item), blob]])).catch(() => {});
+          if (local) dataUrlToBlob(local).then(blob => blob && window.SplitAppIDB?.putThumbs?.([[record.key, record.signature, blob]])).catch(() => {});
         });
+        slow.filter(record => record.episodeId).forEach(record => finishDeferredImage(record.image, record.online));
       }
     })().finally(() => { deferredDrain = null; });
     return deferredDrain;
@@ -1082,10 +1343,13 @@
     const online = image.dataset.lazySrc || "";
     if (!item) { finishDeferredImage(image, online); return; }
     if (image.dataset.customCover) { finishDeferredImage(image, image.dataset.customCover); return; }
-    const warm = thumbUrlCache.get(`${thumbKeyOf(item)}|${thumbSigOf(item)}`);
+    const episodeId = image.dataset.localEpisodeId || "";
+    const key = image.dataset.localCacheKey || (episodeId ? episodeThumbKeyOf(item, episodeId) : thumbKeyOf(item));
+    const signature = image.dataset.localCacheSignature || (episodeId ? online : thumbSigOf(item));
+    const warm = thumbUrlCache.get(`${key}|${signature}`);
     if (warm) { finishDeferredImage(image, warm); return; }
     if (deferredQueue.length >= 256) { finishDeferredImage(image, online); return; }
-    deferredQueue.push({ item, image, online });
+    deferredQueue.push({ item, image, online, key, signature, episodeId });
     if (!deferredTimer) deferredTimer = setTimeout(() => { deferredTimer = 0; drainDeferredImages(); }, 0);
   }
   function observeDeferredImages(root = document) {
@@ -1134,6 +1398,9 @@
       if (viewedItem?.cachedDetails && reconcileEpisodes(viewedItem)) persist({ ids: [viewedItem.id] });
     }
     const content = $("#page-content");
+    // Discover's backdrop observer closes over the old results container. Stop it
+    // before leaving the page so detached cards and their result array can be freed.
+    if (page !== "discover" && backdropObserver) { backdropObserver.disconnect(); backdropObserver = null; }
     setPullToRefreshEnabled(["details", "discover", "series-watchlist", "movie-watchlist"].includes(page));
     if (page === "settings") { if (settingsGroup !== renderedSettingsGroup) { settingsFrom = renderedSettingsGroup || ""; renderedSettingsGroup = settingsGroup; } } else renderedSettingsGroup = undefined;
     const route = page === "settings" ? `settings/${settingsGroup || "index"}` : page === "statistics" && statsSubpage ? `statistics/${statsSubpage}` : page;
@@ -1156,7 +1423,13 @@
       if (renderedRoute !== null) inAppNav = true;
       renderedRoute = route;
     }
-    document.getElementById("collection-toolbar")?.remove();
+    const previousCollectionToolbar = document.getElementById("collection-toolbar");
+    if (previousCollectionToolbar) {
+      // The toolbar is portaled to body, outside #page-content; dispose its
+      // deferred images and observers explicitly before removing it.
+      disposeContentResources(previousCollectionToolbar);
+      previousCollectionToolbar.remove();
+    }
     disposeContentResources(content);
     if (page === "setup" && !setupStarted) beginSetup(); else if (page !== "setup") setupStarted = false;
     if (typeof window.SplitAppPages[page] !== "function") {
@@ -1170,6 +1443,7 @@
     if (page === "setup") { const grid = $("#setup-grid"); if (grid) routeRemoteImages(grid); }
     if (["series", "movies", "series-favorites", "movie-favorites"].includes(page)) trackPosterLoading(content);
     if (page === "details") { prioritizeVisibleDetailImages(content); if (detailTab === "cast" && !detailRef && content.querySelector("[data-cast-lazy]")) Promise.resolve().then(() => loadDetailCast()); }
+    if (page === "series-watchlist") hydrateWatchlistEpisodeThumbs(content);
     if (page === "series-watchlist" || page === "movie-watchlist") {
       // Above-the-fold thumbnails: fetch immediately at high priority instead of waiting for lazy-load heuristics.
       content.querySelectorAll(".watchlist-card img[loading=lazy]").forEach((img, index) => {
@@ -1283,8 +1557,11 @@
       }
     }
     window.lucide?.createIcons({ root: content, attrs: { "aria-hidden": "true" } });
+    updateSyncOverlay();
+    window.lucide?.createIcons({ root: $("#sync-overlay"), attrs: { "aria-hidden": "true" } });
     window.lucide?.createIcons({ root: $("#discover-top-search"), attrs: { "aria-hidden": "true" } });
     observeDeferredImages(content);
+    mountVirtualGrids(content);
     prioritizeVisibleCollectionImages(content);
     const collectionMore = content.querySelector("[data-collection-more]");
     collectionMore?.addEventListener("click", event => {
@@ -1340,10 +1617,22 @@
       const form = content.querySelector("#detail-edit-form");
       if (form?.reportValidity()) form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
+    const detailDeleteDialog = content.querySelector("#detail-delete-dialog");
+    if (detailDeleteDialog && !detailDeleteDialog.dataset.portalCloseBound) {
+      detailDeleteDialog.dataset.portalCloseBound = "true";
+      detailDeleteDialog.addEventListener("close", () => {
+        if (detailDeleteDialog.open) return;
+        const parent = detailDeleteDialog._returnToParent; detailDeleteDialog._returnToParent = null;
+        if (detailDeleteDialog.dataset.removeAfterClose === "true" || !parent?.isConnected) { detailDeleteDialog.remove(); return; }
+        parent.append(detailDeleteDialog);
+      });
+    }
     content.querySelector("[data-detail-delete-confirm]")?.addEventListener("click", event => {
-      event.preventDefault(); event.stopPropagation(); closePopup($("#detail-delete-dialog")); deleteFromDetails(detailItemId);
+      event.preventDefault(); event.stopPropagation(); const dialog = $("#detail-delete-dialog");
+      if (dialog) { dialog.dataset.removeAfterClose = "true"; closePopup(dialog, { immediate: true, afterPop: () => deleteFromDetails(detailItemId) }); }
+      else deleteFromDetails(detailItemId);
     });
-    content.querySelector("[data-detail-delete-cancel]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#detail-delete-dialog")); });
+    content.querySelector("[data-detail-delete-cancel]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#detail-delete-dialog"), { immediate: true }); });
     content.querySelectorAll("[data-add-image-picker]").forEach(button => button.addEventListener("click", () => {
       const picker = button.dataset.addImagePicker === "camera" ? $("#add-camera-picker") : $("#add-gallery-picker");
       picker?.click();
@@ -1386,7 +1675,7 @@
     content.querySelector("[data-clear-timeline-filters]")?.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
       timelineSearch = ""; timelineMonth = ""; timelineYear = ""; timelineFrom = ""; timelineTo = ""; timelineFilter = "all";
-      closePopup($("#timeline-filter-dialog")); render();
+      closePopup($("#timeline-filter-dialog"), { immediate: true }); render();
     });
     content.querySelector("#timeline-filter-dialog form")?.addEventListener("submit", event => {
       event.preventDefault(); event.stopPropagation();
@@ -1394,7 +1683,7 @@
       timelineMonth = event.currentTarget.elements["timeline-month"].value;
       timelineYear = event.currentTarget.elements["timeline-year"].value;
       timelineFrom = event.currentTarget.elements["timeline-from"]?.value || ""; timelineTo = event.currentTarget.elements["timeline-to"]?.value || "";
-      closePopup($("#timeline-filter-dialog")); render();
+      closePopup($("#timeline-filter-dialog"), { immediate: true }); render();
     });
     content.querySelectorAll("[data-source-filter]").forEach(button => button.addEventListener("click", event => {
       event.preventDefault(); event.stopPropagation();
@@ -1546,7 +1835,9 @@
   async function clearAppCaches(kind) {
     if (kind === "images" || kind === "temporary") {
       for (const url of thumbUrlCache.values()) URL.revokeObjectURL(url);
-      thumbUrlCache.clear();
+      thumbUrlCache.clear(); thumbKeyIndex.clear();
+    }
+    if (kind === "images") {
       await window.SplitAppIDB?.clearThumbs?.().catch(() => {});
     }
     if (kind === "temporary") {
@@ -1815,7 +2106,10 @@
       const response = await fetch(`https://api.tvmaze.com/shows/${encodeURIComponent(showId)}/images`);
       if (response.ok) { const rows = await response.json(); const bg = (Array.isArray(rows) ? rows : []).find(row => row.type === "background"); url = bg?.resolutions?.original?.url || ""; }
     } catch (_) {}
-    backdropCache.set(showId, url); return url;
+    backdropCache.delete(showId);
+    backdropCache.set(showId, url);
+    while (backdropCache.size > 120) backdropCache.delete(backdropCache.keys().next().value);
+    return url;
   }
   function enrichCardBackdrops(box = $("#discover-results")) {
     backdropObserver?.disconnect(); backdropObserver = null;
@@ -2127,6 +2421,12 @@
     const year = String(item?.year || item?.releaseDate || "").match(/(?:19|20)\d{2}/)?.[0] || "";
     return [item?.category || "", item?.metadataSource || item?.source || "manual", normalize(item?.title), year].join("\u0000");
   };
+  const pendingLibraryItemWrites = new Map();
+  function saveLibraryItemToIDB(item) {
+    const save = window.SplitAppBackend?.saveLibraryItemToIDB;
+    if (typeof save === "function") return Promise.resolve(save.call(window.SplitAppBackend, item, { history, preferences: prefs }));
+    return persist({ ids: [item.id] });
+  }
   function addDiscoverResult(result, origin = "Discover", options = {}) {
     if (!result) return null;
     const existing = (result.source && result.providerId ? itemByProvider(result.source, result.category, result.providerId) : null) || itemByTitleIdentity(titleIdentity({ ...result, metadataSource: result.metadataSource || result.source }));
@@ -2134,7 +2434,17 @@
       if (!options.quiet) toast("That entry is already in your library."); return existing;
     }
     const item = stripLocalScores({ ...result, metadataSource: result.source, id: crypto.randomUUID(), status: options.status || ((category(result.category)?.statuses || []).includes(prefs.defaultStatus) && [roles.queued, roles.done].includes(prefs.defaultStatus) ? prefs.defaultStatus : defaultStatus(result.category)), ...(options.favorite ? { favorite: true } : {}), progress: 0, createdAt: Date.now(), updatedAt: Date.now() });
-    items.unshift(item); itemIndexItems = null; recordLibraryChange("added", `Added ${item.title} from ${origin}.`, [item.id]); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() }); persist({ ids: [item.id] }); if (!options.quiet) toast("Added to your library."); hydrateSavedItem(item); return item;
+    items.unshift(item); itemIndexItems = null; recordLibraryChange("added", `Added ${item.title} from ${origin}.`, [item.id]); if (trackedStatuses.includes(item.status)) history.unshift({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: Date.now() });
+    // Queue immediately so progress is visible. Save the row directly first;
+    // the debounced app save can be delayed behind native snapshots of a large
+    // library and must not gate metadata/episode hydration.
+    const initialWrite = saveLibraryItemToIDB(item);
+    pendingLibraryItemWrites.set(String(item.id), initialWrite);
+    initialWrite.then(() => { if (pendingLibraryItemWrites.get(String(item.id)) === initialWrite) persist({ meta: true }); }, () => {
+      if (pendingLibraryItemWrites.get(String(item.id)) === initialWrite) pendingLibraryItemWrites.delete(String(item.id));
+    });
+    hydrateSavedItem(item);
+    if (!options.quiet) toast("Added to your library."); return item;
   }
   // Keep the best value per fact across providers (a later source never blanks out earlier data).
   function mergeFacts(previous = {}, next = {}) {
@@ -2148,11 +2458,118 @@
   // What changed on the last refresh of each saved title (not persisted): field names, used for the "Updated" note.
   const metadataChanges = new Map();
   const stableJson = value => JSON.stringify(value, (key, entry) => key === "fetchedAt" || key === "localImageData" ? undefined : entry);
-  function applyLoadedMetadata(item, loaded, { cacheDetails = true, replaceFacts = false } = {}) {
+  const comparableArtworkUrl = value => {
+    try {
+      const url = new URL(String(value || ""));
+      url.hash = ""; url.search = "";
+      if (url.hostname === "image.tmdb.org") url.pathname = url.pathname.replace(/\/t\/p\/(?:original|w\d+)\//, "/t/p/{size}/");
+      return url.href;
+    } catch (_) { return String(value || ""); }
+  };
+  const episodeThumbCacheKey = (item, episode) => `${window.SplitAppBackend?.key || "screenmark"}:episode:${String(item.id)}:${String(episode.id)}`;
+  async function hydrateEpisodeThumbnailCache(item) {
+    const api = window.SplitAppIDB;
+    if (!item?.cachedDetails || !api?.getThumbs) return 0;
+    const seriesArtwork = new Set([item.image, item.customCover, item.backdrop, item.cachedDetails.image, item.cachedDetails.portraitImage, item.cachedDetails.landscapeImage, item.cachedDetails.backgroundImage]
+      .filter(value => /^https:\/\//i.test(String(value || ""))).map(comparableArtworkUrl));
+    const rows = (item.cachedDetails.sections || []).filter(section => section?.kind === "episodes").flatMap(section => section.items || [])
+      .filter(episode => episode?.id != null && /^https:\/\//i.test(String(episode.image || "")) && !seriesArtwork.has(comparableArtworkUrl(episode.image)));
+    if (!rows.length) return 0;
+    const episodeByCacheKey = new Map(rows.map(episode => [episodeThumbCacheKey(item, episode), episode]));
+    const pairs = [...episodeByCacheKey].map(([key, episode]) => [key, String(episode.image)]);
+    let blobs = [];
+    try { blobs = await api.getThumbs(pairs); } catch (_) { return 0; }
+    item.localImageData ||= {};
+    let hydrated = 0;
+    for (const [key, blob] of blobs) {
+      const episode = episodeByCacheKey.get(key);
+      if (!episode || !blob) continue;
+      const cacheKey = `${key}|${String(episode.image)}`;
+      const url = thumbUrlCache.get(cacheKey) || rememberThumbUrl(key, String(episode.image), URL.createObjectURL(blob));
+      item.localImageData[`cachedDetails.episodesById.${String(episode.id)}.image`] = url;
+      hydrated++;
+    }
+    return hydrated;
+  }
+  async function hydrateArtworkThumbnailCache(item) {
+    const api = window.SplitAppIDB, getEntries = window.SplitAppBackend?.artworkCacheEntries;
+    if (!item?.id || !api?.getThumbs || typeof getEntries !== "function") return 0;
+    const entries = getEntries(item);
+    if (!entries.length) return 0;
+    let blobs = [];
+    try { blobs = await api.getThumbs(entries.map(({ key, signature }) => [key, signature])); } catch (_) { return 0; }
+    item.localImageData ||= {};
+    let hydrated = 0;
+    for (const [key, blob] of blobs) {
+      const entry = entries.find(row => row.key === key);
+      if (!entry || !blob) continue;
+      const objectUrl = thumbUrlCache.get(`${key}|${entry.signature}`) || rememberThumbUrl(key, entry.signature, URL.createObjectURL(blob));
+      if (key === thumbKeyOf(item)) { item.localThumbnailData = objectUrl; item.localPortraitData = objectUrl; }
+      item.localImageData[`imageUrl:${entry.signature}`] = objectUrl;
+      for (const path of entry.paths) item.localImageData[path.join(".")] = objectUrl;
+      hydrated++;
+    }
+    return hydrated;
+  }
+  // Watchlist cards show each series' next episode still: restore the copies already saved on this device (the details page does the same).
+  const watchlistThumbRequested = new Set();
+  async function hydrateWatchlistEpisodeThumbs(root) {
+    const api = window.SplitAppIDB;
+    if (!api?.getThumbs) return;
+    const jobs = [];
+    $$(".watchlist-card[data-watchlist-root]", root).forEach(card => {
+      const item = itemById(card.dataset.watchlistRoot);
+      if (!item || item.category !== "series") return;
+      const episode = window.SplitAppLibrary.episodeInfo(item)?.next, image = String(episode?.image || "");
+      if (episode?.id == null || !/^https:\/\//i.test(image)) return;
+      const path = `cachedDetails.episodesById.${String(episode.id)}.image`;
+      if (item.localImageData?.[path]) return;
+      jobs.push({ item, path, image, key: episodeThumbCacheKey(item, episode) });
+    });
+    if (!jobs.length) return;
+    let blobs = [];
+    try { blobs = await api.getThumbs(jobs.map(job => [job.key, job.image])); } catch (_) { return; }
+    let changed = 0;
+    const found = new Set(blobs.filter(([, blob]) => blob).map(([key]) => key));
+    // Not saved on this device yet: download it in the background; the card refreshes when it lands.
+    jobs.filter(job => !found.has(job.key) && !watchlistThumbRequested.has(job.key)).forEach(job => { watchlistThumbRequested.add(job.key); queueEpisodeThumbnailCache(job.item); });
+    for (const [key, blob] of blobs) {
+      const job = jobs.find(row => row.key === key);
+      if (!job || !blob) continue;
+      const url = thumbUrlCache.get(`${key}|${job.image}`) || rememberThumbUrl(key, job.image, URL.createObjectURL(blob));
+      (job.item.localImageData ||= {})[job.path] = url; changed++;
+    }
+    if (changed && page === "series-watchlist") render();
+  }
+  function queueArtworkThumbnailCache(item) {
+    if (!item?.id) return;
+    hydrateArtworkThumbnailCache(item).then(count => {
+      if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
+    }).catch(() => {});
+    const cache = window.SplitAppBackend?.cacheArtwork;
+    if (!navigator.onLine || typeof cache !== "function") return;
+    Promise.resolve(cache.call(window.SplitAppBackend, item)).then(() => hydrateArtworkThumbnailCache(item)).then(count => {
+      if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
+    }).catch(() => {});
+  }
+  function queueEpisodeThumbnailCache(item) {
+    if (!item?.cachedDetails) return;
+    const cache = window.SplitAppBackend?.cacheEpisodeThumbnails;
+    // Show images already saved on this device immediately, including while
+    // offline; then fill any missing rows in the background when connected.
+    hydrateEpisodeThumbnailCache(item).then(count => {
+      if (count && ((page === "details" && !detailRef && String(detailItemId) === String(item.id)) || page === "series-watchlist")) render();
+    }).catch(() => {});
+    if (!navigator.onLine || typeof cache !== "function") return;
+    Promise.resolve(cache.call(window.SplitAppBackend, item)).then(() => hydrateEpisodeThumbnailCache(item)).then(count => {
+      if (count && ((page === "details" && !detailRef && String(detailItemId) === String(item.id)) || page === "series-watchlist")) render();
+    }).catch(() => {});
+  }
+  function applyLoadedMetadata(item, loaded, { cacheDetails = true, replaceFacts = false, queueArtwork = true } = {}) {
     if (!item || !loaded || typeof loaded !== "object") throw new Error("Metadata source returned an invalid detail record.");
     const changes = [];
     let cachedDetails = loaded;
-    if (cacheDetails && item.cachedDetails && !replaceFacts) {
+    if (cacheDetails && item.cachedDetails && !item.cachedDetails.compact && !replaceFacts) {
       const sections = [...(loaded.sections || [])];
       const sectionKey = section => `${section.kind || ""}:${String(section.title || "").replace(/\s*\(\d+\)\s*$/, "").trim().toLocaleLowerCase()}`;
       const available = new Set(sections.filter(section => (section.items || []).length).map(sectionKey));
@@ -2183,8 +2600,12 @@
     set("image", item.customCover ? "" : (loaded.portraitImage || loaded.image), "poster");
     set("backdrop", loaded.landscapeImage || loaded.backgroundImage, "backdrop");
     if (changes.length) item.updatedAt = Date.now();
-    metadataChanges.set(String(item.id), [...new Set(changes)]);
+    const metadataKey = String(item.id);
+    metadataChanges.delete(metadataKey);
+    metadataChanges.set(metadataKey, [...new Set(changes)]);
+    while (metadataChanges.size > 600) metadataChanges.delete(metadataChanges.keys().next().value);
     reconcileEpisodes(item);
+    if (queueArtwork && item.category === "series" && item.cachedDetails) queueEpisodeThumbnailCache(item);
     return item;
   }
   function readCustomSourceForm() {
@@ -2233,7 +2654,7 @@
     output.textContent = `Searching ${source.name}…`; output.dataset.state = "";
     try {
       const metadataSources = { ...prefs.metadataSources, [sourceKey]: true };
-      const results = await window.SplitAppDiscovery.searchSource(query, category, { ...detailSettings(), metadataSources }, sourceKey);
+      const results = await window.SplitAppDiscovery.searchSource(query, category, { ...detailSettings(), metadataSources, bypassSourceHealth: true }, sourceKey);
       output.dataset.state = "ok";
       if (results.some(row => row.via)) { output.textContent = `${source.name} cannot be reached directly from this network, so titles are loaded through ${results[0].via} instead (found ${results.length} for “${query}”).`; return; }
       output.textContent = results.length ? `Connection successful. Found ${results.length} ${results.length === 1 ? "match" : "matches"} for “${query}”.` : `The source responded successfully, but returned no matches for “${query}”.`;
@@ -2262,11 +2683,50 @@
   }
   function detailSettings() { return { metadataSources: prefs.metadataSources, apiKeys: prefs.apiKeys, sourceOptions: prefs.sourceOptions, offlineFallback: prefs.offlineFallback }; }
   const DETAIL_REFRESH_MS = 24 * 60 * 60 * 1000;
+  // Big libraries keep a compact copy of each title's details in memory (see backend/idb-store.js). The full stored copy is read back
+  // when a title is opened and released again once other titles have been opened; a compact copy never overwrites the stored one.
+  const hydratedDetails = new Map(); // id -> the full details object that was read back (insertion order = least recent first)
+  async function hydrateDetails(item) {
+    if (!item?.cachedDetails?.compact || !window.SplitAppIDB?.getDetails) return item;
+    try {
+      const full = await window.SplitAppIDB.getDetails(item.id);
+      if (full && !full.compact && item.cachedDetails?.compact) {
+        item.cachedDetails = full;
+        hydratedDetails.delete(String(item.id)); hydratedDetails.set(String(item.id), full);
+        releaseHydratedDetails();
+      }
+    } catch (_) {}
+    return item;
+  }
+  function releaseHydratedDetails(keep = ({ auto: 2, low: 1, minimum: 0, off: 6 }[prefs.libraryMemory] ?? 2), force = false) {
+    // Only an untouched read-back object is released (a changed copy is a different object), and never the open title.
+    for (const [id, full] of [...hydratedDetails]) {
+      if (hydratedDetails.size <= keep) break;
+      if (!force && id === String(detailItemId)) continue;
+      hydratedDetails.delete(id);
+      const item = itemById(id);
+      if (item && item.cachedDetails === full && window.SplitAppIDB?.compactDetails) item.cachedDetails = window.SplitAppIDB.compactDetails(full);
+    }
+  }
   async function loadDetails(targetId = null, force = false) {
     detailAbortController?.abort();
     const controller = typeof AbortController === "function" ? new AbortController() : null;
     detailAbortController = controller;
     const item = detailPreview || itemById(String(targetId ?? detailItemId));
+    if (item?.cachedDetails?.compact) await hydrateDetails(item);
+    if (item?.cachedDetails) {
+      // Restore device-cached episode artwork before checking network state.
+      hydrateArtworkThumbnailCache(item).then(count => {
+        if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
+      }).catch(() => {});
+      queueArtworkThumbnailCache(item);
+    }
+    if (item?.category === "series" && item.cachedDetails) {
+      hydrateEpisodeThumbnailCache(item).then(count => {
+        if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
+      }).catch(() => {});
+      queueEpisodeThumbnailCache(item);
+    }
     const requestId = ++detailRequest, useCached = Boolean(item?.cachedDetails && prefs.offlineFallback !== "none");
     detailData = useCached ? item.cachedDetails : null; detailError = "";
     if (!item) { if (detailAbortController === controller) detailAbortController = null; detailLoading = false; render(); return; }
@@ -2316,10 +2776,15 @@
   }
   // In-app drill-down (cast, characters, staff, episodes, suggestions); each step keeps the page it came from for Back.
   const detailSnapshot = () => ({ detailPreview, detailItemId, detailData, detailError, detailLoading, detailEditMode, detailReturnPage, detailRef, detailRefOffset, refData, refError, scroll: window.scrollY });
+  function pushDetailSnapshot() {
+    detailStack.push(detailSnapshot());
+    const limit = ({ auto: 10, low: 5, minimum: 2, off: 50 }[prefs.libraryMemory] || 10);
+    while (detailStack.length > limit) detailStack.shift();
+  }
   function clearDetailStack() { detailAbortController?.abort(); refAbortController?.abort(); detailAbortController = refAbortController = null; detailRequest++; detailTab = ""; detailSeason = ""; detailStack = []; detailRef = null; detailRefOffset = 0; refData = null; refError = ""; refLoading = false; refRequest++; }
   function openDetailRef(type, id, title, extra, replace = false) {
     if (!id) return;
-    if (!replace) { detailStack.push(detailSnapshot()); if (detailStack.length > 50) detailStack.shift(); }
+    if (!replace) pushDetailSnapshot();
     if (type === "show") {
       const source = extra?.source || "tvmaze", showCategory = extra?.category || "series";
       const existing = itemByProvider(source, showCategory, id);
@@ -2342,6 +2807,7 @@
     refLoading = true; render();
     try {
       const parent = detailItemId ? itemById(detailItemId) : null;
+      if (parent?.cachedDetails?.compact) await hydrateDetails(parent);
       const cachedEpisode = ref.type === "episode" && parent
         ? (parent.cachedDetails?.sections || []).filter(section => section.kind === "episodes").flatMap(section => section.items || []).find(row => String(row.id) === String(ref.id) || String(row.ref?.id) === String(ref.id))
         : null;
@@ -2401,17 +2867,85 @@
       const loaded = await window.SplitAppDetails.load(entry, { ...detailSettings() });
       const people = (loaded.sections || []).filter(section => isCastSection(section) && (section.items || []).length);
       if (!people.length) throw new Error("This source has no cast & crew for this title.");
-      castCache.set(key, people); castState = { key, loading: false, error: "" };
+      castCache.delete(key);
+      castCache.set(key, people);
+      while (castCache.size > 24) castCache.delete(castCache.keys().next().value);
+      castState = { key, loading: false, error: "" };
     } catch (error) { castState = { key, loading: false, error: error?.message || "Could not load cast & crew." }; }
     if (page === "details" && !detailRef && castKeyNow() === key) render();
   }
-  // Quick setup can add dozens of titles at once: load full details (episodes, ratings, posters, backgrounds,
+  // Added titles load full details (episodes, ratings, posters, backgrounds,
   // screenshots) two at a time so every title is complete without hammering the providers.
   const hydrateQueue = []; let hydrateActive = 0;
-  // Progress of titles being filled in after Quick setup (shown on #sync); in memory only.
+  // Progress of added titles and their episode artwork (shown on #sync).
   const setupDownloads = new Map();
   const DOWNLOADS_KEY = `${storageKey}_sync_downloads`;
   let downloadSaveTimer = 0;
+  let syncOverlayDismissed = false;
+  let syncOverlayTimer = 0;
+  function updateSyncOverlay() {
+    const overlay = $("#sync-overlay"); if (!overlay) return;
+    if (page === "sync") { overlay.hidden = true; return; }
+    const rows = [...setupDownloads.values()];
+    const active = rows.filter(row => ["queued", "running"].includes(row.status));
+    const failed = rows.filter(row => row.status === "failed");
+    overlay.classList.toggle("has-failed", !active.length && failed.length > 0);
+    overlay.classList.toggle("is-complete", !active.length && !failed.length && rows.length > 0 && rows.every(row => row.status === "done"));
+    const running = active.find(row => row.status === "running") || active[0];
+    const title = $("[data-sync-overlay-title]", overlay);
+    const detail = $("[data-sync-overlay-detail]", overlay);
+    const progress = $("[data-sync-overlay-progress]", overlay);
+    const percentLabel = $("[data-sync-overlay-percent]", overlay);
+    const retry = $("[data-sync-overlay-retry]", overlay);
+    if (active.length) {
+      clearTimeout(syncOverlayTimer);
+      if (active.some(row => row.status === "queued" && row.at > Date.now() - 5000)) syncOverlayDismissed = false;
+      const completed = rows.filter(row => row.status === "done").length;
+      const epTotal = Number(running?.total) || 0, epDone = Number(running?.completed) || 0;
+      const imageStage = running?.stage === "images";
+      const fraction = epTotal ? Math.min(0.99, epDone / epTotal) : running?.detailsComplete ? 0.5 : 0;
+      const percent = Math.min(99, Math.round((completed + fraction) / Math.max(1, rows.length) * 100));
+      title.textContent = `Syncing ${completed + 1} of ${rows.length} titles`;
+      detail.textContent = epTotal && imageStage
+        ? `${running.title || "Title"} · S${running.season || "…"} · ${epDone}/${epTotal} images`
+        : `${running?.title || "Preparing library sync"} · ${imageStage ? "Saving episode images" : running?.stage === "seasons" ? "Syncing seasons" : "Getting details"}`;
+      progress.style.width = `${percent}%`;
+      overlay.style.setProperty("--sync-progress", `${percent}%`);
+      percentLabel.textContent = `${percent}%`;
+      retry.hidden = true;
+      overlay.hidden = syncOverlayDismissed;
+    } else if (failed.length) {
+      clearTimeout(syncOverlayTimer);
+      title.textContent = `${failed.length} ${failed.length === 1 ? "title needs" : "titles need"} attention`;
+      detail.textContent = `${failed[0].title || "Sync failed"} · ${failed[0].error || "Retry when online"}`;
+      progress.style.width = "100%";
+      overlay.style.setProperty("--sync-progress", "100%");
+      percentLabel.textContent = "!";
+      retry.hidden = false;
+      overlay.hidden = syncOverlayDismissed;
+    } else {
+      retry.hidden = true;
+      const needsArtworkSync = prefs.imageStorage === "all" && rows.some(row => {
+        const item = itemById(row.id);
+        return item?.category === "series" && item.cachedDetails && !item.cachedDetails.compact;
+      });
+      if (rows.length && rows.every(row => row.status === "done") && !needsArtworkSync && !syncOverlayDismissed) {
+        title.textContent = "Library sync complete";
+        detail.textContent = `${rows.length} ${rows.length === 1 ? "title" : "titles"} saved for offline use`;
+        progress.style.width = "100%";
+        overlay.style.setProperty("--sync-progress", "100%");
+        percentLabel.textContent = "✓";
+        overlay.hidden = false;
+        if (!syncOverlayTimer) syncOverlayTimer = setTimeout(() => { syncOverlayTimer = 0; syncOverlayDismissed = true; overlay.hidden = true; }, 5000);
+      } else overlay.hidden = true;
+    }
+  }
+  document.addEventListener("click", event => {
+    if (eventClosest(event, "[data-sync-overlay-dismiss]")) { syncOverlayDismissed = true; $("#sync-overlay").hidden = true; return; }
+    if (eventClosest(event, "[data-sync-overlay-open]")) { goto("sync"); return; }
+    const overlayRetry = eventClosest(event, "#sync-overlay [data-setup-download-retry]");
+    if (overlayRetry) retryDownloadButton(overlayRetry);
+  });
   // The list survives navigation and restarts (compact rows only), and unfinished rows resume on launch.
   function saveDownloads() {
     clearTimeout(downloadSaveTimer);
@@ -2419,8 +2953,9 @@
   }
   const markDownload = (item, status, error = "") => {
     const row = setupDownloads.get(String(item.id)) || {};
-    setupDownloads.set(String(item.id), { ...row, id: String(item.id), title: item.title, category: item.category, source: item.metadataSource, providerId: item.providerId, status, error, at: Date.now() });
-    saveDownloads(); if (page === "sync") scheduleHydrateRender();
+    setupDownloads.set(String(item.id), { ...row, id: String(item.id), title: item.title, category: item.category, source: item.metadataSource, providerId: item.providerId, status, error, stage: status === "running" ? "details" : status === "done" ? "complete" : status, detailsComplete: status === "done" || row.detailsComplete || false, at: Date.now() });
+    if (status === "queued") syncOverlayDismissed = false;
+    saveDownloads(); updateSyncOverlay(); if (page === "sync") scheduleHydrateRender();
   };
   function restoreDownloads() {
     let saved = [];
@@ -2430,13 +2965,87 @@
       const item = itemById(row?.id); if (!item) continue;
       setupDownloads.set(String(row.id), { ...row, title: item.title });
       if (["queued", "running"].includes(row.status) && !item.fullDetailsAt) resume.push(item);
+      else if (["queued", "running"].includes(row.status) && item.fullDetailsAt && item.category === "series" && prefs.imageStorage === "all") resume.push(item);
       else if (row.status === "done" || item.fullDetailsAt) setupDownloads.set(String(row.id), { ...row, status: "done", error: "" });
     }
+    updateSyncOverlay();
     if (resume.length) syncImported(resume);
+  }
+  function resumeArtworkCaching() {
+    if (!navigator.onLine || prefs.imageStorage !== "all") return;
+    const cachedGuides = items.filter(item => item.cachedDetails);
+    if (!cachedGuides.length) return;
+    let index = 0;
+    const worker = async () => {
+      while (index < cachedGuides.length) {
+        const item = cachedGuides[index++];
+        try {
+          const currentDownload = setupDownloads.get(String(item.id));
+          if (hydrating.has(String(item.id)) || ["queued", "running"].includes(currentDownload?.status)) continue;
+          if (item.cachedDetails?.compact) await hydrateDetails(item);
+          if (item.cachedDetails && !item.cachedDetails.compact && navigator.onLine) {
+            const artworkEntries = window.SplitAppBackend?.artworkCacheEntries?.(item) || [];
+            const artworkHits = await window.SplitAppIDB?.getThumbs?.(artworkEntries.map(({ key, signature }) => [key, signature])) || [];
+            const seriesArtwork = new Set([item.image, item.customCover, item.backdrop, item.cachedDetails.image, item.cachedDetails.portraitImage, item.cachedDetails.landscapeImage, item.cachedDetails.backgroundImage]
+              .filter(value => /^https:\/\//i.test(String(value || ""))).map(comparableArtworkUrl));
+            const episodeEntries = item.category === "series" ? (item.cachedDetails.sections || []).filter(section => section?.kind === "episodes").flatMap(section => section.items || [])
+              .filter(episode => episode?.id != null && /^https:\/\//i.test(String(episode.image || "")) && !seriesArtwork.has(comparableArtworkUrl(episode.image)))
+              .map(episode => [episodeThumbKeyOf(item, episode.id), String(episode.image)]) : [];
+            const episodeHits = episodeEntries.length ? await window.SplitAppIDB?.getThumbs?.(episodeEntries) || [] : [];
+            const needsArtwork = artworkHits.length < artworkEntries.length || episodeHits.length < episodeEntries.length;
+            if (!needsArtwork) continue;
+            if (!setupDownloads.has(String(item.id)) || setupDownloads.get(String(item.id)).status === "done") markDownload(item, "queued");
+            const artwork = await window.SplitAppBackend?.cacheArtwork?.(item, progress => updateArtworkProgress(item, progress));
+            if (!artwork || artwork.skipped) throw new Error("Title artwork could not be saved on this device.");
+            if (artwork.failed) throw new Error(`${artwork.failed} artwork image${artwork.failed === 1 ? "" : "s"} could not be saved. Retry when online.`);
+            if (item.category !== "series") { markDownload(item, "done"); continue; }
+            const result = await window.SplitAppBackend?.cacheEpisodeThumbnails?.(item, progress => updateArtworkProgress(item, progress));
+      if (result?.skipped) throw new Error("Episode thumbnails could not be saved on this device.");
+      if (result?.failed) throw new Error(`${result.failed} episode still${result.failed === 1 ? "" : "s"} could not be saved. Retry when online.`);
+            markDownload(item, "done");
+          }
+        } catch (error) {
+          if (setupDownloads.has(String(item.id))) markDownload(item, "failed", error?.message || "Could not save episode artwork.");
+        }
+      }
+    };
+    Promise.all(Array.from({ length: Math.min(2, cachedGuides.length) }, worker)).catch(() => {});
+  }
+  function updateArtworkProgress(item, progress) {
+    const row = setupDownloads.get(String(item?.id));
+    if (!row || row.status === "failed") return;
+    setupDownloads.set(String(item.id), { ...row, ...progress, stage: progress.status, status: "running", at: Date.now() });
+    saveDownloads();
+    updateSyncOverlay();
+    if (page === "sync") scheduleHydrateRender();
   }
   function hydrateSavedItem(item) {
     if (!item?.metadataSource || !item.providerId || item.fullDetailsAt || hydrating.has(item.id) || prefs.metadataMode === "offline") return;
     hydrating.add(item.id); hydrateQueue.push(item); markDownload(item, "queued"); pumpHydrateQueue();
+  }
+  function retryDownloadButton(button) {
+    const ids = button.dataset.setupDownloadRetry ? [button.dataset.setupDownloadRetry] : [...setupDownloads.values()].filter(row => row.status === "failed").map(row => row.id);
+    ids.forEach(id => { const entry = itemById(id); if (entry) { hydrating.delete(entry.id); resumeSavedDownload(entry); } });
+    if (page === "sync") render();
+  }
+  function resumeSavedDownload(item) {
+    if (!item || hydrating.has(item.id)) return;
+    if (!navigator.onLine) { markDownload(item, "failed", "Offline. Retry when connected."); return; }
+    if (!item.fullDetailsAt) { hydrateSavedItem(item); return; }
+    if (item.category !== "series" || prefs.imageStorage !== "all" || !item.cachedDetails || item.cachedDetails.compact) return;
+    hydrating.add(item.id); markDownload(item, "queued");
+    const run = async () => {
+      try {
+        if (item.cachedDetails?.compact) await hydrateDetails(item);
+        if (!item.cachedDetails || item.cachedDetails.compact) throw new Error("Saved episode details are not available on this device.");
+        const result = await window.SplitAppBackend?.cacheEpisodeThumbnails?.(item, progress => updateArtworkProgress(item, progress));
+        if (!result || result.skipped) throw new Error("Episode thumbnails could not be saved on this device.");
+        if (result.failed) throw new Error(`${result.failed} episode still${result.failed === 1 ? "" : "s"} could not be saved. Retry when online.`);
+        markDownload(item, "done");
+      } catch (error) { markDownload(item, "failed", error?.message || "Could not save episode artwork."); }
+      finally { hydrating.delete(item.id); }
+    };
+    run();
   }
   function pumpHydrateQueue() {
     while (hydrateActive < 2 && hydrateQueue.length) {
@@ -2447,9 +3056,35 @@
   async function hydrateOne(item) {
     try {
       if (!navigator.onLine) { markDownload(item, "failed", "Offline. Retry when connected."); return; }
-      const loaded = await window.SplitAppDetails.load(item, { ...detailSettings() });
+      const initialWrite = pendingLibraryItemWrites.get(String(item.id));
+      if (initialWrite) await initialWrite;
+      pendingLibraryItemWrites.delete(String(item.id));
+      const savedItem = itemById(item.id);
+      if (!savedItem) { setupDownloads.delete(String(item.id)); return; }
+      item = savedItem;
+      const loaded = await window.SplitAppDetails.load(item, { ...detailSettings(), librarySync: true });
       if (itemById(item.id) !== item) { setupDownloads.delete(String(item.id)); return; }
-      applyLoadedMetadata(item, loaded); item.fullDetailsAt = Date.now(); persist({ ids: [item.id] }); markDownload(item, "done");
+      applyLoadedMetadata(item, loaded, { queueArtwork: false });
+      await saveLibraryItemToIDB(item);
+      item.fullDetailsAt = Date.now();
+      if (item.cachedDetails && !item.cachedDetails.compact && window.SplitAppIDB?.getDetails) {
+        const savedDetails = await window.SplitAppIDB.getDetails(item.id);
+        if (!savedDetails) throw new Error("Title details could not be saved on this device.");
+      }
+      persist({ ids: [item.id] });
+      markDownload(item, "running");
+      // Queue the complete episode guide immediately; it must not depend on
+      // which season the user happens to expand in the details view.
+      if (prefs.imageStorage === "all" && item.cachedDetails && !item.cachedDetails.compact) {
+        const artwork = await window.SplitAppBackend?.cacheArtwork?.(item, progress => updateArtworkProgress(item, progress));
+        if (artwork?.failed) throw new Error(`${artwork.failed} artwork image${artwork.failed === 1 ? "" : "s"} could not be saved. Retry when online.`);
+      }
+      if (item.category === "series" && prefs.imageStorage === "all" && item.cachedDetails && !item.cachedDetails.compact) {
+        const result = await window.SplitAppBackend?.cacheEpisodeThumbnails?.(item, progress => updateArtworkProgress(item, progress));
+        if (result?.skipped) throw new Error("Episode thumbnails could not be saved on this device.");
+        if (result?.failed) throw new Error(`${result.failed} episode still${result.failed === 1 ? "" : "s"} could not be saved. Retry when online.`);
+      }
+      markDownload(item, "done");
       if (page === "details" && String(detailItemId) === String(item.id)) { detailData = item.cachedDetails; render(); }
       else if (page === "sync") scheduleHydrateRender(); // collection pages are not rebuilt while downloads run: a full re-render restarts every poster's image loading
     } catch (error) { markDownload(item, "failed", error?.message || "Could not load details."); recordLog("warning", `Could not save details for ${item.title}: ${error?.message || error}`); if (page === "sync") scheduleHydrateRender(); }
@@ -2647,6 +3282,7 @@
           setMetadataSyncStatus(entry, "running"); entry.error = ""; deferMetadataSyncUpdate();
           markMetadataSyncEntryDirty(entry);
           try {
+            await hydrateDetails(item);
             const loaded = await window.SplitAppDetails.load(item, { ...detailSettings(), forceRefresh: true, background: true });
             if (itemById(entry.id) !== item) throw new Error("Title was removed or replaced.");
             if (metadataSourceIdentity(item) !== requestIdentity) throw new Error("The metadata source or match changed during refresh. Retry to sync the current match.");
@@ -2850,6 +3486,7 @@
         else if (root) root.remove();
         animateWatchlistLayout(before);
         window.lucide?.createIcons({ root: document.querySelector("#page-content"), attrs: { "aria-hidden": "true" } });
+        if (item.category === "series") hydrateWatchlistEpisodeThumbs(document.querySelector("#page-content"));
       };
       const root = [...document.querySelectorAll("[data-watchlist-root]")].find(row => row.dataset.watchlistRoot === String(watchlistCard));
       replaceCard();
@@ -2873,7 +3510,11 @@
   }
   function requestDeleteDetails(id) {
     if (!itemById(id)) return;
-    showPopup($("#detail-delete-dialog"));
+    const dialog = $("#detail-delete-dialog");
+    if (!dialog) return;
+    if (!dialog._returnToParent) dialog._returnToParent = dialog.parentElement;
+    document.body.append(dialog);
+    showPopup(dialog);
   }
   function setItemStatus(item, status) {
     if (!item || item.status === status) return;
@@ -2938,9 +3579,10 @@
     (details.sections || []).filter(section => section.kind === "gallery").forEach(section => (section.items || []).slice(0, 8).forEach(row => urls.push(row.image)));
     return [...new Set(urls.filter(url => /^https?:/i.test(url || "")))];
   }
-  function openCoverPicker(id) {
+  async function openCoverPicker(id) {
     const item = itemById(String(id)); if (!item) return;
     let dialog = $("#cover-picker-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "cover-picker-dialog"; dialog.className = "choice-dialog cover-picker-dialog"; document.body.appendChild(dialog); }
+    if (item.cachedDetails?.compact) await hydrateDetails(item);
     const urls = coverCandidates(item);
     dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">COVER</p><h2>${esc(item.title)}</h2></div><button class="choice-dialog-close" type="button" data-cover-close aria-label="Close">×</button></header><div class="cover-picker-body"><p class="fix-match-status">${item.customCover ? "Using your chosen cover." : "Pick a cover; it stays when metadata refreshes."}</p><div class="cover-picker-grid">${urls.map(url => `<button type="button" class="cover-choice${item.customCover === url ? " is-current" : ""}" data-cover-url="${esc(url)}"><img src="${esc(url)}" alt="" loading="lazy" decoding="async" onerror="this.closest('button').hidden=true"></button>`).join("")}</div>${item.customCover ? '<button type="button" class="button secondary" data-cover-auto>Use automatic cover</button>' : ""}</div>`;
     dialog.onclick = event => { if (event.target === dialog || eventClosest(event, "[data-cover-close]")) { closePopup(dialog); return; } const choice = eventClosest(event, "[data-cover-url]"), automatic = eventClosest(event, "[data-cover-auto]"); if (!choice && !automatic) return; if (choice) { item.customCover = choice.dataset.coverUrl; item.image = item.customCover; } else delete item.customCover; item.updatedAt = Date.now(); persist({ ids: [item.id] }); closePopup(dialog); render(); toast(automatic ? "Automatic cover restored." : "Cover updated."); };
@@ -2994,6 +3636,17 @@
 
   function setPreference(key, value) {
     prefs[key] = value;
+    if (key === "libraryMemory") {
+      applyLibraryMemoryThreshold(value);
+      const threshold = ({ auto: 2000, low: 500, minimum: 1 }[value] || Infinity);
+      if (items.length >= threshold && window.SplitAppIDB?.compactDetails) {
+        for (const item of items) if (item.cachedDetails && !item.cachedDetails.compact) item.cachedDetails = window.SplitAppIDB.compactDetails(item.cachedDetails, item);
+        releaseHydratedDetails(0, true);
+      }
+      trimThumbCache();
+      if (value === "off") toast("Full details will load into memory after restarting ScreenMark.");
+      else toast("Library memory setting updated.");
+    }
     if (key === "bottomBarBackground" && value === "solid") prefs.bottomBarTransparency = 100;
     if (key === "bottomBarBackground" && value === "transparent" && Number(prefs.bottomBarTransparency) >= 100) prefs.bottomBarTransparency = 30;
     persist({ meta: true }); applyPreferences();
@@ -3043,6 +3696,7 @@
       syncScope: { needed: "list-checks", missing: "file-question", all: "layers-3" },
       metadataSyncWorkers: { 1: "user-round", 2: "users-round", 3: "users" },
       syncRequestDelay: { 0: "zap", 250: "timer", 1000: "clock-3", 2000: "hourglass" },
+      libraryMemory: { auto: "sparkles", low: "gauge", minimum: "memory-stick", off: "database" },
     };
     const settingPreviewDescriptions = {
       bottomBarStyle: { "icon-color": "Tint the selected icon with a soft accent tile.", underline: "Mark the selected destination with an accent line.", pill: "Fill the selected destination with the accent color.", minimal: "Use the accent color without an icon tile." },
@@ -3056,6 +3710,7 @@
       syncScope: { needed: "Refresh titles missing details or past their refresh interval.", missing: "Refresh only titles with no saved detail record.", all: "Recheck every saved title from its saved metadata source." },
       metadataSyncWorkers: { 1: "Refresh one title at a time.", 2: "Refresh two titles at once.", 3: "Refresh three titles at once; this uses more network and device resources." },
       syncRequestDelay: { 0: "Start the next title as soon as a worker is free.", 250: "Pause briefly between starting titles.", 1000: "Wait one second before starting the next title.", 2000: "Wait two seconds before starting the next title." },
+      libraryMemory: { auto: "Compact detail records at 2,000 titles; cache up to 900 poster URLs.", low: "Start compacting at 500 titles; cache up to 400 poster URLs.", minimum: "Always compact detail records; cache up to 150 poster URLs.", off: "Keep full detail records expanded in memory. Applies after restarting ScreenMark." },
     };
     list.replaceChildren();
     options.forEach(option => {
@@ -3150,7 +3805,10 @@
     }
     const fileName = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
     const parts = [`{"app":${JSON.stringify(config.name)},"version":2,"exportedAt":${JSON.stringify(new Date().toISOString())},"index":${JSON.stringify(items.map(item => backend?.backupRefOf ? backend.backupRefOf(item) : { id: String(item.id), source: item.metadataSource || "manual", providerId: String(item.providerId || "") }))},"items":[`];
-    items.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify(backend?.backupItem ? backend.backupItem(item) : item)));
+    for (let offset = 0, first = true; offset < items.length; offset += 8) {
+      const batch = backend?.detailedItems ? await backend.detailedItems(items.slice(offset, offset + 8)) : items.slice(offset, offset + 8);
+      batch.forEach(item => { parts.push((first ? "" : ",") + JSON.stringify(backend?.backupItem ? backend.backupItem(item) : item)); first = false; });
+    }
     parts.push(`],"history":${JSON.stringify(history)},"preferences":${JSON.stringify(prefs)}}`);
     let blob = new Blob(parts, { type: "application/json" }), name = fileName;
     // Large libraries compress ~10x as gzip; the importer reads either form.
@@ -3171,7 +3829,12 @@
     if (!file) return;
     try {
       const encryptedImportIds = [];
-      const text = await readBackupText(file);
+      // Big JSON backups are read one title at a time from the stream instead of as one giant string; any problem falls back to the whole-file path.
+      let streamed = null;
+      if (/\.(json|gz)$/i.test(file.name) && !/\.sqdb/i.test(file.name) && file.size > 2 * 1024 * 1024 && window.SplitAppBackupStream) {
+        try { streamed = await window.SplitAppBackupStream.parseFile(file, { onProgress: count => toast(`Reading backup… ${count.toLocaleString()} titles`) }); } catch (_) { streamed = null; }
+      }
+      const text = streamed ? "" : await readBackupText(file);
       const parseCsv = value => {
         const rows = []; let row = [], cell = "", quoted = false;
         for (let i = 0; i < value.length; i++) {
@@ -3212,7 +3875,7 @@
         encryptedImportIds.push(...(incoming || []).filter(item => item?.id != null).map(item => String(item.id)));
         if (!incoming) throw new Error("The encrypted backup does not contain a library.");
       } else {
-        data = JSON.parse(text); incoming = Array.isArray(data) ? data : data.items;
+        data = streamed || JSON.parse(text); incoming = Array.isArray(data) ? data : data.items;
       }
       if (!Array.isArray(incoming)) throw new Error("No item list found in this file.");
       const now = Date.now(), idMap = new Map();
@@ -3498,11 +4161,11 @@
     if (eventClosest(event, "[data-log-filter-apply]")) {
       const from = $("[data-log-filter-from]")?.value || "", to = $("[data-log-filter-to]")?.value || "";
       if (settingsGroup === "history") { historyFrom = from; historyTo = to; } else { logFrom = from; logTo = to; }
-      closePopup($("#log-filter-dialog")); render(); return;
+      closePopup($("#log-filter-dialog"), { immediate: true }); render(); return;
     }
     if (eventClosest(event, "[data-log-filter-clear]")) {
       if (settingsGroup === "history") { historyFrom = ""; historyTo = ""; } else { logFrom = ""; logTo = ""; }
-      closePopup($("#log-filter-dialog")); render(); return;
+      closePopup($("#log-filter-dialog"), { immediate: true }); render(); return;
     }
     const logAction = eventClosest(event, "[data-log-action]");
     if (logAction?.dataset.logAction === "clear") { clearLogcat().then(() => { render(); toast("Logs cleared."); }).catch(error => { recordLog("error", `Log clear failed: ${error?.message || error}`); toast("Could not clear logs."); }); return; }
@@ -3553,9 +4216,11 @@
     if (coverImage) {
       const pickItem = itemById(coverImage.dataset.id), kind = coverImage.dataset.coverImage, chosen = pickItem && window.SplitAppPages.coverCandidates(pickItem, kind)[Number(coverImage.dataset.index)];
       if (chosen) {
-        const prefix = kind === "avatar" ? "profileAvatar" : "profileCover";
-        prefs[prefix + "Pinned"] = String(pickItem.id); prefs[prefix + "PinnedImage"] = chosen.value;
-        setPreference(prefix + "Source", "pinned"); window.SplitAppPages.browseCover(kind, ""); render(); toast(kind === "avatar" ? "Profile photo updated." : "Background updated.");
+        openProfileCrop({ kind, src: chosen.src || chosen.value, title: chosen.label || pickItem.title, onApply: result => {
+          const prefix = kind === "avatar" ? "profileAvatar" : "profileCover";
+          prefs[prefix + "Pinned"] = String(pickItem.id); prefs[prefix + "PinnedImage"] = result.image; prefs[prefix + "PinnedCrop"] = result.crop;
+          setPreference(prefix + "Source", "pinned"); window.SplitAppPages.browseCover(kind, ""); render(); toast(kind === "avatar" ? "Profile photo updated." : "Background updated.");
+        } });
       }
       return;
     }
@@ -3632,11 +4297,7 @@
     }
     if (eventClosest(event, "[data-setup-download-clear]")) { [...setupDownloads].forEach(([id, row]) => { if (row.status === "done") setupDownloads.delete(id); }); saveDownloads(); render(); return; }
     const retryDownload = eventClosest(event, "[data-setup-download-retry]");
-    if (retryDownload) {
-      const ids = retryDownload.dataset.setupDownloadRetry ? [retryDownload.dataset.setupDownloadRetry] : [...setupDownloads.values()].filter(row => row.status === "failed").map(row => row.id);
-      ids.forEach(id => { const entry = itemById(id); if (entry) { delete entry.fullDetailsAt; hydrating.delete(entry.id); syncImported([entry]); } });
-      render(); return;
-    }
+    if (retryDownload) { retryDownloadButton(retryDownload); return; }
     if (eventClosest(event, "[data-cast-load]")) { loadDetailCast(true); return; }
     const seasonPill = eventClosest(event, "[data-season-pill]");
     if (seasonPill) {
@@ -3764,17 +4425,8 @@
     if (input.matches("[data-profile-avatar-file]")) {
       const file = input.files?.[0]; input.value = "";
       if (!file || !file.type.startsWith("image/")) return;
-      const url = URL.createObjectURL(file), img = new Image();
-      img.onload = () => {
-        const size = 256, canvas = document.createElement("canvas"); canvas.width = canvas.height = size;
-        const scale = Math.max(size / img.width, size / img.height), w = img.width * scale, h = img.height * scale;
-        canvas.getContext("2d").drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        URL.revokeObjectURL(url);
-        try { localStorage.setItem("screenmark_profile_avatar", canvas.toDataURL("image/jpeg", .86)); } catch (_) { toast("Could not save photo."); }
-        render();
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); toast("Could not read that image."); };
-      img.src = url; return;
+      const url = URL.createObjectURL(file);
+      openProfileCrop({ kind: "avatar", src: url, title: file.name, onApply: result => { try { localStorage.setItem("screenmark_profile_avatar", result.image); render(); toast("Profile photo updated."); } catch (_) { toast("Could not save photo."); } } }); return;
     }
     if (input.matches("[data-pref]")) {
       const key = input.dataset.pref; let value = input.type === "checkbox" ? input.checked : input.value;
@@ -3916,7 +4568,7 @@
     timelineMonth = form.elements["timeline-month"].value;
     timelineYear = form.elements["timeline-year"].value;
     timelineFrom = form.elements["timeline-from"]?.value || ""; timelineTo = form.elements["timeline-to"]?.value || "";
-    closePopup($("#timeline-filter-dialog")); render();
+    closePopup($("#timeline-filter-dialog"), { immediate: true }); render();
   });
   $("#bottom-bar").addEventListener("click", event => {
     const button = eventClosest(event, ".nav-button[data-page]");
@@ -4105,7 +4757,7 @@
     if (sourceChanged && discoverQuery.trim()) { discoverSubmitted = ""; discoverCache = null; submitDiscover(); }
   }
   window.addEventListener("popstate", event => {
-    if (skipNextPop) { skipNextPop = false; event.stopImmediatePropagation(); return; }
+    if (skipNextPop) { skipNextPop = false; event.stopImmediatePropagation(); const callback = dialogPopCallback; dialogPopCallback = null; callback?.(); return; }
     const open = document.querySelector("dialog[open]");
     if (open && dialogEntries > 0) { dialogEntries -= 1; closingFromPop = true; closePopup(open); closingFromPop = false; event.stopImmediatePropagation(); }
   });
@@ -4135,6 +4787,8 @@
   window.addEventListener("beforeunload", () => { flushPersist(); saveMetadataSyncState(); window.SplitAppBackend?.flushJournals?.(); });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
+      clearTimeout(sessionUiTimer); saveSessionUi();
+      releaseHydratedDetails(0, true);
       flushPersist(); saveMetadataSyncState(); window.SplitAppBackend?.flushJournals?.();
       clearTimeout(metadataSyncRenderTimer); metadataSyncRenderTimer = 0;
       if (metadataSync) recordLog("info", "Metadata refresh continues while the app runtime is active; unfinished titles resume when the app reopens.");
@@ -4213,9 +4867,14 @@
       refreshSourceRegistry();
       normalizeNavigationPrefs();
       normalizeMotionPreferences();
-      if (!restored.fast || pendingStartupMigration || nativeHasLegacyScores || nativeHasLegacyPreferences || migratedMixItems || migrateNativeAccentDefault) await window.SplitAppBackend.save({ items, history, preferences: prefs });
+      if (!validMemoryModes.includes(prefs.libraryMemory)) prefs.libraryMemory = prefsDefaults.libraryMemory;
+      applyLibraryMemoryThreshold(prefs.libraryMemory);
+      if (restored.folderNeedsPersist || pendingStartupMigration || nativeHasLegacyScores || nativeHasLegacyPreferences || migratedMixItems || migrateNativeAccentDefault) await window.SplitAppBackend.save({ items, history, preferences: prefs });
       // Mutation revisions only matter while a restore is in flight; keep the map from growing for the whole session.
-      if (!fast && itemMutationRevisions.size > 2000) itemMutationRevisions.clear();
+      // Per-title revisions are only needed while startup restore overlaps local
+      // edits. Retaining them after the final restore makes memory scale with the
+      // number of titles edited during a long session.
+      if (!fast) itemMutationRevisions.clear();
       return true;
     } catch (error) {
       recordLog("error", `App data restore failed: ${error.message || error}`);
@@ -4263,11 +4922,26 @@
   }
   if (page === "details" && (detailItemId || detailPreview)) {
     const [refType, refId, refSlug] = (new URLSearchParams(initialHashQuery).get("ref") || "").split("/");
-    if (refType && refId) { detailStack.push(detailSnapshot()); if (detailStack.length > 50) detailStack.shift(); detailRef = { type: refType, id: refId, title: (refSlug || "").replace(/-/g, " ") }; loadDetailRef(); }
+    if (refType && refId) { pushDetailSnapshot(); detailRef = { type: refType, id: refId, title: (refSlug || "").replace(/-/g, " ") }; loadDetailRef(); }
     else loadDetails();
   }
-  const finishStartup = success => {
+  async function finishStartup(success) {
     libraryRestoreComplete = true;
+    if (success) {
+      try {
+        const launchState = await window.Capacitor?.Plugins?.LaunchState?.consumeResetHome?.();
+        if (launchState?.resetHome) {
+          page = "series-watchlist";
+          detailItemId = null; detailPreview = null; detailData = null; detailError = ""; detailStack = [];
+          detailRef = null; refData = null; settingsGroup = null; statsSubpage = "";
+          discoverSource = ""; discoverQuery = ""; discoverCache = null;
+          savedSessionUi = null; scrollMemory.clear();
+          lastVisibleScrollHash = "#series-watchlist"; lastVisibleScrollY = 0;
+          inAppNav = false;
+          try { window.history.replaceState({ page }, "", "#series-watchlist"); } catch (_) {}
+        }
+      } catch (_) { /* Keep the saved route if the native launch-state bridge is unavailable. */ }
+    }
     // Fresh install (empty library, wizard never finished): open Quick setup first.
     const folderBlocked = !success && nativeFolderStorage && storageFolderGate;
     if (!folderBlocked && success && favoritesNeedSetup(page)) { setupState.mode = page === "movie-favorites" ? "favorites-movie" : "favorites-series"; setupStarted = false; page = "setup"; historyPush(true); }
@@ -4283,9 +4957,17 @@
     if (storageFolderGate) storageFolderGate.hidden = true;
     applySeriesInactivityTransitions();
     applyPreferences(); render(); syncPageNavigation(); syncBackupSchedule();
+    if (savedSessionUi && Number.isFinite(Number(savedSessionUi.scrollY))) {
+      const targetY = Math.max(0, Number(savedSessionUi.scrollY) || 0);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        window.scrollTo({ top: targetY, behavior: "instant" });
+        if (typeof scheduleVirtualUpdate === "function") scheduleVirtualUpdate();
+      }));
+      savedSessionUi = null;
+    }
     if (page === "details" && detailItemId && !detailPreview) loadDetails();
     window.ScreenMarkSplash?.ready?.();
-  };
+  }
   let seriesInactivityTimer = 0;
   function scheduleSeriesInactivityCheck(latestActivity = latestEpisodeActivityByItem()) {
     clearTimeout(seriesInactivityTimer); seriesInactivityTimer = 0;
@@ -4316,20 +4998,47 @@
   restoreNativeData({ fast: true }).then(async fastResult => {
     if (fastResult === true) {
       finishStartup(true);
+      // Hydrate episode stills already stored on this device immediately;
+      // later full restore may start online cache-fill work if needed.
+      const openSeries = page === "details" && detailItemId ? itemById(detailItemId) : null;
+      if (openSeries?.category === "series" && openSeries.cachedDetails) {
+        if (openSeries.cachedDetails.compact) hydrateDetails(openSeries).then(() => hydrateEpisodeThumbnailCache(openSeries)).catch(() => {});
+        else hydrateEpisodeThumbnailCache(openSeries).catch(() => {});
+      }
+      // Upgrade old inline detail rows after the first paint, in small
+      // transactions so migration never competes with startup or scrolling.
+      const migrateStoredDetails = async () => {
+        if (!window.SplitAppIDB?.migrateDetailsBatch) return;
+        try {
+          for (;;) {
+            if (document.hidden) await new Promise(resolve => document.addEventListener("visibilitychange", resolve, { once: true }));
+            await yieldToUser();
+            if (window.SplitAppBackend?.isFolderSnapshotBusy?.()) {
+              await new Promise(resolve => setTimeout(resolve, 800));
+              continue;
+            }
+            const result = await window.SplitAppIDB.migrateDetailsBatch(25);
+            if (result.done) break;
+          }
+        } catch (error) { console.warn("Could not finish the resumable details-store migration", error); }
+      };
+      setTimeout(migrateStoredDetails, 3000);
       await new Promise(resolve => setTimeout(resolve, 2500));
       const libraryStamp = () => `${items.length}:${items.reduce((sum, item) => sum + (Number(item.updatedAt) || 0), 0)}`;
       const before = libraryStamp();
       const full = await restoreNativeData();
       if (full === false) finishStartup(false);
       else if (full) { applySeriesInactivityTransitions(); if (libraryStamp() !== before) { applyPreferences(); render(); } } // keep scroll position when nothing changed
-      if (full) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); }
+      if (full) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); resumeArtworkCaching(); }
       setTimeout(fillThumbCache, 1500);
+      setTimeout(shrinkThumbCacheOnce, 8000);
       return;
     }
     // null means "nothing stored yet" (a fresh install), which is a valid empty library, not a failure.
     const full = await restoreNativeData();
     finishStartup(full !== false);
-    if (full !== false) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); }
+    if (full !== false) { checkLibraryDrift(); metadataLibraryReady = true; maybeAutoMetadataSync(); restoreDownloads(); resumeArtworkCaching(); }
     setTimeout(fillThumbCache, 3000);
+    setTimeout(shrinkThumbCacheOnce, 8000);
   });
 })();

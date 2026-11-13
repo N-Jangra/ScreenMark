@@ -74,3 +74,59 @@ test("future episode detail and tracking checks are disabled", () => {
   assert.doesNotMatch(html, /data-episode-id="future-1"/);
   assert.doesNotMatch(html, /data-episode-toggle="future-1"/);
 });
+
+test("episodes after the last announced date are TBD (not watchable); undated gaps and fully undated series stay watchable", () => {
+  const source = fs.readFileSync(path.join(root, "frontend/components/library.js"), "utf8");
+  const window = {};
+  vm.runInContext(source, vm.createContext({ window, WeakMap, WeakSet, Date, Number, String, Math, Set, Array, Object }));
+  const day = offset => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
+  const mk = (n, airdate) => ({ id: `e${n}`, season: 1, number: n, airdate });
+  const eps = [...[1, 2, 3, 4, 5, 6].map(n => mk(n, day(-60 + n))), ...[7, 8, 9, 10].map(n => mk(n, day((n - 6) * 7))), mk(11, ""), mk(12, "")];
+  const item = { id: "s", cachedDetails: { sections: [{ kind: "episodes", items: eps }] }, watchedEpisodeIds: [] };
+  window.SplitAppLibrary.episodeInfo(item);
+  assert.deepEqual(eps.map(e => window.SplitAppLibrary.isUpcoming(e)), [false, false, false, false, false, false, true, true, true, true, true, true]);
+  assert.equal(window.SplitAppLibrary.isUnannounced(eps[10]), true);
+  assert.equal(window.SplitAppLibrary.isUnannounced(eps[8]), false, "a dated future episode is upcoming, not TBD");
+  const gap = [mk(1, day(-30)), mk(2, ""), mk(3, day(-20))];
+  window.SplitAppLibrary.annotateEpisodes(gap);
+  assert.deepEqual(gap.map(e => window.SplitAppLibrary.isUpcoming(e)), [false, false, false]);
+  const undated = [mk(1, ""), mk(2, ""), mk(3, "")];
+  window.SplitAppLibrary.annotateEpisodes(undated);
+  assert.deepEqual(undated.map(e => window.SplitAppLibrary.isUpcoming(e)), [false, false, false]);
+  const details = fs.readFileSync(path.join(root, "frontend/pages/details.js"), "utf8");
+  assert.match(details, /return "TBD"/);
+  assert.match(details, /annotateEpisodes\?\.\(rows\)/);
+});
+
+test("session poster cache is bounded, never revokes a poster that is on screen, and is O(1)", () => {
+  const app = fs.readFileSync(path.join(root, "frontend/app.js"), "utf8");
+  const body = app.slice(app.indexOf("const thumbKeyIndex = new Map()"), app.indexOf("async function cachedThumbUrls"));
+  assert.doesNotMatch(body.slice(body.indexOf("function rememberThumbUrl")), /for \(const \[[^\]]*\] of thumbUrlCache\)/, "no scan over the whole cache per insert");
+  const revoked = [], cache = new Map(), index = new Map();
+  const onScreen = new Set(["blob:0", "blob:1"]);
+  const remember = new Function("thumbUrlCache", "URL", "document", "prefs", `${body.slice(0, body.indexOf("window.addEventListener"))}; return rememberThumbUrl;`)(cache, { revokeObjectURL: url => revoked.push(url) }, { images: [...onScreen].map(src => ({ src })) }, { libraryMemory: "auto" });
+  // thousands of posters: the cache stays bounded and posters that are on screen are never released
+  for (let i = 0; i < 5000; i++) remember(`${i}:p`, "sig", `blob:${i}`);
+  assert.ok(cache.size <= 900, `cache bounded (${cache.size})`);
+  assert.ok(cache.has("0:p|sig") && cache.has("1:p|sig"), "on-screen posters survive eviction");
+  assert.ok(!revoked.includes("blob:0") && !revoked.includes("blob:1"));
+  assert.ok(revoked.length > 4000);
+  revoked.length = 0;
+  // two reads of the same poster finish together: the URL already handed out survives, the extra one is dropped
+  assert.equal(remember("4999:p", "sig", "blob:duplicate"), "blob:4999");
+  assert.deepEqual(revoked, ["blob:duplicate"]);
+  // the artwork itself changed (new signature): the old URL is released and replaced
+  assert.equal(remember("4999:p", "sig2", "blob:new"), "blob:new");
+  assert.ok(revoked.includes("blob:4999"));
+  assert.equal(cache.has("4999:p|sig"), false);
+  assert.match(app, /window\.addEventListener\("pagehide", \(\) => \{ for \(const url of thumbUrlCache\.values\(\)\) URL\.revokeObjectURL/);
+});
+
+test("large collections are windowed: the page draws a placeholder grid and only the rows near the screen", () => {
+  const profile = fs.readFileSync(path.join(root, "frontend/pages/profile.js"), "utf8"), app = fs.readFileSync(path.join(root, "frontend/app.js"), "utf8");
+  assert.match(profile, /VIRTUAL_MIN = 80/);
+  assert.match(profile, /data-virtual-grid="\$\{id\}" data-virtual-total=/);
+  assert.doesNotMatch(profile, /filtered\.slice\(0, visibleCount\)/, "the whole filtered list is windowed, not truncated");
+  assert.match(profile, /const more = ""/);
+  for (const piece of ["function mountVirtualGrids", "function updateVirtualGrid", "gridAutoRows", "paddingTop", "paddingBottom", "window.addEventListener(\"scroll\", scheduleVirtualUpdate", "mountVirtualGrids(content)"]) assert.ok(app.includes(piece), piece);
+});

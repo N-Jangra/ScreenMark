@@ -46,6 +46,7 @@
   <script defer src="backend/features/show-detail.js"></script>
   <script defer src="components/dates.js"></script>
   <script defer src="components/library.js"></script>
+  <script defer src="components/backup-stream.js"></script>
   <script defer src="pages/discover.js"></script>
   <script defer src="pages/details.js"></script>
   <script defer src="pages/add.js"></script>
@@ -120,6 +121,16 @@
   </div>
   <dialog id="setting-picker-dialog" class="choice-dialog" aria-labelledby="setting-picker-title"><div class="choice-dialog-grabber" aria-hidden="true"></div><header class="choice-dialog-header"><h2 id="setting-picker-title" data-setting-picker-title>Choose an option</h2><button type="button" class="choice-dialog-close" data-close-setting-picker aria-label="Close">×</button></header><div class="setting-picker-list" data-setting-picker-list></div></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <aside class="sync-overlay" id="sync-overlay" aria-live="polite" aria-atomic="true" hidden>
+    <button type="button" class="sync-overlay-open" data-sync-overlay-open>
+      <span class="sync-overlay-icon" aria-hidden="true"><span data-sync-overlay-percent>0%</span></span>
+      <span class="sync-overlay-copy"><strong data-sync-overlay-title>Syncing your library</strong><small data-sync-overlay-detail></small></span>
+      <span class="sync-overlay-chevron" aria-hidden="true"><i data-lucide="chevron-right"></i></span>
+      <span class="sync-overlay-progress" aria-hidden="true"><span data-sync-overlay-progress></span></span>
+    </button>
+    <button type="button" class="sync-overlay-retry" data-setup-download-retry data-sync-overlay-retry hidden>Retry</button>
+    <button type="button" class="sync-overlay-dismiss" data-sync-overlay-dismiss aria-label="Dismiss sync status">×</button>
+  </aside>
   <section class="storage-folder-gate" id="storage-folder-gate" hidden role="dialog" aria-modal="true" aria-labelledby="storage-folder-gate-title">
     <div class="storage-folder-gate-card">
       <span class="storage-folder-gate-icon" aria-hidden="true">▣</span>

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head><script>try{localStorage.setItem("splitapp_screenmark_v1_setup_done","1")}catch(_){}</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#08090c">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" href="favicon.ico?v=0.1.5" sizes="any">
+  <link rel="icon" href="favicon-48.png?v=0.1.5" type="image/png" sizes="48x48">
+  <link rel="icon" href="icons/screenmark.svg?v=0.1.5" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/app-icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>ScreenMark</title>
+  <style id="boot-splash-css">
+    #boot-splash{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:#08090c;color:#f5f7fa;font-family:system-ui,-apple-system,sans-serif;transition:opacity calc(.16s * var(--boot-speed,1)) ease calc(.08s * var(--boot-speed,1))}
+    html:has(#boot-splash){overflow:hidden}
+    #boot-splash.is-leaving{opacity:0;pointer-events:none}
+    #boot-splash .boot-inner{display:grid;place-items:center;width:100%;height:100%;opacity:1;transition:opacity calc(.12s * var(--boot-speed,1)) ease}
+    #boot-splash.is-leaving .boot-inner{opacity:0}
+    #boot-splash img{display:block;width:min(72vw,280px);height:auto;object-fit:contain}
+    @media(prefers-reduced-motion:reduce){#boot-splash,#boot-splash .boot-inner{transition:none}}
+  </style>
+  <link rel="preconnect" href="https://image.tmdb.org" crossorigin>
+  <link rel="preconnect" href="https://static.tvmaze.com" crossorigin>
+  <link rel="preconnect" href="https://s4.anilist.co" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles/cuemark-legacy.css">
+  <link rel="stylesheet" href="styles/details.css">
+  <link rel="stylesheet" href="styles/ios-ui.css">
+  <link rel="stylesheet" href="styles/ui-polish.css">
+  <link rel="stylesheet" href="styles/demo-pages.css">
+  <link rel="stylesheet" href="styles/motion.css">
+  <script>
+    if (location.protocol === "file:") {
+      document.write('<script src="../local-secrets.js"><\/script>');
+    }
+  </script>
+  <script defer src="lucide.min.js"></script>
+  <script defer src="app-config.js"></script>
+  <script defer src="backend/idb-store.js"></script>
+  <script defer src="backend/app.js"></script>
+  <script defer src="backend/features/metadata.js"></script>
+  <script defer src="backend/features/sources.js"></script>
+  <script defer src="backend/features/discover.js"></script>
+  <script defer src="backend/features/show-detail-controller.js"></script>
+  <script defer src="backend/features/show-detail.js"></script>
+  <script defer src="components/dates.js"></script>
+  <script defer src="components/library.js"></script>
+  <script defer src="components/backup-stream.js"></script>
+  <script defer src="pages/discover.js"></script>
+  <script defer src="pages/details.js"></script>
+  <script defer src="pages/add.js"></script>
+  <script defer src="pages/timeline.js"></script>
+  <script defer src="pages/statistics.js"></script>
+  <script defer src="pages/profile.js"></script>
+  <script defer src="pages/setup.js"></script>
+  <script defer src="pages/settings.js"></script>
+  <script defer src="pages/sync.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div id="boot-splash" role="status" aria-label="Loading ScreenMark"><div class="boot-inner"><img src="icons/episode-stack-intro.gif" alt=""></div></div>
+  <script>
+    (function () {
+      var mult = 1, reducedMotion = false, savedPrefs = {};
+      try {
+        savedPrefs = (JSON.parse(localStorage.getItem("splitapp_screenmark_v1") || "{}").preferences) || {};
+        reducedMotion = Boolean(savedPrefs.reduceMotion) || savedPrefs.animationSpeed === "off" || Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+        mult = reducedMotion ? 0 : ({ fast: .7, normal: 1, slow: 1.2 }[savedPrefs.animationSpeed] || 1);
+      } catch (e) {}
+      var splash = document.getElementById("boot-splash"), image = splash.querySelector("img");
+      if (reducedMotion) image.src = "icons/app-icon-512.png";
+      splash.style.setProperty("--boot-speed", String(mult));
+      // The intro is a single 53-frame (3.43 s) play. Leave a short beat
+      // after it completes before revealing app data.
+      var start = 0, introMs = reducedMotion ? 0 : 3430, readyGapMs = 500, readyRequested = false, done = false;
+      function finishWhenReady() {
+        if (!readyRequested || !start || done) return;
+        done = true;
+        setTimeout(function () {
+          splash.classList.add("is-leaving");
+          setTimeout(function () { splash.remove(); document.getElementById("boot-splash-css")?.remove(); }, 320 * mult + 40);
+        }, Math.max(0, introMs + readyGapMs - (Date.now() - start)));
+      }
+      function startIntro() {
+        if (start) return;
+        start = Date.now(); finishWhenReady();
+      }
+      function showStaticMark() {
+        if (image.src.endsWith("app-icon-512.png")) return;
+        image.src = "icons/app-icon-512.png";
+      }
+      if (image.complete && image.naturalWidth) startIntro();
+      else image.addEventListener("load", startIntro, { once: true });
+      image.addEventListener("error", function () { introMs = 0; showStaticMark(); startIntro(); }, { once: true });
+      window.ScreenMarkSplash = { ready: function () { readyRequested = true; finishWhenReady(); } };
+      setTimeout(function () {
+        if (!start) { introMs = 0; showStaticMark(); startIntro(); }
+      }, 6000);
+    })();
+  </script>
+  <div class="app-layout">
+    <aside class="app-sidebar" id="app-sidebar" aria-label="Sidebar navigation">
+      <a class="sidebar-brand" href="#discover" aria-label="ScreenMark Discover"><img src="icons/screenmark.svg" alt=""><span>ScreenMark</span></a>
+      <nav class="sidebar-nav" id="sidebar-nav" aria-label="Main navigation"></nav>
+    </aside>
+    <div class="app-shell">
+    <header class="topbar">
+      <div id="topbar-title-block"><p class="eyebrow" id="app-kicker"></p><h1 id="page-title">Shows Watchlist</h1></div>
+      <form class="discover-top-search" id="discover-top-search" data-discover-search-form role="search" hidden><span class="discover-search-field"><i class="discover-search-leading" data-lucide="search" aria-hidden="true"></i><input id="discover-query" name="query" type="search" placeholder="Search shows" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search shows or movies" enterkeyhint="search"><button class="discover-search-action discover-search-clear" type="button" data-discover-clear aria-label="Clear search" title="Clear search" hidden><i data-lucide="x" aria-hidden="true"></i></button></span><button class="discover-search-action discover-search-submit" type="submit" data-discover-submit aria-label="Search" title="Search"><i data-lucide="search" aria-hidden="true"></i><span>Search</span></button><button class="discover-view-toggle" type="button" data-discover-view-toggle aria-label="Switch view: grid, list or cards" title="Grid / list / cards"><i class="view-icon-grid" data-lucide="layout-grid" aria-hidden="true"></i><i class="view-icon-list" data-lucide="layout-list" aria-hidden="true"></i><i class="view-icon-cards" data-lucide="gallery-vertical" aria-hidden="true"></i></button></form>
+      <div class="ios-pills segmented header-type" id="header-type" role="group" aria-label="Filter by type" hidden></div>
+    </header>
+    <main id="page-content" tabindex="-1"></main>
+    <nav class="bottom-bar" id="bottom-bar" aria-label="Main navigation">
+      <button data-page="series-watchlist" class="nav-button"><span class="nav-icon"><i data-lucide="tv"></i></span><span>Shows</span></button>
+      <button data-page="movie-watchlist" class="nav-button"><span class="nav-icon"><i data-lucide="clapperboard"></i></span><span>Movies</span></button>
+      <button data-page="discover" class="nav-button"><span class="nav-icon">✧</span><span>Discover</span></button>
+      <button data-page="profile" class="nav-button"><span class="nav-icon">◉</span><span>Profile</span></button>
+    </nav>
+    </div>
+  </div>
+  <dialog id="setting-picker-dialog" class="choice-dialog" aria-labelledby="setting-picker-title"><div class="choice-dialog-grabber" aria-hidden="true"></div><header class="choice-dialog-header"><h2 id="setting-picker-title" data-setting-picker-title>Choose an option</h2><button type="button" class="choice-dialog-close" data-close-setting-picker aria-label="Close">×</button></header><div class="setting-picker-list" data-setting-picker-list></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <section class="storage-folder-gate" id="storage-folder-gate" hidden role="dialog" aria-modal="true" aria-labelledby="storage-folder-gate-title">
+    <div class="storage-folder-gate-card">
+      <span class="storage-folder-gate-icon" aria-hidden="true">▣</span>
+      <h2 id="storage-folder-gate-title">Choose ScreenMark storage</h2>
+      <p id="storage-folder-gate-message">Select a folder for your library database. ScreenMark will use it on future launches.</p>
+      <button type="button" class="button primary" id="storage-folder-gate-retry">Choose folder</button>
+    </div>
+  </section>
+<script>setTimeout(()=>{document.getElementById("boot-splash")?.remove()},1500)</script></body>
+</html>

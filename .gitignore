@@ -29,8 +29,12 @@ local-secrets.js
 .vscode/
 *.swp
 *.tmp
+tests/browser/__pycache__/
 
 # Release signing (never commit)
 android/keystore.properties
 *.jks
 *.keystore
+
+# Local worktree review reports
+report.md

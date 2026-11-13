@@ -461,9 +461,29 @@
     return { root, pickText, pickList };
   }
   const searcherFor = source => searchers[source.key] || (source.custom ? (query, category, settings) => searchCustom(source.config, query, category, settings) : null);
-  async function runSourceSearch(source, query, category, settings) {
+  async function runSourceSearchRaw(source, query, category, settings) {
     return await searcherFor(source)(query, category, settings);
   }
+  // Source health: a source that fails several times in a row is paused for a while (growing up to 15 minutes), so one dead or blocked
+  // catalog stops slowing every search. An empty result is not a failure. Testing a source from its settings page bypasses the pause.
+  const sourceHealth = new Map();
+  const HEALTH_FAILS = 3, HEALTH_BASE_MS = 120000, HEALTH_MAX_MS = 15 * 60000;
+  async function runSourceSearch(source, query, category, settings) {
+    const held = sourceHealth.get(source.key);
+    if (!settings?.bypassSourceHealth && held && held.fails >= HEALTH_FAILS && Date.now() < held.until) {
+      throw new Error(`${source.name || source.key} is paused after repeated failures; it retries in ${Math.ceil((held.until - Date.now()) / 1000)}s.`);
+    }
+    try {
+      const results = await runSourceSearchRaw(source, query, category, settings);
+      sourceHealth.set(source.key, { fails: 0, until: 0, lastOk: Date.now(), lastError: "" });
+      return results;
+    } catch (error) {
+      const fails = (held?.fails || 0) + 1;
+      sourceHealth.set(source.key, { fails, until: fails >= HEALTH_FAILS ? Date.now() + Math.min(HEALTH_MAX_MS, HEALTH_BASE_MS * 2 ** (fails - HEALTH_FAILS)) : 0, lastOk: held?.lastOk || 0, lastError: String(error?.message || error) });
+      throw error;
+    }
+  }
+  const sourceHealthOf = key => { const row = sourceHealth.get(key); return row ? { ...row, paused: row.fails >= HEALTH_FAILS && Date.now() < row.until } : { fails: 0, until: 0, lastOk: 0, lastError: "", paused: false }; };
   async function searchOne(query, category, settings = {}) {
     if (!String(query || "").trim()) return [];
     const sources = metadata.available(category, settings).filter(source => typeof searcherFor(source) === "function" && !(source.keyRequired && !settings.apiKeys?.[source.key]?.trim()));
@@ -625,5 +645,5 @@
   }
   // Keep only entry points consumed by the app and detail controller. Provider
   // helpers such as result/textFromHtml remain private implementation details.
-  window.SplitAppDiscovery = Object.freeze({ search, searchSource, trending, testCustomSource, loadCustomDetails, requestJson, sourceText, tmdbGet, tvdbGet, encode, imageUrl });
+  window.SplitAppDiscovery = Object.freeze({ sourceHealth: sourceHealthOf, search, searchSource, trending, testCustomSource, loadCustomDetails, requestJson, sourceText, tmdbGet, tvdbGet, encode, imageUrl });
 })();

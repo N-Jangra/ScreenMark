@@ -61,6 +61,7 @@ test("Jikan details load overview, rating, runtime, cast, characters, staff, pic
   const kinds = Object.fromEntries(d.sections.map(section => [section.title.replace(/ \(\d+\)$/, ""), section.items.length]));
   assert.equal(kinds.Cast, 1); assert.equal(kinds.Characters, 1); assert.equal(kinds.Staff, 1); assert.equal(kinds.Pictures, 1);
   assert.equal(kinds["Episode guide"], 2); assert.equal(kinds["Episode ratings"], 2); assert.equal(kinds["You might also like"], 1);
+  assert.ok(d.sections.find(section => section.kind === "episodes").items.every(row => row.image !== images.webp.large_image_url), "series cover must not be copied onto episode records");
   assert.equal(d.facts.episodeRatings.length, 2);
 });
 
