@@ -2000,3 +2000,13 @@ body[data-theme="light"] [data-page="settings"] .memory-settings-intro,body[data
   body[data-page="settings"] .memory-mode-heading { gap:6px; }
   body[data-page="settings"] .memory-mode-current { font-size:.53rem; }
 }
+
+/* Episode without its own still: use the series artwork as the backdrop (posters are enlarged and blurred so they still look like a backdrop). */
+body .demo-episode-page .ep-still.has-fallback { background-size: cover; background-position: center 30%; }
+body .demo-episode-page .ep-still.has-fallback.is-poster { background-position: center 25%; box-shadow: inset 0 0 0 100vmax rgba(0,0,0,.35); }
+
+/* Source options: breathing room between the cards and the fields, and labels inset from the card edge. */
+body[data-page="settings"] .source-options-page { gap: 12px; }
+body[data-page="settings"] .source-options-page > .settings-subpage-heading { margin-bottom: 11px; }
+body[data-page="settings"] .source-options-page .source-option { gap: 8px; padding: 6px 6px; }
+body[data-page="settings"] .source-options-page .source-enable-card { margin-bottom: 4px; }
