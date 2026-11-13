@@ -279,7 +279,8 @@
     const isMovie = item.category === "movie";
     const rawEpisodeArt = String(episode?.image || "");
     const episodeArt = /^(?:https?:\/\/|data:image\/)/i.test(rawEpisodeArt) && !/\.invalid(?:[/:?#]|$)/i.test(rawEpisodeArt) ? rawEpisodeArt : "";
-    const thumb = episodeArt || item.customCover || item.localThumbnailData || item.localPortraitData || item.image || "";
+    const localEpisodeArt = episode?.id != null && episodeArt ? item.localImageData?.[`cachedDetails.episodesById.${String(episode.id)}.image`] || "" : "";
+    const thumb = localEpisodeArt || episodeArt || item.customCover || item.localThumbnailData || item.localPortraitData || item.image || "";
     const landscape = item.localLandscapeData || item.localImageData?.["cachedDetails.landscapeImage"] || item.localImageData?.["cachedDetails.backgroundImage"] || item.backdrop || item.cachedDetails?.landscapeImage || item.cachedDetails?.backgroundImage || thumb;
     const season = Number(episode?.season) || 0, number = Number(episode?.number) || 0;
     const code = isMovie ? (item.year ? String(item.year).slice(0, 4) : "MOVIE") : `S${String(season).padStart(2, "0")} | E${String(number).padStart(2, "0")}`;

@@ -1443,6 +1443,7 @@
     if (page === "setup") { const grid = $("#setup-grid"); if (grid) routeRemoteImages(grid); }
     if (["series", "movies", "series-favorites", "movie-favorites"].includes(page)) trackPosterLoading(content);
     if (page === "details") { prioritizeVisibleDetailImages(content); if (detailTab === "cast" && !detailRef && content.querySelector("[data-cast-lazy]")) Promise.resolve().then(() => loadDetailCast()); }
+    if (page === "series-watchlist") hydrateWatchlistEpisodeThumbs(content);
     if (page === "series-watchlist" || page === "movie-watchlist") {
       // Above-the-fold thumbnails: fetch immediately at high priority instead of waiting for lazy-load heuristics.
       content.querySelectorAll(".watchlist-card img[loading=lazy]").forEach((img, index) => {
@@ -2510,6 +2511,36 @@
     }
     return hydrated;
   }
+  // Watchlist cards show each series' next episode still: restore the copies already saved on this device (the details page does the same).
+  const watchlistThumbRequested = new Set();
+  async function hydrateWatchlistEpisodeThumbs(root) {
+    const api = window.SplitAppIDB;
+    if (!api?.getThumbs) return;
+    const jobs = [];
+    $$(".watchlist-card[data-watchlist-root]", root).forEach(card => {
+      const item = itemById(card.dataset.watchlistRoot);
+      if (!item || item.category !== "series") return;
+      const episode = window.SplitAppLibrary.episodeInfo(item)?.next, image = String(episode?.image || "");
+      if (episode?.id == null || !/^https:\/\//i.test(image)) return;
+      const path = `cachedDetails.episodesById.${String(episode.id)}.image`;
+      if (item.localImageData?.[path]) return;
+      jobs.push({ item, path, image, key: episodeThumbCacheKey(item, episode) });
+    });
+    if (!jobs.length) return;
+    let blobs = [];
+    try { blobs = await api.getThumbs(jobs.map(job => [job.key, job.image])); } catch (_) { return; }
+    let changed = 0;
+    const found = new Set(blobs.filter(([, blob]) => blob).map(([key]) => key));
+    // Not saved on this device yet: download it in the background; the card refreshes when it lands.
+    jobs.filter(job => !found.has(job.key) && !watchlistThumbRequested.has(job.key)).forEach(job => { watchlistThumbRequested.add(job.key); queueEpisodeThumbnailCache(job.item); });
+    for (const [key, blob] of blobs) {
+      const job = jobs.find(row => row.key === key);
+      if (!job || !blob) continue;
+      const url = thumbUrlCache.get(`${key}|${job.image}`) || rememberThumbUrl(key, job.image, URL.createObjectURL(blob));
+      (job.item.localImageData ||= {})[job.path] = url; changed++;
+    }
+    if (changed && page === "series-watchlist") render();
+  }
   function queueArtworkThumbnailCache(item) {
     if (!item?.id) return;
     hydrateArtworkThumbnailCache(item).then(count => {
@@ -2527,11 +2558,11 @@
     // Show images already saved on this device immediately, including while
     // offline; then fill any missing rows in the background when connected.
     hydrateEpisodeThumbnailCache(item).then(count => {
-      if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
+      if (count && ((page === "details" && !detailRef && String(detailItemId) === String(item.id)) || page === "series-watchlist")) render();
     }).catch(() => {});
     if (!navigator.onLine || typeof cache !== "function") return;
     Promise.resolve(cache.call(window.SplitAppBackend, item)).then(() => hydrateEpisodeThumbnailCache(item)).then(count => {
-      if (count && page === "details" && !detailRef && String(detailItemId) === String(item.id)) render();
+      if (count && ((page === "details" && !detailRef && String(detailItemId) === String(item.id)) || page === "series-watchlist")) render();
     }).catch(() => {});
   }
   function applyLoadedMetadata(item, loaded, { cacheDetails = true, replaceFacts = false, queueArtwork = true } = {}) {
@@ -3455,6 +3486,7 @@
         else if (root) root.remove();
         animateWatchlistLayout(before);
         window.lucide?.createIcons({ root: document.querySelector("#page-content"), attrs: { "aria-hidden": "true" } });
+        if (item.category === "series") hydrateWatchlistEpisodeThumbs(document.querySelector("#page-content"));
       };
       const root = [...document.querySelectorAll("[data-watchlist-root]")].find(row => row.dataset.watchlistRoot === String(watchlistCard));
       replaceCard();
@@ -3773,7 +3805,10 @@
     }
     const fileName = `${config.key}-backup-${new Date().toISOString().slice(0, 10)}.json`;
     const parts = [`{"app":${JSON.stringify(config.name)},"version":2,"exportedAt":${JSON.stringify(new Date().toISOString())},"index":${JSON.stringify(items.map(item => backend?.backupRefOf ? backend.backupRefOf(item) : { id: String(item.id), source: item.metadataSource || "manual", providerId: String(item.providerId || "") }))},"items":[`];
-    items.forEach((item, index) => parts.push((index ? "," : "") + JSON.stringify(backend?.backupItem ? backend.backupItem(item) : item)));
+    for (let offset = 0, first = true; offset < items.length; offset += 8) {
+      const batch = backend?.detailedItems ? await backend.detailedItems(items.slice(offset, offset + 8)) : items.slice(offset, offset + 8);
+      batch.forEach(item => { parts.push((first ? "" : ",") + JSON.stringify(backend?.backupItem ? backend.backupItem(item) : item)); first = false; });
+    }
     parts.push(`],"history":${JSON.stringify(history)},"preferences":${JSON.stringify(prefs)}}`);
     let blob = new Blob(parts, { type: "application/json" }), name = fileName;
     // Large libraries compress ~10x as gzip; the importer reads either form.
