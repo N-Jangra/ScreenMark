@@ -42,6 +42,11 @@ Version code 106. Release notes cover the current 0.1.6 worktree changes.
 - Android collection, watchlist, detail, profile, and episode views resolve saved image blobs before remote URLs, so cached artwork remains visible offline after the temporary WebView cache is cleared.
 - **Clear all temporary cache** now preserves persistent IndexedDB artwork. **Clear image cache** remains the action that removes saved image blobs.
 - The device offline validation added coverage for artwork key retention, gallery lookup, background backfill, and temporary-cache semantics.
+- The background sync popup is now a small floating radial progress button (percentage ring that turns green when finished and red on failure) like SavePoint's; the Sync status page was rebuilt with a progress hero, Synced / Remaining / Failed cards, Retry and Clear finished actions, and a title list. The ring counts partly downloaded titles (episode stills done out of total) instead of showing 0% until a title finishes.
+- Watchlist cards restore each series' next-episode still from the device cache (and download it in the background when it is missing, then redraw the card), including right after marking an episode watched.
+- Episode detail pages with no still use the series backdrop (or the poster) behind the title; the episode list shows a quiet placeholder icon instead of an empty block.
+- Backups no longer include temporary `blob:` image links, and the browser JSON export loads each title's full details before writing it.
+- Source options pages drop the grey helper lines and get more even spacing under the header.
 
 ## [0.1.5] — 2026-11-09
 
