@@ -1660,7 +1660,16 @@
   // mode "ask": Android's "Save as" screen. mode "folder": straight into the chosen backup folder.
   // Backups name where each title came from (source + source id) so a restore can match it exactly instead of guessing by title.
   const backupRefOf = item => ({ id: String(item?.id ?? ""), source: String(item?.metadataSource || item?.source || "manual"), providerId: String(item?.providerId ?? ""), category: String(item?.category || ""), title: String(item?.title || ""), year: String(item?.year || "") });
-  const backupEntry = item => ({ ...portableItem(item, { includeImageData: true }), backupRef: backupRefOf(item) });
+  // blob: links point at this page's memory and are dead after a restore, so they never go into a backup (the real files are re-fetched).
+  const dropBlobUrls = value => {
+    if (typeof value === "string") return /^blob:/i.test(value) ? "" : value;
+    if (Array.isArray(value)) return value.map(dropBlobUrls);
+    if (!value || typeof value !== "object") return value;
+    const out = {};
+    for (const [key, child] of Object.entries(value)) { const next = dropBlobUrls(child); if (!(typeof child === "string" && next === "" && child !== "")) out[key] = next; }
+    return out;
+  };
+  const backupEntry = item => dropBlobUrls({ ...portableItem(item, { includeImageData: true }), backupRef: backupRefOf(item) });
   const backupIndex = items => items.map(item => backupRefOf(item));
   async function exportLibrary({ items, history, preferences }, { mode = "ask", onProgress } = {}) {
     const plugin = window.Capacitor?.Plugins?.BackupFolder;
@@ -1785,6 +1794,7 @@
     appendJournal, readJournal, clearJournal, flushJournals,
     exportLibrary,
     backupItem: backupEntry,
+    detailedItems,
     backupIndex,
     backupRefOf,
     exportTextFile,
