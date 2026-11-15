@@ -14,6 +14,7 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 - Badge images load with placeholders, and any badge can be shared as a rendered PNG card.
 - Statistics now includes breakdowns by genre and release decade.
 - Details supports a where-to-watch link and rewatch counter.
+- Shows and Movies watchlists have a fourth **Large** view (two big poster tiles per row with sharp corners, no title text, a thin progress bar and the check button); the view button cycles List, Posters, Cards, Large.
 
 ### Changed
 
@@ -22,6 +23,8 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 - Recently deleted shows each title as a card with its poster (with a loading placeholder), days left, and clear Restore and Delete forever buttons.
 - Completed Quick Setup picks now mark movie runtime or all known series episodes watched, including after metadata loads.
 - Profile photo and background pickers list only titles with matching artwork.
+- Watchlist poster tiles (Posters, Cards, Large) and the Profile poster rows now have sharp corners, matching the Shows and Movies library pages.
+- The watchlist Posters view is now poster-only like Large: no episode pill, title or episode count, just the poster, a thin progress bar and the check button.
 - Android metadata refresh uses up to three parallel workers on capable devices while retaining lower limits for constrained devices and networks.
 
 ### Fixed
