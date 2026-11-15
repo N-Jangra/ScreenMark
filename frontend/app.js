@@ -658,12 +658,16 @@
   }
   // Log and history rows are cached in memory and written once per burst: adding 30 titles used to parse and
   // re-serialize up to 2000 stored rows 30 times.
+  const normalizeLogRows = rows => (Array.isArray(rows) ? rows : []).map(entry => {
+    if (entry?.level !== "error" || !/^App data restore failed:\s*(?:user cancelled folder selection|no storage folder was selected)\.?$/i.test(String(entry.message || ""))) return entry;
+    return { ...entry, level: "warning", message: String(entry.message).replace(/^App data restore failed:/i, "App data restore cancelled:") };
+  });
   const rowStores = {};
   function rowStore(suffix, limit) {
     const key = `${storageKey}_${suffix}`;
     if (!rowStores[suffix]) {
       let rows = [];
-      try { const saved = JSON.parse(localStorage.getItem(key) || "[]"); if (Array.isArray(saved)) rows = saved; } catch (_) {}
+      try { const saved = JSON.parse(localStorage.getItem(key) || "[]"); if (Array.isArray(saved)) rows = suffix === "log" ? normalizeLogRows(saved) : saved; } catch (_) {}
       rowStores[suffix] = { key, rows, limit, timer: 0 };
     }
     return rowStores[suffix];
@@ -938,7 +942,7 @@
     if (needsLogs) logEntries = rowStore("log", 200).rows;
     if (settingsGroup === "logcat" && !logJournalLoaded) {
       logJournalLoaded = true;
-      window.SplitAppBackend?.readJournal?.("logcat").then(rows => { if (page === "settings" && settingsGroup === "logcat" && Array.isArray(rows)) { logEntries = rows; { const store = rowStore("log", 200); store.rows = rows.slice(0, 200); try { localStorage.setItem(store.key, JSON.stringify(store.rows)); } catch (_) {} } render(); } }).catch(() => {});
+      window.SplitAppBackend?.readJournal?.("logcat").then(rows => { if (page === "settings" && settingsGroup === "logcat" && Array.isArray(rows)) { logEntries = normalizeLogRows(rows); { const store = rowStore("log", 200); store.rows = logEntries.slice(0, 200); try { localStorage.setItem(store.key, JSON.stringify(store.rows)); } catch (_) {} } render(); } }).catch(() => {});
     }
     let changeLog = [];
     if (needsHistory) changeLog = rowStore("history", 2000).rows;
@@ -5318,9 +5322,11 @@
       if (!fast) itemMutationRevisions.clear();
       return true;
     } catch (error) {
-      recordLog("error", `App data restore failed: ${error.message || error}`);
+      const errorMessage = String(error?.message || error);
+      const cancelled = /user cancelled folder selection|no storage folder was selected/i.test(errorMessage);
+      recordLog(cancelled ? "warning" : "error", `App data restore ${cancelled ? "cancelled" : "failed"}: ${errorMessage}`);
       const message = $("#storage-folder-gate-message");
-      if (message) message.textContent = `${error.message || "ScreenMark could not open its database folder."} Select a storage folder to continue.`;
+      if (message) message.textContent = `${errorMessage || "ScreenMark could not open its database folder."} Select a storage folder to continue.`;
       return false;
     }
   }
