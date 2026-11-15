@@ -58,7 +58,11 @@ test("Discover input, keyboard action and Search button share the native form su
   assert.match(indexHtml, /<button[^>]*type="submit"[^>]*data-discover-submit/);
   assert.match(appSource, /\$\("#discover-top-search"\)\.addEventListener\("submit"/);
   assert.match(appSource, /event\.currentTarget\.querySelector\("#discover-query"\)\?\.blur\(\)/);
-  assert.match(appSource, /requestKey = `\$\{discoverQuery\.trim\(\)\.toLocaleLowerCase\(\)\}\\u0000\$\{category\}\\u0000\$\{discoverSource\}`/);
+  assert.match(appSource, /function discoverRequestKey\(\) \{\s*return `\$\{discoverQuery\.trim\(\)\.toLocaleLowerCase\(\)\}\\u0000\$\{currentDiscoverCategory\(\)\}\\u0000\$\{discoverSource\}`;/);
+  assert.match(appSource, /requestKey = discoverRequestKey\(\)/);
+  assert.match(appSource, /discoverSubmitted !== discoverRequestKey\(\)/);
+  assert.match(appSource, /\$\("#header-type"\)\.addEventListener\("click", event => \{[\s\S]*?discoverQuery = \$\("#discover-query"\)\?\.value \?\? discoverQuery;[\s\S]*?discoverCategoryChoice = button\.dataset\.discoverCategory/);
+  assert.doesNotMatch(appSource, /const discoverCategoryButton = eventClosest\(event, "\[data-discover-category\]"\)/);
   assert.doesNotMatch(appSource, /event\.target\.id === "discover-query" && \(event\.key === "Enter"/);
 });
 

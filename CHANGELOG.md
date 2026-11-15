@@ -2,6 +2,77 @@
 
 All notable changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [0.1.9] — 2026-11-15
+
+### Added
+
+- Profile shows player level and three recent badges linking to Achievements.
+- Added a Statuses page in Settings: add your own status options, rename or remove them, and hide built-in ones you do not use. Each custom status gets its own Profile shelf that opens a page listing those titles.
+- Added 30-day Recently deleted, Help & FAQ, and What's new after app updates.
+- Rebuilt Achievements into categories (Collection, Watching, Finishing, Favourites, Discovery, Artwork), each with a swipeable row and a **View all** grid that greys out locked badges. Every bronze, silver and gold rank is now its own achievement with its own page showing goal, rarity, XP and unlock date.
+- Added 32 achievements: Medal Kings (bronze, silver and gold sets), Badge Collector (1 to 200 unlocked), top-rank badge families, and level milestones. Levels and ranks use military-style insignia; the Levels page shows the next two levels and locks the rest.
+- Badge images load with placeholders, and any badge can be shared as a rendered PNG card.
+- Statistics now includes breakdowns by genre and release decade.
+- Details supports a where-to-watch link and rewatch counter.
+- Shows and Movies watchlists have a fourth **Large** view (two big poster tiles per row with sharp corners, no title text, a thin progress bar and the check button); the view button cycles List, Posters, Cards, Large.
+
+### Changed
+
+- Removed the Critic's corner and Seasoned critic achievements, since ScreenMark has no rating feature.
+- Quick Setup disables titles already in your library on every step, including search results and trending suggestions.
+- Recently deleted shows each title as a card with its poster (with a loading placeholder), days left, and clear Restore and Delete forever buttons.
+- Completed Quick Setup picks now mark movie runtime or all known series episodes watched, including after metadata loads.
+- Profile photo and background pickers list only titles with matching artwork.
+- Watchlist poster tiles (Posters, Cards, Large) and the Profile poster rows now have sharp corners, matching the Shows and Movies library pages.
+- The watchlist Posters view is now poster-only like Large: no episode pill, title or episode count, just the poster, a thin progress bar and the check button.
+- Android metadata refresh uses up to three parallel workers on capable devices while retaining lower limits for constrained devices and networks.
+
+### Fixed
+
+- Statuses page: Shows / Movies tabs sit at the top, and renamed custom statuses no longer lose their name when the page redraws.
+- Profile: the Achievements summary lines up with the other shelves.
+
+## [0.1.8] — 2026-11-14
+
+Version code 108. This release adds rank-based achievement medals, player levels, local SVG artwork, and unlock popups.
+
+### Added
+
+- Added multi-rank achievement medals, player levels, local SVG artwork, and unlock popups.
+- Rebuilt Achievements as Reddit-style sections: each achievement shows its bronze, silver and gold ranks with earned, in-progress and locked states, and opens a detail page with the full rank ladder.
+- Redrew all badge artwork as a consistent hexagon emblem set with metal ranks, and redesigned the player-level header.
+- Added 13 new achievements (Loved and finished, Series starter, Marathon run, Double life, Fresh premiere, Classic collector, Decade diver, Grand library, Show closer, Cinema buff, Completionist, Genre loyalist, Seasoned critic).
+
+### Changed
+
+- Added 5 more achievements (Favourite vault, Season collector, Long-runner fan, Endgame, Pilot hunter).
+- Added 5 more achievements (Genre cartographer, Cover wall, Time machine, Film library, Series library); the top player level is now above 40.
+- Added a Levels page (Achievements → Levels) listing every level, its name and the XP it needs, and a progress ring around the level hexagon.
+- Opening Achievements always starts at the top of the page.
+- Tidied the profile options menu (Reorder profile sections now matches the other rows) and the Reorder profile page, and refined the rank 3 badge artwork.
+
+### Removed
+
+- Removed the per-episode rating achievement; no achievement counts episode or season ratings.
+
+### Fixed
+
+- Replaced poster blob URLs remain tracked while visible and are reclaimed after detachment without scanning the full cache.
+- Native image-fallback URLs are evicted only after their images leave the DOM and are released when the app unloads.
+- When a poster cache misses offline, load the selected folder copy before falling back to an unavailable remote URL.
+
+## [0.1.7] — 2026-11-14
+
+Version code 107. This release includes achievements, cast-reference improvements, and fixes from the current worktree.
+
+### Fixed
+
+- Rotten Tomatoes cast cards preserve IMDb person links and portraits so cast pages can load available biography and credits.
+- Changing Discover between Shows and Movies preserves the visible search text and resubmits that query for the selected category.
+- Added offline achievements and linked badge detail pages from Profile.
+- New and existing Add entries have a bottom Cancel/Save action dock; edits also retain Delete.
+- Quick Setup, discovery search continuity, artwork handling, and prior-season completion behavior received fixes and regression coverage.
+
 ## [0.1.6] — 2026-11-10
 
 Version code 106. Release notes cover the current 0.1.6 worktree changes.

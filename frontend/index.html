@@ -52,7 +52,9 @@
   <script defer src="pages/add.js"></script>
   <script defer src="pages/timeline.js"></script>
   <script defer src="pages/statistics.js"></script>
+  <script defer src="pages/insights.js"></script>
   <script defer src="pages/profile.js"></script>
+  <script defer src="pages/achievements.js"></script>
   <script defer src="pages/setup.js"></script>
   <script defer src="pages/settings.js"></script>
   <script defer src="pages/sync.js"></script>
@@ -106,6 +108,7 @@
     </aside>
     <div class="app-shell">
     <header class="topbar">
+      <a class="icon-button topbar-back" id="topbar-back" href="#profile" aria-label="Back to profile" hidden><i data-lucide="chevron-left" aria-hidden="true"></i></a>
       <div id="topbar-title-block"><p class="eyebrow" id="app-kicker"></p><h1 id="page-title">Shows Watchlist</h1></div>
       <form class="discover-top-search" id="discover-top-search" data-discover-search-form role="search" hidden><span class="discover-search-field"><i class="discover-search-leading" data-lucide="search" aria-hidden="true"></i><input id="discover-query" name="query" type="search" placeholder="Search shows" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search shows or movies" enterkeyhint="search"><button class="discover-search-action discover-search-clear" type="button" data-discover-clear aria-label="Clear search" title="Clear search" hidden><i data-lucide="x" aria-hidden="true"></i></button></span><button class="discover-search-action discover-search-submit" type="submit" data-discover-submit aria-label="Search" title="Search"><i data-lucide="search" aria-hidden="true"></i><span>Search</span></button><button class="discover-view-toggle" type="button" data-discover-view-toggle aria-label="Switch view: grid, list or cards" title="Grid / list / cards"><i class="view-icon-grid" data-lucide="layout-grid" aria-hidden="true"></i><i class="view-icon-list" data-lucide="layout-list" aria-hidden="true"></i><i class="view-icon-cards" data-lucide="gallery-vertical" aria-hidden="true"></i></button></form>
       <div class="ios-pills segmented header-type" id="header-type" role="group" aria-label="Filter by type" hidden></div>

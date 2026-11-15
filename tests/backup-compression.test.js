@@ -49,6 +49,33 @@ test("native export streams a valid gzip file as base64 chunks and it restores t
   assert.deepEqual(calls.at(-1), ["closeDocument"]);
 });
 
+test("native export preserves a 1,000-title library and reports complete progress", async () => {
+  const { backend, chunks, calls } = loadBackend();
+  let state = 0x12345678;
+  const noise = () => Array.from({ length: 512 }, () => {
+    state ^= state << 13; state ^= state >>> 17; state ^= state << 5;
+    return String.fromCharCode(32 + ((state >>> 0) % 94));
+  }).join("");
+  const items = Array.from({ length: 1000 }, (_, index) => ({
+    id: `large-${index}`, title: `Large export ${index}`, category: index % 2 ? "movie" : "series",
+    status: "Watchlist", metadataSource: "tvmaze", providerId: String(index), review: noise()
+  }));
+  const progress = [];
+  const result = await backend.exportLibrary({ items, history: [], preferences: {} }, { onProgress: (done, total) => progress.push([done, total]) });
+  assert.match(result.fileName, /\.json\.gz$/);
+  assert.deepEqual(calls.at(-1), ["closeDocument"]);
+  assert.deepEqual(progress.at(-1), [1000, 1000]);
+  assert.ok(progress.length >= 126, "the exporter reports progress after each small item batch");
+  assert.ok(chunks.length > 1, "the native writer receives multiple compressed chunks instead of one oversized payload");
+  const bytes = Buffer.concat(chunks.map(chunk => Buffer.from(chunk.content, "base64")));
+  assert.equal(bytes[0], 0x1f); assert.equal(bytes[1], 0x8b);
+  const parsed = JSON.parse(await gunzipText(bytes));
+  assert.equal(parsed.items.length, 1000);
+  assert.equal(parsed.index.length, 1000);
+  assert.equal(parsed.items[999].title, "Large export 999");
+  assert.equal(parsed.items[500].review.length, 512);
+});
+
 test("silent folder backups use the same compressed writer and the native side picks a gzip mime type", () => {
   assert.match(backendSource, /plugin\.beginFolderExport\(\{ uri, fileName \}\)/);
   assert.match(backendSource, /const fileName = `\$\{app\.key\}-backup-\$\{new Date\(\)\.toISOString\(\)\.slice\(0, 10\)\}\.json\$\{gzip \? "\.gz" : ""\}`/);
@@ -98,6 +125,12 @@ test("importing gives clear messages for empty, truncated and corrupt compressed
 test("folder recovery reads compressed backup copies and the file picker accepts gzip", () => {
   assert.match(backendSource, /\\\.json\(\?:\\\\\.gz\)\?\$/);
   assert.match(backendSource, /plugin\.readBinaryFile\(\{ uri: file\.uri, maxBytes: 64 \* 1024 \* 1024 \}\)/);
-  assert.match(fs.readFileSync(path.join(__dirname, "../frontend/pages/settings.js"), "utf8"), /accept="\.json,\.gz,\.txt,\.csv,\.sqdb,application\/gzip,application\/x-gzip/);
+  const settingsSource = fs.readFileSync(path.join(__dirname, "../frontend/pages/settings.js"), "utf8");
+  assert.equal((settingsSource.match(/type="file" accept="\*\/\*" data-setting-action="import"/g) || []).length, 2, "Android must receive a generic picker MIME type so JSON, gzip, TXT and CSV selections reach the importer");
+  assert.match(appSource, /Library import started: \$\{file\.name/);
+  assert.match(appSource, /Library import failed: \$\{error\.message/);
+  assert.match(appSource, /if \(importPickerPending\) \{\s*\/\/ Android resumes the WebView before delivering the file-input change event\./);
+  assert.match(appSource, /if \(input\.matches\("\[data-setting-action=import\]"\)\) \{\s*const file = input\.files\?\.\[0\];\s*importPickerPending = false;/);
+  assert.doesNotMatch(appSource, /event\.target\.matches\?\.\("\[data-setting-action=import\]"\)/);
   assert.match(fs.readFileSync(path.join(__dirname, "../android/app/src/main/java/com/cuemark/screenmark/BackupFolderPlugin.java"), "utf8"), /Base64\.decode\(content, android\.util\.Base64\.DEFAULT\)/);
 });

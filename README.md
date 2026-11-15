@@ -1,10 +1,12 @@
-# ScreenMark 0.1.6
+# ScreenMark 0.1.9
 
 ScreenMark is a local-first tracker for **movies and TV series**. It runs as a browser single-page app and as a Capacitor Android app, with an iOS-style interface that adapts from phones to tablets and desktops, and keeps its library in an app-specific storage namespace.
 
 ## What it does
 
 - Track movies (minutes watched) and TV series (episodes watched) with status, rating, progress and total.
+- Profile shows player level and recent achievement badges; Achievements are grouped into categories with View all grids, one page per bronze/silver/gold achievement, Medal Kings, Badge Collector and level insignia, and badges can be shared as an image. Help/What's new are also available.
+- Add, rename or hide status options in Settings (custom statuses get their own Profile shelf), restore recently deleted titles for 30 days, link streaming destinations, and log rewatches.
 - Separate Shows and Movies libraries, Favorites pages, and Watchlist / Upcoming pages for each type; each library supports filters and progress indicators.
 - Watchlists offer List, Posters and Cards views; Posters uses portrait cover art with a season/episode badge and a colored watched-progress bar for series.
 - **Quick setup** walks a fresh install through four steps (series watched, series to watch, movies watched, movies to watch) and is available later from Profile ⋮ → Quick setup. Empty Favorites pages offer the same style of picker, listing titles from your local library.
@@ -16,8 +18,8 @@ ScreenMark is a local-first tracker for **movies and TV series**. It runs as a b
 - Appearance includes System, Light, Dark and AMOLED themes, a gold Default accent, and custom colors applied throughout Shows, Movies, Details, Watchlists, Profile, Discover, Settings and shared navigation. Title, movie, episode, cast and character details use theme-aware text, surfaces, artwork fades and controls. Bottom navigation offers icon highlight, underline, filled pill and minimal styles, three label layouts, and expanded per-page icon choices. Long Settings option sheets scroll within the screen and follow the selected motion style.
 - Source-backed Details pages: season and episode guides, cast and crew, ratings, screenshots and provider links; AniList anime episode guides use the AniList-to-MyAnimeList ID with Tenrai data and a title-matched TVmaze fallback. AniList, Jikan and Kitsu anime entries use ScreenMark detail layouts, including in-app episode, cast/person and character pages where the source provides those records. Shared Links pills appear on title, episode and cast/person pages. Episode tracking updates Timeline activity, blocks tracking before air time and shows when a series is caught up.
 - Detail navigation keeps a stack across related title, episode, cast, character and person pages. Back returns to the previous detail page before leaving for the original library or collection.
-- Details status choices follow episode progress: series offer Watchlist and Completed before tracking starts, then In Progress, On Hold, Dropped and Completed; movies offer Watchlist, Dropped and Completed. Unfinished series move to On Hold after 7 inactive days and Dropped after 30 days.
-- Profile includes an **Add manually** action beside the profile identity, an edit badge on the avatar that opens **Edit profile** (profile photo and background cover chosen from your library posters/backdrops, your own photo, or none, with random/newest picks and change schedules), plus separate series time, episodes watched, movie time and movies watched cards. Statistics provides a Shows / Movies overview with watch-time, progress, genre and collection charts, and a Timeline grouped by day.
+- Details status choices follow episode progress: series offer Watchlist and Completed before tracking starts, then In Progress, On Hold, Dropped and Completed; movies offer Watchlist, Dropped and Completed. Unfinished series move to On Hold after 7 inactive days and Dropped after 30 days. Details supports a where-to-watch URL and a rewatch counter.
+- Profile includes an **Add manually** action beside the profile identity, an edit badge on the avatar that opens **Edit profile** (profile photo and background cover chosen from your library posters/backdrops, your own photo, or none, with random/newest picks and change schedules), plus separate series time, episodes watched, movie time and movies watched cards. Statistics provides a Shows / Movies overview with watch-time, progress, genre, release decade and collection charts, and a Timeline grouped by day.
 - Lightweight motion controls for reduced motion and speed, Slide/Fade/Zoom page transitions, Slide/Fade/Scale sheets, Shrink/Fade tap feedback, Smooth/Snappy/Spring progress, and Shimmer/Soft pulse/Static loading placeholders. Detail skeletons reserve space only for missing sections; each section uses one subtle sweep, with the shimmer preference on by default for new installs. Motion Off, reduced-motion preferences and low-resource Android settings disable decorative animation and blur while keeping ordinary scrolling native.
 - Watchlist and Upcoming artwork uses shared remote/local image handling, including local thumbnail cache reads, image proxy routing and placeholder fallback across list, poster and card views.
 - Startup keeps the opening animation visible through its complete playback, waits until the initial library restore is ready, then holds the finished mark for 500 ms before revealing app data. Reduced-motion settings use the static mark.
@@ -49,7 +51,7 @@ The app lists them under **Settings → Metadata Sources**. TMDB, TheTVDB and OM
 - [Metadata sources](docs/metadata.md) — providers, API keys and fetching behavior.
 - [Storage](docs/storage.md) — library persistence, image cache and backups.
 - [Data schema](docs/db-schema.md) and [file layout](docs/file-schema.md).
-- [Release notes](CHANGELOG.md) — current 0.1.6 changes and earlier release notes.
+- [Release notes](CHANGELOG.md) — current 0.1.9 changes and earlier release notes.
 - The sibling Kotlin Android test app and its device load-test results are documented in `../ScreenMark-kot/KOTLIN-PORT-REPORT.md`.
 - [Frontend module map](frontend/README.md).
 

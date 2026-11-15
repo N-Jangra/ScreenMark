@@ -53,6 +53,7 @@ test("every frontend runtime file is linked or has an explicit worker/manifest r
     }
   }
   references.add("backend/data-worker.js");
+  for (const badge of fs.readdirSync(path.join(frontend, "icons/achievement-badges"))) references.add(`icons/achievement-badges/${badge}`);
   const intentionalDocs = new Set(["README.md", "index.html", "__app.html", "__seed.html"]);
   const orphaned = walk(frontend).filter(filename => !references.has(filename) && !intentionalDocs.has(filename));
   assert.deepEqual(orphaned, []);

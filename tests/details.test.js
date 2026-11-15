@@ -9,7 +9,7 @@ const vm = require("node:vm");
 const metadataSource = fs.readFileSync(path.join(__dirname, "../frontend/backend/features/metadata.js"), "utf8");
 const detailSource = fs.readFileSync(path.join(__dirname, "../frontend/backend/features/show-detail-controller.js"), "utf8");
 
-function makeDetailController({ requestJson: overrideRequestJson } = {}) {
+function makeDetailController({ requestJson: overrideRequestJson, rtHtml, imdbPersonHtml, tmdbFind, tmdbPerson } = {}) {
   const calls = [];
   const window = { SplitAppDiscovery: {
     encode: value => encodeURIComponent(String(value ?? "")),
@@ -23,10 +23,17 @@ function makeDetailController({ requestJson: overrideRequestJson } = {}) {
       if (target.hostname === "www.omdbapi.com") return { Title: "OMDb Film", imdbID: "tt0000303", Type: "movie", Year: "2021", Response: "True" };
       throw new Error(`Unexpected JSON detail endpoint ${target.href}`);
     },
-    tmdbGet: async (endpoint, settings) => { calls.push({ api: "tmdbGet", url: String(endpoint), settings }); return { id: 303, title: "TMDB Film", release_date: "2022-03-04", genres: [], credits: {}, images: {}, recommendations: {}, external_ids: {} }; },
+    tmdbGet: async (endpoint, settings) => {
+      calls.push({ api: "tmdbGet", url: String(endpoint), settings });
+      if (String(endpoint).startsWith("/find/")) return tmdbFind || { person_results: [] };
+      if (String(endpoint).startsWith("/person/")) return tmdbPerson || { id: 303, name: "TMDB Person", combined_credits: {}, images: {}, external_ids: {} };
+      return { id: 303, title: "TMDB Film", release_date: "2022-03-04", genres: [], credits: {}, images: {}, recommendations: {}, external_ids: {} };
+    },
     tvdbGet: async (endpoint, settings) => { calls.push({ api: "tvdbGet", url: String(endpoint), settings }); return { data: { id: 404, name: "TVDB Film", year: "2023", genres: [], remoteIds: [] } }; },
     sourceText: async (source, url, settings, extra) => {
       calls.push({ api: "sourceText", source, url: String(url), settings, extra });
+      if (source === "rottentomatoes" && rtHtml) return rtHtml;
+      if (source === "imdb" && imdbPersonHtml) return imdbPersonHtml;
       const title = source === "imdb" ? "IMDb Film" : "Rotten Tomatoes Film";
       const type = source === "imdb" ? "Movie" : "Movie";
       return `<script type="application/ld+json">${JSON.stringify({ "@type": type, name: title, datePublished: "2024-01-02", aggregateRating: { ratingValue: "8.1", ratingCount: "200" } })}</script>`;
@@ -58,6 +65,38 @@ test("each built-in metadata source dispatches its title detail endpoint and ret
     assert.equal(result.source, item.metadataSource, item.metadataSource);
     assert.ok(calls.some(endpoint), `expected ${item.metadataSource} detail endpoint call`);
   }
+});
+
+test("Rotten Tomatoes cast rows preserve IMDb person identity, portrait and source", async () => {
+  const person = { "@type": "Person", name: "Ralph Macchio", image: "https://images.example/ralph.jpg", sameAs: "https://www.imdb.com/name/nm0001498/" };
+  const { controller } = makeDetailController({ rtHtml: `<script type="application/ld+json">${JSON.stringify({ "@type": "Movie", name: "Karate Kid", actor: [person] })}</script>` });
+  const details = await controller.load({ metadataSource: "rottentomatoes", category: "movie", providerId: "/m/rt-film", title: "Karate Kid" });
+  const cast = details.sections.find(section => section.title === "Cast").items[0];
+  assert.equal(cast.title, "Ralph Macchio");
+  assert.equal(cast.image, "https://images.example/ralph.jpg");
+  assert.deepEqual(JSON.parse(JSON.stringify(cast.ref)), { type: "person", id: "imdb:nm0001498", title: "Ralph Macchio", extra: { source: "imdb" } });
+});
+
+test("IMDb cast profiles enrich successful JSON-LD with TMDB filmography when configured", async () => {
+  const imdbPerson = { "@type": "Person", name: "Ralph Macchio", image: "https://images.example/ralph-imdb.jpg", description: "IMDb biography", birthDate: "1961-11-04" };
+  const { controller, calls } = makeDetailController({
+    imdbPersonHtml: `<script type="application/ld+json">${JSON.stringify(imdbPerson)}</script>`,
+    tmdbFind: { person_results: [{ id: 12345 }] },
+    tmdbPerson: { id: 12345, name: "Ralph Macchio", profile_path: "/ralph-tmdb.jpg", biography: "TMDB biography", combined_credits: { cast: [
+      { id: 1, media_type: "movie", title: "The Karate Kid", release_date: "1984-06-22", poster_path: "/karate.jpg", character: "Daniel" },
+      { id: 2, media_type: "tv", name: "Cobra Kai", first_air_date: "2018-05-02", poster_path: "/cobra.jpg", character: "Daniel" }
+    ], crew: [] } }
+  });
+  const profile = await controller.loadRef({ type: "person", id: "imdb:nm0001498", title: "Ralph Macchio" }, { apiKeys: { tmdb: "configured" } });
+  assert.equal(profile.type, "person");
+  assert.equal(profile.source, "IMDb + TMDB");
+  assert.equal(profile.title, "Ralph Macchio");
+  assert.equal(profile.image, "https://images.example/ralph-imdb.jpg", "keep the portrait from the linked IMDb profile");
+  assert.equal(profile.description, "IMDb biography", "keep the linked profile biography when present");
+  assert.deepEqual(JSON.parse(JSON.stringify(profile.sections.map(section => section.title))), ["Series (1)", "Movies (1)"]);
+  assert.ok(profile.sections.flatMap(section => section.items).some(row => row.title === "Cobra Kai"));
+  assert.ok(profile.sections.flatMap(section => section.items).some(row => row.title === "The Karate Kid"));
+  assert.ok(calls.some(call => call.api === "tmdbGet" && call.url === "/find/nm0001498?external_source=imdb_id"));
 });
 
 test("library background sync keeps the TVmaze episode guide without loading recommendation pages", async () => {

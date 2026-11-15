@@ -107,15 +107,26 @@ test("episode detail hero uses the saved episode still and never the series cove
   vm.runInContext(metadataSource, contextVm, { filename: "metadata.js" });
   vm.runInContext(pageSource, contextVm, { filename: "details.js" });
   const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
-  const html = window.SplitAppPages.details({
+  const render = isLocalImageUrlAvailable => window.SplitAppPages.details({
     detailPreview: null, items: [item], detailItemId: item.id, detailReturnPage: "library", detailData: null, detailLoading: false,
     detailError: "", detailEditMode: false, category: () => null, labelCategory: value => value, prefs: {}, roles: {}, esc,
     detailRef: { type: "episode", id: "ep1", title: "Pilot", extra: { source: "kitsu" } }, detailRefOffset: 0,
     refData: { type: "episode", source: "Kitsu", title: "Pilot", subtitle: "Example series · Episode 1", image: "" },
-    refLoading: false, refError: "", refItem: item
+    refLoading: false, refError: "", refItem: item, isLocalImageUrlAvailable
   });
+  const html = render(() => true);
   assert.match(html, /data-detail-image-src="blob:saved-episode-still"/);
   assert.doesNotMatch(html, /data-detail-image-src="https:\/\/images\.example\/series-poster\.jpg"/);
+  const afterEviction = render(url => url !== "blob:saved-episode-still");
+  assert.match(afterEviction, /data-detail-image-src="https:\/\/images\.example\/pilot\.jpg"/, "a revoked cached URL falls back to the saved episode source URL");
+  assert.doesNotMatch(afterEviction, /data-detail-image-src="blob:saved-episode-still"/);
+});
+
+test("detail renderer can validate blob URLs against the active session artwork caches", () => {
+  const app = fs.readFileSync(path.join(__dirname, "../frontend/app.js"), "utf8");
+  const context = app.slice(app.indexOf("function pageContext()"), app.indexOf("// ---- Device artwork cache", app.indexOf("function pageContext()")));
+  assert.match(app, /function localImageUrlAvailable\(url\)[\s\S]*?thumbUrlCache\.values\(\)[\s\S]*?nativeImageFallbacks\.values\(\)/);
+  assert.match(context, /isLocalImageUrlAvailable: localImageUrlAvailable/);
 });
 
 function renderLoadedDetails(categoryKey, { castOnline, sections = [] }) {
@@ -150,4 +161,42 @@ test("detail tab panels let horizontal rails shrink so cast & crew scrolls sidew
   const css = fs.readFileSync(path.join(__dirname, "../frontend/styles/demo-pages.css"), "utf8");
   assert.match(css, /\.detail-tab-panel \{[^}]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(css, /\.detail-tab-panel > \*[^{]*\{[^}]*min-width: 0/);
+});
+
+test("season check confirmation offers earlier seasons only when marking a later season watched", () => {
+  const app = fs.readFileSync(path.join(__dirname, "../frontend/app.js"), "utf8");
+  const handler = app.slice(app.indexOf('const seasonButton = eventClosest(event, "[data-season-toggle]")'), app.indexOf('const caughtUp = eventClosest(event, "[data-watchlist-caught-up]")'));
+  assert.match(handler, /Number\(row\.season\) < season/);
+  assert.match(handler, /appConfirm\(`Also mark earlier seasons/);
+  assert.match(handler, /then\(includeEarlier => applySeason\(includeEarlier\)\)/);
+  assert.match(handler, /if \(!undo && earlierIds\.length\)/, "unchecking and first-season actions need no extra dialog");
+  assert.match(handler, /\[\.\.\.new Set\(\[\.\.\.earlierIds, \.\.\.ids\]\)\]/, "yes adds previous season episode IDs without duplicates");
+});
+
+test("ScreenMark JSON export completion reports title count and never game wording", () => {
+  const app = fs.readFileSync(path.join(__dirname, "../frontend/app.js"), "utf8");
+  const body = app.slice(app.indexOf("async function exportListBody"), app.indexOf("const fileName = ", app.indexOf("async function exportListBody")));
+  assert.match(body, /Exported \$\{items\.length\} titles\./);
+  assert.doesNotMatch(body, /Exported \$\{items\.length\} games/);
+});
+
+test("Discover category changes preserve the query and reload results for the selected type", () => {
+  const app = fs.readFileSync(path.join(__dirname, "../frontend/app.js"), "utf8");
+  assert.doesNotMatch(app, /const discoverCategoryButton = eventClosest\(event, "\[data-discover-category\]"\)/, "category changes should have a single click handler");
+  const typeHandler = app.slice(app.indexOf('$("#header-type").addEventListener("click"'), app.indexOf('$("#discover-top-search").addEventListener("submit"'));
+  assert.match(typeHandler, /discoverQuery = \$\("#discover-query"\)\?\.value \?\? discoverQuery/);
+  assert.match(typeHandler, /discoverSubmitted = ""/);
+  assert.doesNotMatch(typeHandler, /discoverQuery\s*=\s*""/);
+  const render = app.slice(app.indexOf("function render()"), app.indexOf("function renderPage"));
+  assert.match(render, /discoverCache\.category === currentDiscoverCategory\(\)/);
+  assert.match(render, /discoverQuery\.trim\(\) && discoverSubmitted !== discoverRequestKey\(\)\) submitDiscover\(\)/);
+  assert.match(app, /function discoverRequestKey\(\)[\s\S]*?discoverQuery\.trim\(\)\.toLocaleLowerCase\(\)[\s\S]*?currentDiscoverCategory\(\)[\s\S]*?discoverSource/);
+});
+
+test("ScreenMark exports use title terminology and serialize one export at a time", () => {
+  const app = fs.readFileSync(path.join(__dirname, "../frontend/app.js"), "utf8");
+  assert.match(app, /Exported \$\{items\.length\} titles\./);
+  assert.doesNotMatch(app, /Exported \$\{items\.length\} games\./);
+  assert.match(app, /async function exportNames\(format\)[\s\S]*?if \(exportRunning\)[\s\S]*?exportNamesBody/);
+  assert.match(app, /async function exportList\(options = \{\}\)[\s\S]*?if \(exportRunning\)[\s\S]*?exportListBody/);
 });
