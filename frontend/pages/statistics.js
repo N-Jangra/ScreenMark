@@ -81,6 +81,12 @@
       [...new Set(values.map(value => String(value?.name || value).trim()).filter(Boolean))].forEach(genre => byGenre.set(genre, (byGenre.get(genre) || 0) + 1));
     });
     const mediaGenreRows = [...byGenre.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5).map(([name, count]) => `<div class="stats-reference-table-row"><span>${esc(name)}</span><span>${count}</span></div>`).join("");
+    const byDecade = new Map();
+    mediaItems.forEach(item => {
+      const year = Number(String(item.year || item.releaseDate || item.cachedDetails?.year || item.cachedDetails?.releaseDate || "").match(/(?:19|20)\d{2}/)?.[0]) || 0;
+      if (year) { const decade = `${Math.floor(year / 10) * 10}s`; byDecade.set(decade, (byDecade.get(decade) || 0) + 1); }
+    });
+    const mediaDecadeRows = [...byDecade.entries()].sort((a, b) => Number(a[0].slice(0, -1)) - Number(b[0].slice(0, -1))).map(([name, count]) => `<div class="stats-reference-table-row"><span>${esc(name)}</span><span>${count}</span></div>`).join("");
     const networkCounts = new Map();
     mediaItems.forEach(item => {
       const field = item.cachedDetails?.fields?.find(entry => /(network|studio|production company|broadcaster|distributor)/i.test(String(entry.label || "")))?.value;
@@ -101,7 +107,8 @@
     const lowerChartRows = isShowStats ? mediaEpisodeRows : mediaMovieRows;
     const mediaTabs = `<nav class="stats-media-tabs" role="tablist" aria-label="Statistics category"><button type="button" role="tab" aria-selected="${isShowStats}" class="${isShowStats ? "active" : ""}" data-stats-category="series">Shows</button><button type="button" role="tab" aria-selected="${!isShowStats}" class="${!isShowStats ? "active" : ""}" data-stats-category="movie">Movies</button></nav>`;
     const statsBoard = `<div class="stats-reference-board"><article class="stats-reference-card stats-reference-chart-card"><h2>${topChartTitle}</h2>${chartMarkup(topChartRows, isShowStats ? "HOURS BY SHOW" : "HOURS BY MOVIE")}</article>${bigNumberCard(isShowStats ? "Total episodes watched" : "Movies watched", isShowStats ? mediaEpisodesWatched.toLocaleString() : mediaCompleted.toLocaleString(), isShowStats ? `Across ${mediaItems.length} ${mediaPlural}` : `Completed from ${mediaItems.length} saved ${mediaPlural}`)}<article class="stats-reference-card stats-reference-chart-card"><h2>${lowerChartTitle}</h2>${chartMarkup(lowerChartRows, isShowStats ? "EPISODES BY SHOW" : "HOURS BY MOVIE")}</article>${marathonPanel}${bigNumberCard(`Added ${mediaPlural}`, mediaItems.length.toLocaleString(), `${mediaWatching} currently ${isShowStats ? "watching" : "in progress"}`)}${tableCard(`Top ${isShowStats ? "show" : "movie"} genres`, "GENRE", isShowStats ? "SHOWS" : "MOVIES", mediaGenreRows, `Genre details for your ${mediaPlural} will appear here.`)}${tableCard(isShowStats ? "Top show networks" : "Top movie studios", isShowStats ? "NETWORK" : "STUDIO", isShowStats ? "SHOWS" : "MOVIES", networkRows, `Provider details for your ${mediaPlural} will appear here.`)}</div>`;
-    const overview = `<section class="stats-overview"><header class="detail-page-heading analytics-page-heading">${statisticsBack}<strong>Statistics</strong><span class="stats-subpage-badge">${total} ${nounPlural.toUpperCase()}</span></header>${mediaTabs}${statsBoard}</section>`;
+    const statsTaste = tableCard(`${isShowStats ? "Shows" : "Movies"} by decade`, "DECADE", "TITLES", mediaDecadeRows, `Release dates for your ${mediaPlural} will appear here.`);
+    const overview = `<section class="stats-overview"><header class="detail-page-heading analytics-page-heading">${statisticsBack}<strong>Statistics</strong><span class="stats-subpage-badge">${total} ${nounPlural.toUpperCase()}</span></header>${mediaTabs}${statsBoard}${statsTaste}</section>`;
     const pages = {
       activity: { title: "Activity", subtitle: "See how your library has changed over the selected period.", badge: `${activityTotal} UPDATES`, body: `<div class="stats-activity-toolbar">${rangeSwitch}<span>${month ? "Last 30 days" : "Last 7 days"}</span></div>${activityPanel}` }
     };

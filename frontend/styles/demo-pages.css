@@ -1772,6 +1772,7 @@ body[data-page="setup"] .app-shell { max-width: 620px; padding: 0 0 calc(92px + 
 .setup-poster { display: block; aspect-ratio: 2 / 3; overflow: hidden; border: 2px solid transparent; border-radius: 12px; background: var(--d-surface); }
 .setup-poster img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .setup-tile-title { overflow: hidden; font: 600 11.5px/1.25 var(--d-font); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
+.setup-library-indicator { position: absolute; top: 7px; left: 7px; z-index: 1; max-width: calc(100% - 42px); overflow: hidden; padding: 4px 7px; border: 1px solid #ffffff66; border-radius: 999px; background: #10131ddd; color: #fff; font: 700 10px/1.2 var(--d-font); text-overflow: ellipsis; white-space: nowrap; }
 .setup-mark { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 26px; height: 26px; border: 2px solid var(--d-gold); border-radius: 8px; background: #000a; color: var(--d-gold); font-size: 18px; line-height: 1; }
 .setup-mark::before { content: "+"; font-weight: 700; }
 .setup-tile.selected .setup-poster { border-color: var(--d-gold); }
@@ -2010,3 +2011,32 @@ body[data-page="settings"] .source-options-page { gap: 12px; }
 body[data-page="settings"] .source-options-page > .settings-subpage-heading { margin-bottom: 11px; }
 body[data-page="settings"] .source-options-page .source-option { gap: 8px; padding: 6px 6px; }
 body[data-page="settings"] .source-options-page .source-enable-card { margin-bottom: 4px; }
+
+/* Profile menu: "Reorder profile sections" is a normal row like the others */
+html body .profile-options-dialog nav > button[data-profile-reorder-open] { box-sizing:border-box; display:flex; align-items:center; justify-content:flex-start; gap:16px; width:100%; min-height:54px; margin:0; padding:0 20px; appearance:none; -webkit-appearance:none; border:0; border-bottom:1px solid var(--d-line2); border-radius:0; background:transparent; box-shadow:none; color:var(--d-t1); font:600 15px var(--d-font,inherit); text-align:left; cursor:pointer; }
+html body .profile-options-dialog nav > button[data-profile-reorder-open] svg { flex:none; width:20px; height:20px; color:var(--d-t1); }
+html body .profile-options-dialog nav > button[data-profile-reorder-open]:hover, html body .profile-options-dialog nav > button[data-profile-reorder-open]:focus-visible { background:var(--d-elev); outline:none; }
+html body .profile-options-dialog nav > button[data-profile-reorder-open]:hover svg { color:var(--d-gold); }
+html body .profile-options-dialog nav > button[data-profile-reorder-open]:active { transform:none; background:var(--d-elev); }
+
+/* Reorder page: one grouped list with dividers, clear Done action */
+html body .profile-reorder-dialog { background:var(--d-bg,var(--d-surface)); }
+html body .profile-reorder-dialog > header { align-items:center; padding:0 2px 12px; border-bottom:0; background:transparent; }
+html body .profile-reorder-dialog > header strong { font-size:1.35rem; font-weight:800; letter-spacing:-.02em; }
+html body .profile-reorder-dialog > header button { min-width:72px; height:38px; border:0; border-radius:999px; background:var(--d-gold); color:var(--d-gold-fg,#1a1405); font-size:14px; font-weight:800; }
+html body .profile-reorder-dialog > p { margin:0 2px 14px; color:var(--d-t2); font-size:13.5px; line-height:1.4; }
+html body .profile-reorder-dialog nav { gap:0; border:1px solid var(--d-line2); border-radius:20px; overflow:hidden; background:var(--d-surface); }
+html body .profile-reorder-row { grid-template-columns:28px minmax(0,1fr) auto; gap:14px; min-height:64px; padding:8px 12px 8px 16px; border:0; border-bottom:1px solid var(--d-line2); border-radius:0; background:transparent; }
+html body .profile-reorder-row:last-child { border-bottom:0; }
+html body .profile-reorder-count { width:26px; height:26px; border-radius:50%; background:color-mix(in srgb,var(--d-gold) 18%,transparent); color:var(--d-gold); font-size:12px; font-weight:800; }
+html body .profile-reorder-row strong { font-size:15px; font-weight:650; }
+html body .profile-reorder-arrows { gap:8px; }
+html body .profile-reorder-arrows button { width:38px; height:38px; border:1px solid var(--d-line2); border-radius:12px; background:var(--d-elev); color:var(--d-t1); transition:transform .12s ease,background .12s ease; }
+html body .profile-reorder-arrows button:active:not(:disabled) { transform:scale(.92); background:color-mix(in srgb,var(--d-gold) 20%,var(--d-elev)); }
+html body .profile-reorder-arrows button:disabled { opacity:.28; }
+
+/* Titles already in the library cannot be picked */
+.setup-tile.is-in-library { cursor:not-allowed; pointer-events:none; }
+.setup-tile.is-in-library .setup-poster { filter:grayscale(1) brightness(.55); opacity:.8; }
+.setup-tile.is-in-library .setup-tile-title { opacity:.55; }
+.setup-tile.is-in-library .setup-mark { display:none; }

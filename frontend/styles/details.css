@@ -69,6 +69,7 @@
 .detail-progress-card strong { color: var(--legacy-text); font-size: .9rem; }
 .detail-progress-card .progress-line { height: 7px; background: color-mix(in srgb, var(--line) 78%, transparent); }
 .detail-progress-card .progress-line span { background: linear-gradient(90deg, var(--accent), #38bdf8); }
+.detail-rewatch-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:12px; color:var(--muted); font-size:.82rem; }
 .detail-progress-card small { display: block; margin-top: 7px; }
 
 

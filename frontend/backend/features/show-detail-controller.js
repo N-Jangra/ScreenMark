@@ -695,7 +695,7 @@
       const ld = ldJson(page); if (!ld) throw new Error("Rotten Tomatoes did not return readable title details. Open the source below, complete any prompt, then ScreenMark will retry.");
       const score = name => rtScore(page, name) || "";
       const critics = score("tomatometer") || ld.aggregateRating?.ratingValue || "", audience = score("audience");
-      const person = rows => (Array.isArray(rows) ? rows : rows ? [rows] : []).map(entry => { const url = String(entry.sameAs || ""), personId = url.match(/\/name\/(nm\d+)/i)?.[1]; return { title: entry.name, url, ref: personId ? { type: "person", id: `imdb:${personId}`, title: entry.name } : null }; }).filter(entry => entry.title);
+      const person = rows => (Array.isArray(rows) ? rows : rows ? [rows] : []).map(entry => { const url = String(entry.sameAs || ""), personId = url.match(/\/name\/(nm\d+)/i)?.[1]; return { title: entry.name, image: rtImage(entry.image), url, ref: personId ? { type: "person", id: `imdb:${personId}`, title: entry.name, extra: { source: "imdb" } } : null }; }).filter(entry => entry.title);
       const isSeries = item.category === "series" || /TVSeries/i.test([].concat(ld["@type"] || []).join(" ")) || path.startsWith("/tv/");
       const seriesName = ld.name || item.title;
       const declaredSeasons = [].concat(ld.containsSeason || []).filter(Boolean);
@@ -918,7 +918,20 @@
         const person = ldJsonType(html, "Person") || ldJson(html);
         if (!person) return viaTmdb("IMDb did not return readable profile details.");
         const facts = [["Job", person.jobTitle], ["Known for", person.knowsAbout], ["Born", person.birthDate], ["Birthplace", person.birthPlace?.name || person.birthPlace], ["Also known as", person.alternateName]].filter(([, value]) => value);
-        return { type: "person", source: "IMDb", title: person.name || ref.title, image: rtImage(person.image), url: `https://www.imdb.com/name/${personId}/`, description: clean(person.description || ""), facts, sections: [] };
+        const profile = { type: "person", source: "IMDb", title: person.name || ref.title, image: rtImage(person.image), url: `https://www.imdb.com/name/${personId}/`, description: clean(person.description || ""), facts, sections: [] };
+        // IMDb often exposes only a short Person JSON-LD record. When a TMDB key is configured,
+        // enrich that otherwise-empty cast page with the same external-ID mapping used on failure.
+        if (settings.apiKeys?.tmdb?.trim()) {
+          try {
+            const found = await controller.tmdbGet(`/find/${encode(personId)}?external_source=imdb_id`, settings);
+            const match = found.person_results?.[0];
+            if (match?.id) {
+              const credits = await loadRef({ ...ref, id: `tmdb:${match.id}`, title: profile.title }, settings);
+              return { ...credits, source: "IMDb + TMDB", title: profile.title, image: profile.image || credits.image, url: profile.url, description: profile.description || credits.description, facts: [...profile.facts, ...(credits.facts || [])] };
+            }
+          } catch (_) {}
+        }
+        return profile;
       }
       if (/^tmdb:\d+$/i.test(String(ref.id))) {
         const personId = String(ref.id).split(":")[1];
