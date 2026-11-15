@@ -1,4 +1,4 @@
-# ScreenMark 0.1.9
+# ScreenMark 0.1.11
 
 ScreenMark is a local-first tracker for **movies and TV series**. It runs as a browser single-page app and as a Capacitor Android app, with an iOS-style interface that adapts from phones to tablets and desktops, and keeps its library in an app-specific storage namespace.
 
@@ -10,7 +10,8 @@ ScreenMark is a local-first tracker for **movies and TV series**. It runs as a b
 - Separate Shows and Movies libraries, Favorites pages, and Watchlist / Upcoming pages for each type; each library supports filters and progress indicators.
 - Watchlists offer List, Posters and Cards views; Posters uses portrait cover art with a season/episode badge and a colored watched-progress bar for series.
 - **Quick setup** walks a fresh install through four steps (series watched, series to watch, movies watched, movies to watch) and is available later from Profile ⋮ → Quick setup. Empty Favorites pages offer the same style of picker, listing titles from your local library.
-- Newly added source-linked titles sync their full details in the background. Series episode guides and, with **Save all images**, original episode stills are saved without opening each season; episode pages resolve saved stills from IndexedDB after the temporary WebView cache is cleared, so they remain available offline. A persistent sync overlay shows the active title and episode-artwork progress, opens Sync status, and resumes unfinished work while the app is open and online.
+- Newly added source-linked titles sync their full details in the background. Series episode guides and, with **Save all images**, original episode stills are saved without opening each season; episode pages resolve saved stills from IndexedDB after the temporary WebView cache is cleared, so they remain available offline. A persistent sync overlay shows the active title and episode-artwork progress and opens Sync status.
+- **Sync status** (`#sync`) separates new-title detail downloads from saved-metadata refreshes. Both queues can be paused or resumed. Unfinished download jobs stay paused after an app restart; Clear sync removes their history and stops queued work. Failed rows offer icon-only Retry buttons. The empty state uses the same layout as SavePoint.
 - Discover offers Grid, List and Cards views (Cards prefer landscape backdrops, with posters as fallback) and shows suggestion shelves from TVmaze, TMDB, AniList, MyAnimeList (Jikan) and Kitsu, labelled with their sources.
 - Discover movies and series across TVmaze, AniList, MyAnimeList (Jikan), Kitsu, TMDB, TheTVDB, IMDb, Rotten Tomatoes and OMDb. Search results are grouped by source, with a dedicated View all results page for each provider.
 - Without a search query, Discover shows suggestion shelves without repeating a catalog title across categories.
@@ -26,7 +27,7 @@ ScreenMark is a local-first tracker for **movies and TV series**. It runs as a b
 - Favorites (♥) from Details or the ⋮ menu, with dedicated favorites pages.
 - Metadata sources stay separate. Titles are identified by category, source, normalized name and year, so same-name entries from different catalogs can coexist.
 - **Custom sources:** add any JSON search API on a guided page.
-- Export (Android Save as screen, streamed and gzip-compressed as `.json.gz`) and import a JSON, `.json.gz`, encrypted `.sqdb`, CSV or TXT backup; restore re-links titles by source and id and syncs them (progress on the Sync status page); the library lives in IndexedDB with a device cover cache, plus Android encrypted storage, an optional folder database and daily backups. Folder title mirrors are grouped by media type and metadata source.
+- Export (Android Save As screen, streamed and gzip-compressed as `.json.gz`) and import JSON, `.json.gz`, password-protected `.sqx`, encrypted `.sqdb`, CSV or TXT. `.sqx` contains the complete library, source links, saved details, preferences, history, and cached artwork from IndexedDB and the selected folder. It uses chunked AES-GCM encryption with a password-derived key; share it directly from ScreenMark or from a file manager, then import it on the receiving device. Android shows progress and completion notifications when notifications are allowed. IndexedDB is WebView origin storage, not a regular file under `Android/data`; startup makes a best-effort persistent-storage request (the tested Android WebView denied it). Android also keeps Keystore-encrypted recovery records internally and atomically mirrors the full title list under `/sdcard/Android/data/<package>/files/CueMark/ScreenMark/` in small background batches. If IndexedDB and the internal records are empty, titles and metadata can be recovered from this mirror. It survives cache clearing, but app-data clearing or uninstall removes it; export `.sqx` for cross-device migration or uninstall recovery. Artwork remains in IndexedDB and, when configured, the selected folder.
 
 ## Metadata providers
 
@@ -51,7 +52,7 @@ The app lists them under **Settings → Metadata Sources**. TMDB, TheTVDB and OM
 - [Metadata sources](docs/metadata.md) — providers, API keys and fetching behavior.
 - [Storage](docs/storage.md) — library persistence, image cache and backups.
 - [Data schema](docs/db-schema.md) and [file layout](docs/file-schema.md).
-- [Release notes](CHANGELOG.md) — current 0.1.9 changes and earlier release notes.
+- [Release notes](CHANGELOG.md) — current 0.1.11 changes and earlier release notes.
 - The sibling Kotlin Android test app and its device load-test results are documented in `../ScreenMark-kot/KOTLIN-PORT-REPORT.md`.
 - [Frontend module map](frontend/README.md).
 

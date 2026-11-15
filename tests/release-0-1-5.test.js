@@ -33,6 +33,15 @@ test("sync page lists Quick setup downloads with synced / not synced counts and 
   assert.doesNotMatch(window.SplitAppPages.sync({ esc, itemById: () => null, setupDownloads: [] }), /Quick setup/);
 });
 
+test("Android encrypted transfer has a direct chunked share-sheet action", () => {
+  const app = read("frontend/app.js"), settings = read("frontend/pages/settings.js"), backend = read("frontend/backend/app.js");
+  assert.match(settings, /Share encrypted transfer/);
+  assert.match(app, /export-share/);
+  assert.match(backend, /mode === "share"/);
+  assert.match(backend, /appendFileChunk/);
+  assert.match(backend, /shareChunkedFile/);
+});
+
 test("sync overlay and status page use the same weighted percentage with two active workers and a failure", () => {
   const app = read("frontend/app.js"), start = app.indexOf("  function setupDownloadProgress("), end = app.indexOf("\n  function updateSyncOverlay", start);
   assert.ok(start >= 0 && end > start, "shared sync progress calculator exists");
@@ -215,12 +224,12 @@ test("cast and crew is never persisted and full-list expansion has styles", () =
   assert.match(css, /\.demo-cast-section \.detail-carousel\.expanded \{[^}]*display: grid !important/);
 });
 
-test("0.1.9 version and changelog are consistent", () => {
+test("0.1.11 version and changelog are consistent", () => {
   const version = JSON.parse(read("package.json")).version;
-  assert.equal(version, "0.1.9");
-  assert.match(read("frontend/app-config.js"), /"version": "0\.1\.9"/);
-  assert.match(read("android/app/build.gradle"), /versionName "0\.1\.9"/);
-  assert.match(read("CHANGELOG.md"), /## \[0\.1\.9\]/);
+  assert.equal(version, "0.1.11");
+  assert.match(read("frontend/app-config.js"), /"version": "0\.1\.11"/);
+  assert.match(read("android/app/build.gradle"), /versionName "0\.1\.11"/);
+  assert.match(read("CHANGELOG.md"), /## \[0\.1\.11\]/);
 });
 
 test("Quick setup shows a wait message while sources load", () => {
