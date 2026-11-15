@@ -177,6 +177,8 @@ body:not([data-page="add"]) #page-content { padding-bottom:8px; }
 .sync-entry-done .sync-entry-state { background:color-mix(in srgb,#16a34a 10%,var(--surface)); color:#15803d; }
 .sync-entry-heading .button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-width:68px; min-height:36px; padding:0 10px; border:1px solid var(--line); border-radius:11px; background:var(--surface-2); color:var(--accent-text,var(--accent)); font-size:.76rem; font-weight:700; }
 .sync-entry-heading .button svg { width:15px; height:15px; }
+.sync-entry-heading .sync-retry-icon, .sync-list .sync-retry-icon { display:inline-grid; place-items:center; width:36px; min-width:36px; min-height:36px; padding:0; }
+.sync-entry-heading .sync-retry-icon svg, .sync-list .sync-retry-icon svg { width:17px; height:17px; }
 .sync-entry-title { gap:5px; width:100%; }
 .sync-entry-title > :first-child { font-size:.94rem; line-height:1.3; }
 .sync-entry-title small { display:block; overflow-wrap:anywhere; line-height:1.4; }
@@ -190,9 +192,13 @@ body[data-theme="dark"] .sync-entry-title .sync-entry-error { color:#fca5a5; }
 
 
 
-.sync-empty { display:grid; justify-items:center; gap:8px; padding:36px 20px; text-align:center; }
+.sync-empty { display:grid; justify-items:center; align-content:center; gap:10px; min-height:300px; padding:36px 20px; text-align:center; }
 .sync-empty > span { display:grid; place-items:center; width:54px; height:54px; border-radius:18px; background:var(--surface-2); color:var(--accent-text,var(--accent)); }
-.sync-empty p { max-width:340px; margin:0 0 8px; color:var(--muted); }
+.sync-empty > span svg { width:25px; height:25px; }
+.sync-empty h2 { font-size:1.25rem; }
+.sync-empty p { max-width:340px; margin:0 0 8px; color:var(--muted); line-height:1.45; }
+.sync-empty .button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:0 17px; }
+.sync-empty .button svg { flex:none; width:17px; height:17px; }
 .sync-note { padding:10px 0; color:var(--muted); font-size:.8rem; }
 .detail-manage-card { display:grid; border:1px solid var(--line); border-radius:16px; background:var(--surface); overflow:hidden; }
 .detail-manage-btn { display:grid; grid-template-columns:22px minmax(0,1fr) 18px; align-items:center; gap:12px; min-height:56px; padding:10px 14px; border:0; border-bottom:1px solid var(--line); background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }
@@ -622,6 +628,8 @@ body[data-page="statistics"] .stats-subpage-ratings { grid-template-columns:minm
 .import-summary-grid span { color:var(--muted); font-size:.68rem; }
 .import-preview-actions { display:flex; justify-content:flex-end; gap:8px; margin:0 0 12px; }
 .import-preview-actions .button { min-height:44px; padding:0 18px; border-radius:14px; }
+.sync-page .import-preview-actions .button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:42px; padding:0 14px; }
+.sync-page .import-preview-actions .button svg { flex:none; width:16px; height:16px; stroke-width:2; }
 .import-preview-actions .button.primary { background:var(--accent); color:#111; border-color:transparent; font-weight:700; }
 .sync-list { border:1px solid var(--line); border-radius:18px; background:var(--surface); overflow:hidden; }
 .sync-list > h2 { margin:0; padding:14px 16px; border-bottom:1px solid var(--line); font-size:.85rem; }
@@ -1119,3 +1127,5 @@ body .profile-reorder-dialog nav { width:100%; max-width:680px; margin-inline:au
 .watchlist-card.is-poster-view .watchlist-poster-bar i { display:block; height:100%; background:var(--accent,var(--d-gold,#f1b01f)); }
 .watchlist-card.is-poster-view .watchlist-poster-bar i.is-done { background:#a100ff; }
 .watchlist-card.is-poster-view .watchlist-check, .watchlist-card.is-poster-view .watchlist-seen-toggle { right:8px; bottom:14px; }
+.status-group .status-icon-action { display:inline-grid; place-items:center; width:44px; min-width:44px; height:44px; padding:0; }
+.status-group .status-icon-action svg { width:19px; height:19px; }
