@@ -11,6 +11,9 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 - Request Android notification permission before opening the destination picker; show live backup/transfer progress and completion notifications when permitted, and explain when notifications are disabled.
 - Replaced unsupported Android WebView password prompts with an in-app password dialog for encrypted transfer export and import.
 - Fixed a ScreenMark image-routing error caused by reading dynamically compiled inline `onerror` handlers; proxy fallback now uses a capturing event listener.
+- User-cancelled Android storage-folder selection is logged as a warning; existing matching log entries are also displayed with the corrected severity.
+- Encrypted mirror recovery keeps deletion markers until replacement records are published; encrypted backup replacement clears stale mirror records before committing the new snapshot.
+- Large chunked exports now stream from their temporary file to Downloads instead of loading the entire file into memory.
 
 ### Changed
 
