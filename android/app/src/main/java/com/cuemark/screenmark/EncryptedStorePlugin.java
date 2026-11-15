@@ -175,8 +175,11 @@ public class EncryptedStorePlugin extends Plugin {
                         JSONObject previous = new JSONObject(decrypt(readMirror(target)));
                         if (previous.optLong("updatedAt") > item.optLong("updatedAt")) continue;
                     } catch (Exception ignored) { }
-                    deleted.delete();
                     writeMirror(target, encrypt(item.toString()));
+                    // Keep a deletion tombstone until the replacement has been
+                    // atomically published. A failed write must not let an old
+                    // mirror record reappear on the next recovery read.
+                    deleted.delete();
                 }
             }
             call.resolve(new JSObject().put("written", items.length()));
@@ -393,21 +396,26 @@ public class EncryptedStorePlugin extends Plugin {
                 if (restoredState == null) throw new IllegalArgumentException("Backup contains no restorable library records");
                 // Replace the encrypted snapshot as a whole. Keeping keys that are
                 // absent from the backup would resurrect titles deleted earlier.
-                SharedPreferences.Editor editor = prefs.edit().clear();
-                for (java.util.Iterator<String> it = verifiedRecords.keys(); it.hasNext();) {
-                    String key = it.next();
-                    editor.putString(key, verifiedRecords.getString(key));
-                }
-                if (!editor.commit()) throw new IllegalStateException("Could not write encrypted backup records");
-                deleteMirror();
-                File mirror = mirrorDirectory(), parent = mirror.getParentFile();
-                for (java.util.Iterator<String> it = verifiedRecords.keys(); it.hasNext();) {
-                    String key = it.next(), value = verifiedRecords.getString(key);
-                    if (key.startsWith(ITEM_PREFIX)) {
-                        String id = new JSONObject(decrypt(value)).optString("id", "");
-                        if (!id.isEmpty()) writeMirror(new File(mirror, safeRecordName(id)), value);
-                    } else if (key.equals(META_VALUE)) writeMirror(new File(parent, "meta.enc"), value);
-                    else if (key.equals(VALUE)) writeMirror(new File(parent, "state.enc"), value);
+                synchronized (mirrorLock) {
+                    // Remove stale mirror rows before publishing replacement
+                    // preferences. A crash after commit must not merge in old
+                    // external mirror files during recovery.
+                    deleteMirror();
+                    SharedPreferences.Editor editor = prefs.edit().clear();
+                    for (java.util.Iterator<String> it = verifiedRecords.keys(); it.hasNext();) {
+                        String key = it.next();
+                        editor.putString(key, verifiedRecords.getString(key));
+                    }
+                    if (!editor.commit()) throw new IllegalStateException("Could not write encrypted backup records");
+                    File mirror = mirrorDirectory(), parent = mirror.getParentFile();
+                    for (java.util.Iterator<String> it = verifiedRecords.keys(); it.hasNext();) {
+                        String key = it.next(), value = verifiedRecords.getString(key);
+                        if (key.startsWith(ITEM_PREFIX)) {
+                            String id = new JSONObject(decrypt(value)).optString("id", "");
+                            if (!id.isEmpty()) writeMirror(new File(mirror, safeRecordName(id)), value);
+                        } else if (key.equals(META_VALUE)) writeMirror(new File(parent, "meta.enc"), value);
+                        else if (key.equals(VALUE)) writeMirror(new File(parent, "state.enc"), value);
+                    }
                 }
             } else {
                 // Backward compatibility with the original single-blob .sqdb format.
