@@ -16,6 +16,7 @@
 - `pages/statistics.js` — Statistics markup.
 - `pages/sync.js` — metadata refresh status and retry markup.
 - `pages/settings.js` — Settings controls and sections.
+- `pages/achievements.js` and `pages/insights.js` — achievements (categories, per-rank pages, badge sharing), help and update notes.
 - `styles.css` — shared responsive design and page styles.
 - `styles/ui-polish.css` — Settings picker sheets, App Info and shared interface refinements.
 - `styles/cuemark-legacy.css` — CueMark legacy dark palette, glass surfaces, typography, and navigation styling.
