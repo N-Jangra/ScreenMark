@@ -100,11 +100,11 @@ test("episodes after the last announced date are TBD (not watchable); undated ga
 
 test("session poster cache is bounded, never revokes a poster that is on screen, and is O(1)", () => {
   const app = fs.readFileSync(path.join(root, "frontend/app.js"), "utf8");
-  const body = app.slice(app.indexOf("const thumbKeyIndex = new Map()"), app.indexOf("async function cachedThumbUrls"));
+  const body = app.slice(app.indexOf("const thumbKeyIndex = new Map()"), app.indexOf("async function cachedThumbUrls")).replace("const thumbKeyIndex = new Map(); // item key -> cache key currently held", "");
   assert.doesNotMatch(body.slice(body.indexOf("function rememberThumbUrl")), /for \(const \[[^\]]*\] of thumbUrlCache\)/, "no scan over the whole cache per insert");
   const revoked = [], cache = new Map(), index = new Map();
-  const onScreen = new Set(["blob:0", "blob:1"]);
-  const remember = new Function("thumbUrlCache", "URL", "document", "prefs", `${body.slice(0, body.indexOf("window.addEventListener"))}; return rememberThumbUrl;`)(cache, { revokeObjectURL: url => revoked.push(url) }, { images: [...onScreen].map(src => ({ src })) }, { libraryMemory: "auto" });
+  const onScreen = new Set(["blob:0", "blob:1"]), document = { images: [...onScreen].map(src => ({ src })) };
+  const { remember, trim } = new Function("thumbUrlCache", "thumbKeyIndex", "staleThumbGenerations", "URL", "document", "prefs", `${body.slice(0, body.indexOf("window.addEventListener"))}; return { remember: rememberThumbUrl, trim: trimThumbCache };`)(cache, index, new Set(), { revokeObjectURL: url => revoked.push(url) }, document, { libraryMemory: "auto" });
   // thousands of posters: the cache stays bounded and posters that are on screen are never released
   for (let i = 0; i < 5000; i++) remember(`${i}:p`, "sig", `blob:${i}`);
   assert.ok(cache.size <= 900, `cache bounded (${cache.size})`);
@@ -119,6 +119,14 @@ test("session poster cache is bounded, never revokes a poster that is on screen,
   assert.equal(remember("4999:p", "sig2", "blob:new"), "blob:new");
   assert.ok(revoked.includes("blob:4999"));
   assert.equal(cache.has("4999:p|sig"), false);
+  document.images.push({ src: "blob:live-old" });
+  remember("live:p", "old", "blob:live-old");
+  remember("live:p", "new", "blob:live-new");
+  assert.ok(!revoked.includes("blob:live-old"), "replaced URLs still displayed by live images remain usable");
+  assert.ok(cache.has("live:p|old"), "live replaced generations stay tracked for eventual cleanup");
+  document.images = [];
+  trim();
+  assert.ok(!cache.has("live:p|old") && revoked.includes("blob:live-old"), "detached replaced generations are collected below the size limit");
   assert.match(app, /window\.addEventListener\("pagehide", \(\) => \{ for \(const url of thumbUrlCache\.values\(\)\) URL\.revokeObjectURL/);
 });
 
