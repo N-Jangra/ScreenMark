@@ -71,10 +71,19 @@ public class BackupFolderPlugin extends Plugin {
             return;
         }
 
-        getContext().getContentResolver().takePersistableUriPermission(
-            treeUri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        );
+        int accessFlags = result.getData().getFlags()
+            & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        if ((accessFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0
+            || (accessFlags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) {
+            call.reject("Android did not grant read and write access to that folder. Choose another folder.");
+            return;
+        }
+        try {
+            getContext().getContentResolver().takePersistableUriPermission(treeUri, accessFlags);
+        } catch (SecurityException e) {
+            call.reject("Android could not keep access to that folder. Choose another folder.", e);
+            return;
+        }
 
         JSObject result_ = new JSObject();
         result_.put("uri", treeUri.toString());

@@ -6,6 +6,7 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 
 ### Fixed
 
+- Folder selection now persists only Android's actually granted read/write permissions and reports unavailable grants cleanly instead of throwing from the picker callback.
 - Deleting a title from its details page or collection action sheet now adds it to Recently deleted, alongside the main delete confirmation flow.
 - Fixed Export List encrypted-transfer and share actions so tapping them opens password confirmation and the Android save/share flow.
 - Request Android notification permission before opening the destination picker; show live backup/transfer progress and completion notifications when permitted, and explain when notifications are disabled.
