@@ -256,6 +256,12 @@
     visit(item);
     return candidates;
   }
+  const imageHash = value => {
+    const text = String(value || ""); let hash = 0x811c9dc5;
+    for (let index = 0; index < text.length; index++) hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193);
+    return `${text.length}:${(hash >>> 0).toString(16)}`;
+  };
+  const imageCacheRef = (item, path, source) => ({ key: `${String(item.id)}:image:${imageHash(JSON.stringify(path))}`, sig: imageHash(source) });
 
   function itemFingerprint(item) {
     // Portable JSON deliberately omits inline image bytes. Include their
@@ -493,13 +499,56 @@
   }
 
   async function loadItemImages(item) {
+    const result = {};
+    // The current artwork pipeline stores one entry per image path using
+    // `id:image:<path-hash>` keys. Read those first: the selected folder may
+    // not contain these blobs, and looking up only the older poster/cache
+    // keys silently omitted IndexedDB-only galleries from transfer files.
+    const candidates = collectAllImageCandidates(item);
+    const imageRefs = candidates.flatMap(candidate => candidate.paths.map(path => ({
+      path,
+      key: `${String(item.id)}:image:${imageHash(JSON.stringify(path))}`,
+      signature: imageHash(candidate.source)
+    })));
+    if (imageRefs.length && window.SplitAppIDB?.getImages) {
+      try {
+        const hits = new Map(await window.SplitAppIDB.getImages(imageRefs.map(ref => [ref.key, ref.signature])));
+        for (const ref of imageRefs) {
+          const blob = hits.get(ref.key);
+          if (blob && !result[ref.path.join(".")]) result[ref.path.join(".")] = `data:${blob.type || "image/webp"};base64,${await blobAsBase64(blob)}`;
+        }
+      } catch (error) { console.warn(`Could not read IndexedDB artwork for ${item.title || item.id}`, error); }
+    }
+    const artworkEntries = artworkCacheEntries(item);
+    const refs = artworkEntries.flatMap(entry => entry.paths.map(path => ({ path, candidate: entry, key: entry.key, sig: entry.signature })));
+    const cached = new Map();
+    if (refs.length && window.SplitAppIDB?.getThumbs) {
+      try {
+        const hits = await window.SplitAppIDB.getThumbs(artworkEntries.map(entry => [entry.key, entry.signature]));
+        hits.forEach(([key, blob]) => cached.set(key, blob));
+        for (const ref of refs) { const blob = cached.get(ref.key); if (blob && !result[ref.path.join(".")]) result[ref.path.join(".")] = `data:${blob.type || "image/webp"};base64,${await blobAsBase64(blob)}`; }
+      } catch (error) { console.warn(`Could not read cached artwork for ${item.title || item.id}`, error); }
+    }
+    const episodeRows = (item?.cachedDetails?.sections || []).filter(section => section?.kind === "episodes").flatMap(section => section.items || [])
+      .filter(episode => episode?.id != null && /^https:\/\//i.test(String(episode.image || "")));
+    if (episodeRows.length && window.SplitAppIDB?.getThumbs) {
+      const unique = new Map(episodeRows.map(episode => [String(episode.id), episode]));
+      const pairs = [...unique].map(([id, episode]) => [`${app.key}:episode:${String(item.id)}:${id}`, String(episode.image)]);
+      try {
+        const hits = new Map(await window.SplitAppIDB.getThumbs(pairs));
+        for (const [id, episode] of unique) {
+          const blob = hits.get(`${app.key}:episode:${String(item.id)}:${id}`);
+          const path = `cachedDetails.episodesById.${id}.image`;
+          if (blob && !result[path]) result[path] = `data:${blob.type || "image/webp"};base64,${await blobAsBase64(blob)}`;
+        }
+      } catch (error) { console.warn(`Could not read cached episode artwork for ${item.title || item.id}`, error); }
+    }
     const plugin = window.Capacitor?.Plugins?.BackupFolder;
     const uri = await getFolderUri({ prompt: false });
-    if (!uri || !plugin?.listFiles || !plugin?.readBinaryFile || !Array.isArray(item?.localImageFiles)) return {};
-    const folder = await findItemFolder(plugin, uri, item);
-    const files = folder ? (await plugin.listFiles({ uri: folder.uri }))?.files || [] : [];
-    const result = {};
-    for (const image of item.localImageFiles) {
+    if (uri && plugin?.listFiles && plugin?.readBinaryFile && Array.isArray(item?.localImageFiles)) {
+      const folder = await findItemFolder(plugin, uri, item);
+      const files = folder ? (await plugin.listFiles({ uri: folder.uri }))?.files || [] : [];
+      for (const image of item.localImageFiles) {
       const file = files.find(entry => entry.name === image.fileName && entry.uri);
       if (!file) continue;
       try {
@@ -508,6 +557,7 @@
         const dataUrl = `data:${image.mimeType || "image/jpeg"};base64,${value.base64Content}`;
         for (const path of image.paths || []) result[path.join(".")] = dataUrl;
       } catch (error) { console.warn(`Could not read local image ${image.fileName}`, error); }
+      }
     }
     return result;
   }
@@ -1332,9 +1382,31 @@
     } catch (error) { console.warn("Could not apply ScreenMark backup retention", error); }
   }
 
+  let libraryMirrorBackfill = null;
+  function backfillAndroidLibraryMirror(data) {
+    const plugin = window.Capacitor?.Plugins?.EncryptedStore;
+    if (!plugin?.isLibraryMirrorReady || !plugin?.syncMirrorBatch || !plugin?.finishLibraryMirrorSync || !Array.isArray(data?.items) || libraryMirrorBackfill) return;
+    libraryMirrorBackfill = (async () => {
+      const items = data.items.filter(item => item?.id != null);
+      const status = await plugin.isLibraryMirrorReady({ ids: items.map(item => String(item.id)) });
+      if (status?.ready) return;
+      for (let offset = 0; offset < items.length; offset += 8) {
+        const fullItems = await detailedItems(items.slice(offset, offset + 8));
+        const batch = fullItems.map(portableItem);
+        await plugin.syncMirrorBatch({ items: batch });
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      await plugin.setMeta?.({ data: JSON.stringify({ history: data.history || [], preferences: data.preferences || {} }) });
+      await plugin.finishLibraryMirrorSync({ count: items.length });
+    })().catch(error => console.warn("Could not backfill the Android app-data mirror", error)).finally(() => { libraryMirrorBackfill = null; });
+  }
+
   // fast: return what IndexedDB already holds without touching the (slow) Android folder, or
   // `null` when there is nothing local yet so the caller falls back to the full restore.
   async function load({ fast = false } = {}) {
+    // Backfill the Android/data recovery mirror in the background; normal app
+    // startup still reads the faster IndexedDB/internal record stores.
+    try { window.Capacitor?.Plugins?.EncryptedStore?.ensureMirror?.().catch(error => console.warn("Could not prepare the Android app-data mirror", error)); } catch (_) {}
     const mirror = readMirror();
     let data = {
       items: Array.isArray(mirror.items) ? mirror.items : [],
@@ -1467,6 +1539,7 @@
       queueFolderDatabaseWrite(data, folderUri).then(() => { folderLastCount = data.items.length; }).catch(error => console.warn("Could not save or migrate the restored database folder", error));
     } else if (folderUri) folderLastCount = data.items.length;
     if (data.items.length >= slimMinItems() && window.SplitAppIDB?.compactDetails) data = { ...data, items: data.items.map(item => item?.cachedDetails && !item.cachedDetails.compact ? { ...item, cachedDetails: window.SplitAppIDB.compactDetails(item.cachedDetails) } : item) };
+      backfillAndroidLibraryMirror(data);
       return { ...data, loadedFromFolder: Boolean(folderData), folderNeedsPersist };
   }
 
@@ -1657,7 +1730,7 @@
 
   // Streams the library to a file in small chunks, so a 1500-game export never builds one huge string
   // or sends one huge message across the Android bridge (that crashed the app).
-  // mode "ask": Android's "Save as" screen. mode "folder": straight into the chosen backup folder.
+  // mode "ask": Android's "Save as" screen. mode "folder": the chosen backup folder. mode "share": Android's share sheet.
   // Backups name where each title came from (source + source id) so a restore can match it exactly instead of guessing by title.
   const backupRefOf = item => ({ id: String(item?.id ?? ""), source: String(item?.metadataSource || item?.source || "manual"), providerId: String(item?.providerId ?? ""), category: String(item?.category || ""), title: String(item?.title || ""), year: String(item?.year || "") });
   // blob: links point at this page's memory and are dead after a restore, so they never go into a backup (the real files are re-fetched).
@@ -1669,45 +1742,91 @@
     for (const [key, child] of Object.entries(value)) { const next = dropBlobUrls(child); if (!(typeof child === "string" && next === "" && child !== "")) out[key] = next; }
     return out;
   };
-  const backupEntry = item => dropBlobUrls({ ...portableItem(item, { includeImageData: true }), backupRef: backupRefOf(item) });
+  async function backupEntry(item) {
+    const transferImages = {};
+    try {
+      const loaded = await loadItemImages(item);
+      for (const [path, source] of Object.entries(loaded || {})) if (/^data:image\//i.test(source)) transferImages[path] = source;
+    } catch (error) { console.warn(`Could not package saved artwork for ${item.title || item.id}`, error); }
+    return dropBlobUrls({ ...portableItem(item, { includeImageData: true }), backupRef: backupRefOf(item), ...(Object.keys(transferImages).length ? { transferImages } : {}) });
+  }
   const backupIndex = items => items.map(item => backupRefOf(item));
-  async function exportLibrary({ items, history, preferences }, { mode = "ask", onProgress } = {}) {
+  async function exportLibrary({ items, history, preferences }, { mode = "ask", onProgress, password = "" } = {}) {
     const plugin = window.Capacitor?.Plugins?.BackupFolder;
+    const sharePlugin = window.Capacitor?.Plugins?.ShareIntent;
     // Backups are gzip-compressed (about 10x smaller) when the WebView can compress; the importer opens both forms.
     const gzip = typeof CompressionStream === "function" && typeof TextEncoder === "function";
-    const fileName = `${app.key}-backup-${new Date().toISOString().slice(0, 10)}.json${gzip ? ".gz" : ""}`;
-    if (!plugin?.writeDocumentChunk) throw new Error("This build cannot save files. Update the app.");
+    const encrypted = Boolean(password);
+    if (encrypted && (!gzip || !window.SplitAppTransferCrypto)) throw new Error("Password-protected transfers are not supported by this Android WebView.");
+    const fileName = encrypted ? `${app.key}-transfer-${new Date().toISOString().slice(0, 10)}.sqx` : `${app.key}-backup-${new Date().toISOString().slice(0, 10)}.json${gzip ? ".gz" : ""}`;
+    const sharing = mode === "share";
+    if (sharing && !encrypted) throw new Error("Sharing a transfer requires a password-protected file.");
+    if (sharing ? !sharePlugin?.beginFile || !sharePlugin?.appendFileChunk || !sharePlugin?.shareChunkedFile : !plugin?.writeDocumentChunk) throw new Error("This build cannot export files. Update the app.");
+    const exportId = `${app.key}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const notifyExport = async (method, data = {}) => {
+      try { if (sharePlugin?.[method]) await sharePlugin[method]({ id: exportId, filename: fileName, encrypted, ...data }); }
+      catch (error) { console.warn(`Could not update export notification (${method})`, error); }
+    };
+    // Ask before Android opens its save picker. If the user grants permission,
+    // progress notifications can start as soon as the destination is chosen.
+    let notificationPermission;
+    try { notificationPermission = await sharePlugin?.requestExportNotificationPermission?.(); }
+    catch (error) { console.warn("Could not request export notification permission", error); }
     let opened;
-    if (mode === "folder") {
+    if (sharing) {
+      const extension = fileName.split(".").pop();
+      await sharePlugin.beginFile({ filename: fileName.slice(0, -(extension.length + 1)), extension });
+      opened = {};
+    } else if (mode === "folder") {
       const uri = await getFolderUri({ prompt: false });
       if (!uri) throw new Error("No backup folder selected. Pick one in Settings → Backups.");
       opened = await plugin.beginFolderExport({ uri, fileName });
-    } else opened = await plugin.createDocument({ fileName, mimeType: gzip ? "application/gzip" : "application/json" });
-    let write = text => plugin.writeDocumentChunk({ content: text }), finishStream = async () => {}, pumpError = null;
+    } else opened = await plugin.createDocument({ fileName, mimeType: encrypted ? "application/octet-stream" : gzip ? "application/gzip" : "application/json" });
+    if (notificationPermission?.granted === false) onProgress?.(0, items.length, { notificationsAllowed: false });
+    const notificationsAvailable = Boolean(sharePlugin?.startExportNotification);
+    if (notificationsAvailable) await notifyExport("startExportNotification", { total: items.length, done: 0 });
+    let exportSucceeded = false, lastNotification = 0;
+    const toBase64 = bytes => { let binary = ""; for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(at, at + 0x8000)); return btoa(binary); };
+    const writeOutputChunk = async value => {
+      if (sharing) return sharePlugin.appendFileChunk({ data: typeof value === "string" ? toBase64(new TextEncoder().encode(value)) : toBase64(value) });
+      return plugin.writeDocumentChunk({ content: typeof value === "string" ? value : toBase64(value), ...(typeof value === "string" ? {} : { base64: true }) });
+    };
+    let write = text => sharing ? writeOutputChunk(new TextEncoder().encode(text)) : plugin.writeDocumentChunk({ content: text }), finishStream = async () => {}, pumpError = null;
     if (gzip) {
-      const compressor = new CompressionStream("gzip"), writer = compressor.writable.getWriter(), reader = compressor.readable.getReader(), encoder = new TextEncoder();
-      const toBase64 = bytes => { let binary = ""; for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(at, at + 0x8000)); return btoa(binary); };
+      const compressor = new CompressionStream("gzip"), writer = compressor.writable.getWriter(), encoder = new TextEncoder();
       // Compressed bytes are written as they come out, so nothing large is ever held in memory.
-      const pump = (async () => { for (;;) { const { done, value } = await reader.read(); if (done) break; await plugin.writeDocumentChunk({ content: toBase64(value), base64: true }); } })()
+      const output = encrypted ? await window.SplitAppTransferCrypto.encryptStream(compressor.readable, password) : compressor.readable;
+      const outputReader = output.getReader();
+      const pump = (async () => { for (;;) { const { done, value } = await outputReader.read(); if (done) break; await writeOutputChunk(value); } })()
         .catch(error => { pumpError = error; writer.abort(error).catch(() => {}); });
       write = async text => { if (pumpError) throw pumpError; await writer.write(encoder.encode(text)); };
       finishStream = async () => { if (!pumpError) await writer.close().catch(error => { pumpError = pumpError || error; }); await pump; if (pumpError) throw pumpError; };
     }
     try {
       const CHUNK = 256 * 1024;
+      const deviceMemory = Number(typeof navigator !== "undefined" && navigator.deviceMemory) || 4;
+      const imageBatchSize = deviceMemory <= 2 ? 2 : 4;
       let buffer = `{"app":${JSON.stringify(app.name)},"version":2,"exportedAt":${JSON.stringify(new Date().toISOString())},"index":${JSON.stringify(backupIndex(items))},"items":[`;
       const BATCH_SIZE = 8;
       let first = true;
       for (let offset = 0; offset < items.length; offset += BATCH_SIZE) {
         const batch = await detailedItems(items.slice(offset, offset + BATCH_SIZE));
-        for (const item of batch) {
-          buffer += (first ? "" : ",") + JSON.stringify(backupEntry(item));
-          first = false;
-          if (buffer.length >= CHUNK) {
-            await write(buffer); buffer = "";
+        for (let imageOffset = 0; imageOffset < batch.length; imageOffset += imageBatchSize) {
+          const entries = await Promise.all(batch.slice(imageOffset, imageOffset + imageBatchSize).map(backupEntry));
+          for (const entry of entries) {
+            buffer += (first ? "" : ",") + JSON.stringify(entry);
+            first = false;
+            if (buffer.length >= CHUNK) {
+              await write(buffer); buffer = "";
+            }
           }
         }
-        onProgress?.(Math.min(offset + batch.length, items.length), items.length);
+        const done = Math.min(offset + batch.length, items.length);
+        onProgress?.(done, items.length);
+        if (Date.now() - lastNotification >= 1000 || done === items.length) {
+          lastNotification = Date.now();
+          await notifyExport("updateExportNotification", { done, total: items.length });
+        }
         // Batch detail reads through IndexedDB and yield after each small
         // batch. A 10k-title backup should not serialize thousands of bridge
         // transactions or hold the UI thread in a long run of title work.
@@ -1716,8 +1835,13 @@
       buffer += `],"history":${JSON.stringify(history || [])},"preferences":${JSON.stringify(preferences || {})}}`;
       await write(buffer);
       await finishStream();
+      if (sharing) await sharePlugin.shareChunkedFile({ mimeType: "application/octet-stream", title: fileName });
       onProgress?.(items.length, items.length);
-    } finally { await plugin.closeDocument().catch(() => {}); }
+      exportSucceeded = true;
+    } finally {
+      if (!sharing) await plugin.closeDocument().catch(() => {});
+      if (notificationsAvailable) await notifyExport("finishExportNotification", { success: exportSucceeded, shared: sharing, message: exportSucceeded ? "" : "The export did not finish. Try again." });
+    }
     return { fileName, uri: opened?.uri || "" };
   }
 

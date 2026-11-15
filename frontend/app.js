@@ -2,6 +2,10 @@
   "use strict";
 
   const config = window.APP_CONFIG;
+  // Ask Chromium to protect this origin's IndexedDB from routine storage
+  // pressure eviction. Portable exports remain necessary for uninstall or a
+  // deliberate clear-storage action.
+  window.SplitAppIDB?.persistStorage?.().catch(() => {});
   const titles = { status: "Status", discover: "Discover", details: "Details", timeline: "Timeline", statistics: "Statistics", help: "Help & FAQ", "whats-new": "What’s new", profile: "Profile", achievements: "Achievements", setup: "Quick setup", "profile-cover": "Profile cover", series: "Series", movies: "Movies", "series-favorites": "Series Favorites", "movie-favorites": "Movie Favorites", "series-watchlist": "Shows Watchlist", "movie-watchlist": "Movies Watchlist", settings: "Settings", sync: "Metadata Sync" };
   const hasPage = name => Object.prototype.hasOwnProperty.call(titles, name);
   const navItems = [
@@ -42,6 +46,13 @@
   const trashStorageKey = `${storageKey}_trash_v1`;
   const readTrash = () => { try { const rows = JSON.parse(localStorage.getItem(trashStorageKey) || "[]"); const fresh = (Array.isArray(rows) ? rows : []).filter(row => row?.item && Date.now() - Number(row.deletedAt) < 30 * 86400000); if (fresh.length !== rows.length) localStorage.setItem(trashStorageKey, JSON.stringify(fresh)); return fresh; } catch (_) { return []; } };
   const writeTrash = rows => { try { localStorage.setItem(trashStorageKey, JSON.stringify(rows)); } catch (_) {} };
+  const moveToTrash = item => {
+    const index = items.indexOf(item);
+    if (index < 0) return;
+    const trash = readTrash();
+    trash.unshift({ item: JSON.parse(JSON.stringify(item)), index, deletedAt: Date.now() });
+    writeTrash(trash);
+  };
   const sessionUiKey = `${storageKey}_session_ui_v1`;
   const validMemoryModes = ["auto", "low", "minimum", "off"];
   let savedSessionUi = null;
@@ -424,6 +435,27 @@
   let dialogEntries = 0, skipNextPop = false, closingFromPop = false, dialogPopCallback = null;
   function pushDialogEntry() { try { window.history.pushState({ dialog: true }, "", location.href); dialogEntries += 1; } catch (_) {} }
   function popDialogEntry(afterPop) { if (dialogEntries > 0 && window.history.state?.dialog) { dialogEntries -= 1; skipNextPop = true; dialogPopCallback = afterPop || null; window.history.back(); } else afterPop?.(); }
+  // In-app password dialog; Android WebView does not support window.prompt().
+  function appPrompt(message, { title = "Password required", inputLabel = "Password", confirmLabel = "Continue", autocomplete = "current-password", minLength = 0 } = {}) {
+    return new Promise(resolve => {
+      let dialog = document.getElementById("app-prompt");
+      if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "app-prompt"; dialog.className = "app-confirm app-prompt"; dialog.setAttribute("aria-labelledby", "app-prompt-title"); document.body.appendChild(dialog); }
+      dialog.innerHTML = `<div class="app-confirm-card"><h2 id="app-prompt-title">${esc(title)}</h2><p>${esc(message)}</p><label class="app-prompt-field"><span>${esc(inputLabel)}</span><input type="password" autocomplete="${esc(autocomplete)}" minlength="${Math.max(0, Number(minLength) || 0)}" data-app-prompt-input></label><p class="app-prompt-error" data-app-prompt-error role="alert" hidden></p><div class="app-confirm-actions"><button type="button" class="button secondary" data-prompt="cancel">Cancel</button><button type="button" class="button primary" data-prompt="submit">${esc(confirmLabel)}</button></div></div>`;
+      let settled = false;
+      const finish = value => { if (settled) return; settled = true; try { dialog.close(); } catch (_) {} dialog.removeAttribute("open"); dialog.remove(); resolve(value); };
+      dialog.onclose = () => finish(null); dialog.oncancel = () => finish(null);
+      dialog.onclick = event => {
+        const action = eventClosest(event, "[data-prompt]");
+        if (!action) { if (event.target === dialog) finish(null); return; }
+        if (action.dataset.prompt === "cancel") { finish(null); return; }
+        const input = dialog.querySelector("[data-app-prompt-input]"), error = dialog.querySelector("[data-app-prompt-error]");
+        if ((Number(minLength) || 0) > 0 && input.value.length < Number(minLength)) { error.textContent = `Use at least ${Number(minLength)} characters.`; error.hidden = false; input.focus(); return; }
+        finish(input.value);
+      };
+      try { dialog.showModal(); } catch (_) { dialog.setAttribute("open", ""); }
+      dialog.querySelector("[data-app-prompt-input]")?.focus();
+    });
+  }
   // In-app confirmation sheet (replaces the browser's window.confirm). Resolves true or false.
   function appConfirm(message, { title = "Are you sure?", confirmLabel = "Confirm", danger = false } = {}) {
     return new Promise(resolve => {
@@ -917,7 +949,7 @@
     }
     const parentForRef = detailRef?.type === "episode" ? itemById(String(detailItemId)) : null;
     const refItem = parentForRef?.category === "series" && (parentForRef.cachedDetails?.sections || []).some(section => section.kind === "episodes" && (section.items || []).some(row => String(row.id) === String(detailRef.id) || String(row.ref?.id) === String(detailRef.id))) ? parentForRef : null;
-    return { setup: setupState, statsSubpage, statsCategory, statsActivityDate, statsRange, profileCollectionSort, profileStatusFilter, profileGenreFilter, profileStatusGroups, achievementId, statusName, libraryLoading: !libraryRestoreComplete, watchlistTab, watchlistView: currentWatchlistView(), setupDownloads: [...setupDownloads.values()], setupDownloadProgress: setupDownloadProgress([...setupDownloads.values()]), metadataSyncState, metadataSyncCounts: page === "sync" ? syncCounts() : null, changeLog, history, trashRows: page === "settings" && settingsGroup === "trash" ? readTrash() : [], logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, itemById, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, logEntries, roles, trackedStatuses, statusIcon, discoverCategory: currentDiscoverCategory(), discoverQuery, addMetadataQuery, settingsGroup, settingsParam, settingsFrom, discoverSource, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: itemById(String(entryDraftId)) || null, addReturnPage, navItems, metadataSourceFilter, titleIdentity,
+    return { setup: setupState, statsSubpage, statsCategory, statsActivityDate, statsRange, profileCollectionSort, profileStatusFilter, profileGenreFilter, profileStatusGroups, achievementId, statusName, libraryLoading: !libraryRestoreComplete, watchlistTab, watchlistView: currentWatchlistView(), setupDownloads: [...setupDownloads.values()], setupDownloadsPaused, setupDownloadProgress: setupDownloadProgress([...setupDownloads.values()]), metadataSyncState, metadataSyncCounts: page === "sync" ? syncCounts() : null, changeLog, history, trashRows: page === "settings" && settingsGroup === "trash" ? readTrash() : [], logQuery, logFrom, logTo, historyQuery, historyFrom, historyTo, timelineFrom, timelineTo, dataRevision: localMutationRevision, itemById, libraryBytes: page === "settings" ? estimateLibraryBytes() : 0, config, prefs, items, logEntries, roles, trackedStatuses, statusIcon, discoverCategory: currentDiscoverCategory(), discoverQuery, addMetadataQuery, settingsGroup, settingsParam, settingsFrom, discoverSource, timelineFilter, timelineSearch, timelineMonth, timelineYear, detailItemId, detailPreview, detailEditMode, editingItem: itemById(String(entryDraftId)) || null, addReturnPage, navItems, metadataSourceFilter, titleIdentity,
       detailData, detailError, detailLoading, detailReturnPage, detailRef, detailRefOffset, refData, refLoading, refError, detailStackSize: detailStack.length, detailTab, detailSeason, detailCastOnline, detailCastSections: castCache.get(castKeyNow()) || [], detailCastLoading: castState.loading && castState.key === castKeyNow(), detailCastError: castState.key === castKeyNow() ? castState.error : "", refItem, statusOptions, protectedStatuses: PROTECTED_STATUSES, category, labelCategory, defaultStatus, esc, imageMarkup,
       isLocalImageUrlAvailable: localImageUrlAvailable, safeLucideName };
   }
@@ -1369,14 +1401,13 @@
       if (/^http:\/\//i.test(source)) { image.removeAttribute("src"); image.hidden = true; return; }
       const resolved = resolveImage(source);
       if (resolved !== source) {
-        const fallback = image.onerror;
         image.dataset.proxySource = source;
-        image.onerror = function (event) {
-          if (this.dataset.proxySource && !this.dataset.proxyFallbackTried) {
-            this.dataset.proxyFallbackTried = "true"; this.hidden = false; this.src = this.dataset.proxySource; return;
+        image.addEventListener("error", event => {
+          if (!image.dataset.proxyFallbackTried) {
+            image.dataset.proxyFallbackTried = "true"; image.hidden = false; image.src = image.dataset.proxySource;
+            event.stopImmediatePropagation();
           }
-          if (fallback) fallback.call(this, event);
-        };
+        }, { capture: true });
         image.src = resolved;
       }
     });
@@ -1829,6 +1860,7 @@
       if (button.dataset.metadataSyncAction === "start") syncMetadataNow();
       else if (button.dataset.metadataSyncAction === "retry") retryMetadataSync(button.dataset.id || null);
       else if (button.dataset.metadataSyncAction === "clear") clearMetadataSyncState();
+      else if (button.dataset.metadataSyncAction === "toggle") setMetadataSyncPaused(!metadataSyncPaused);
     }));
     content.querySelectorAll("[data-setting-action]").forEach(button => button.addEventListener("click", event => {
       if (button.type === "file") return; // let the file picker open
@@ -1838,6 +1870,8 @@
       else if (key === "previewAnimations") previewAnimations();
       else if (key === "resetAppearance") resetAppearance();
       else if (key === "export") exportList();
+      else if (key === "export-encrypted") createEncryptedTransfer();
+      else if (key === "export-share") createEncryptedTransfer({ share: true });
       else if (key === "export-txt") exportNames("txt");
       else if (key === "export-csv") exportNames("csv");
       else if (key === "sync-metadata") syncMetadataNow();
@@ -2153,7 +2187,7 @@
     const item = itemById(id); if (!item) return;
     if (!(await appConfirm(`Delete “${item.title}” from your library?`, { title: "Delete title", confirmLabel: "Delete", danger: true }))) return;
     if (prefs.backupBeforeDestructive) exportList({ silent: true });
-    const index = items.indexOf(item), trash = readTrash(); trash.unshift({ item: JSON.parse(JSON.stringify(item)), index, deletedAt: Date.now() }); writeTrash(trash);
+    moveToTrash(item);
     recordLibraryChange("removed", `Deleted ${item.title}.`, [id]); items = items.filter(entry => entry.id !== id); itemIndexItems = null;
     persist({ removed: [id] }); entryDraftId = null; goto(addReturnPage); toast("Entry deleted.");
   }
@@ -3041,7 +3075,30 @@
   const hydrateQueue = []; let hydrateActive = 0;
   // Progress of added titles and their episode artwork (shown on #sync).
   const setupDownloads = new Map();
+  const cancelledDownloadIds = new Set();
   const DOWNLOADS_KEY = `${storageKey}_sync_downloads`;
+  const DOWNLOADS_PAUSED_KEY = `${storageKey}_sync_downloads_paused`;
+  let setupDownloadsPaused = localStorage.getItem(DOWNLOADS_PAUSED_KEY) === "true";
+  let setupDownloadResumeWaiters = [];
+  async function waitForDownloadResume() {
+    while (setupDownloadsPaused) await new Promise(resolve => setupDownloadResumeWaiters.push(resolve));
+  }
+  function setSetupDownloadsPaused(paused) {
+    setupDownloadsPaused = Boolean(paused);
+    try { localStorage.setItem(DOWNLOADS_PAUSED_KEY, String(setupDownloadsPaused)); } catch (_) {}
+    if (!setupDownloadsPaused) { const waiters = setupDownloadResumeWaiters; setupDownloadResumeWaiters = []; waiters.forEach(resolve => resolve()); pumpHydrateQueue(); }
+    if (page === "sync") render();
+    updateSyncOverlay();
+  }
+  function clearSetupDownloads() {
+    setSetupDownloadsPaused(true);
+    hydrateQueue.length = 0;
+    for (const id of setupDownloads.keys()) cancelledDownloadIds.add(id);
+    setupDownloads.clear();
+    saveDownloads();
+    if (page === "sync") render();
+    updateSyncOverlay();
+  }
   let downloadSaveTimer = 0;
   let syncOverlayDismissed = false;
   let syncOverlayTimer = 0;
@@ -3124,6 +3181,7 @@
     downloadSaveTimer = setTimeout(() => { try { localStorage.setItem(DOWNLOADS_KEY, JSON.stringify([...setupDownloads.values()].slice(-400))); } catch (_) {} }, 400);
   }
   const markDownload = (item, status, error = "") => {
+    if (cancelledDownloadIds.has(String(item?.id))) return;
     const row = setupDownloads.get(String(item.id)) || {};
     setupDownloads.set(String(item.id), { ...row, id: String(item.id), title: item.title, category: item.category, source: item.metadataSource, providerId: item.providerId, status, error, stage: status === "running" ? "details" : status === "done" ? "complete" : status, detailsComplete: status === "done" || row.detailsComplete || false, at: Date.now() });
     if (status === "queued") syncOverlayDismissed = false;
@@ -3132,24 +3190,25 @@
   function restoreDownloads() {
     let saved = [];
     try { saved = JSON.parse(localStorage.getItem(DOWNLOADS_KEY) || "[]"); } catch (_) {}
-    const resume = [];
     for (const row of Array.isArray(saved) ? saved : []) {
       const item = itemById(row?.id); if (!item) continue;
-      setupDownloads.set(String(row.id), { ...row, title: item.title });
-      if (["queued", "running"].includes(row.status) && !item.fullDetailsAt) resume.push(item);
-      else if (["queued", "running"].includes(row.status) && item.fullDetailsAt && item.category === "series" && prefs.imageStorage === "all") resume.push(item);
-      else if (row.status === "done" || item.fullDetailsAt) setupDownloads.set(String(row.id), { ...row, status: "done", error: "" });
+      const restored = { ...row, title: item.title };
+      const unfinished = ["queued", "running"].includes(restored.status) && (!item.fullDetailsAt || (item.category === "series" && prefs.imageStorage === "all"));
+      if (unfinished) { restored.status = "queued"; setupDownloadsPaused = true; }
+      else if (row.status === "done" || item.fullDetailsAt) { restored.status = "done"; restored.error = ""; }
+      setupDownloads.set(String(row.id), restored);
     }
+    try { localStorage.setItem(DOWNLOADS_PAUSED_KEY, String(setupDownloadsPaused)); } catch (_) {}
     updateSyncOverlay();
-    if (resume.length) syncImported(resume);
+    if (page === "sync") scheduleHydrateRender();
   }
   function resumeArtworkCaching() {
-    if (!navigator.onLine || prefs.imageStorage !== "all") return;
+    if (setupDownloadsPaused || !navigator.onLine || prefs.imageStorage !== "all") return;
     const cachedGuides = items.filter(item => item.cachedDetails);
     if (!cachedGuides.length) return;
     let index = 0;
     const worker = async () => {
-      while (index < cachedGuides.length) {
+      while (index < cachedGuides.length && !setupDownloadsPaused) {
         const item = cachedGuides[index++];
         try {
           const currentDownload = setupDownloads.get(String(item.id));
@@ -3197,8 +3256,20 @@
   }
   function retryDownloadButton(button) {
     const ids = button.dataset.setupDownloadRetry ? [button.dataset.setupDownloadRetry] : [...setupDownloads.values()].filter(row => row.status === "failed").map(row => row.id);
-    ids.forEach(id => { const entry = itemById(id); if (entry) { hydrating.delete(entry.id); resumeSavedDownload(entry); } });
+    if (setupDownloadsPaused) setSetupDownloadsPaused(false);
+    ids.forEach(id => { const entry = itemById(id); cancelledDownloadIds.delete(String(id)); if (entry) { hydrating.delete(entry.id); resumeSavedDownload(entry); } });
     if (page === "sync") render();
+  }
+  function resumeSetupDownloads() {
+    setSetupDownloadsPaused(false);
+    for (const row of setupDownloads.values()) {
+      if (row.status !== "queued") continue;
+      const item = itemById(row.id);
+      if (!item || hydrating.has(item.id)) continue;
+      cancelledDownloadIds.delete(String(row.id));
+      if (!item.fullDetailsAt) { if (item.metadataSource && item.providerId) hydrateSavedItem(item); else syncImported([item]); }
+      else resumeSavedDownload(item);
+    }
   }
   function resumeSavedDownload(item) {
     if (!item || hydrating.has(item.id)) return;
@@ -3208,6 +3279,7 @@
     hydrating.add(item.id); markDownload(item, "queued");
     const run = async () => {
       try {
+        await waitForDownloadResume();
         if (item.cachedDetails?.compact) await hydrateDetails(item);
         if (!item.cachedDetails || item.cachedDetails.compact) throw new Error("Saved episode details are not available on this device.");
         const result = await window.SplitAppBackend?.cacheEpisodeThumbnails?.(item, progress => updateArtworkProgress(item, progress));
@@ -3220,13 +3292,15 @@
     run();
   }
   function pumpHydrateQueue() {
-    while (hydrateActive < 2 && hydrateQueue.length) {
+    while (!setupDownloadsPaused && hydrateActive < 2 && hydrateQueue.length) {
       const item = hydrateQueue.shift(); hydrateActive++; markDownload(item, "running");
       hydrateOne(item).finally(() => { hydrateActive--; hydrating.delete(item.id); pumpHydrateQueue(); });
     }
   }
   async function hydrateOne(item) {
     try {
+      await waitForDownloadResume();
+      if (cancelledDownloadIds.has(String(item.id))) return;
       if (!navigator.onLine) { markDownload(item, "failed", "Offline. Retry when connected."); return; }
       const initialWrite = pendingLibraryItemWrites.get(String(item.id));
       if (initialWrite) await initialWrite;
@@ -3235,6 +3309,7 @@
       if (!savedItem) { setupDownloads.delete(String(item.id)); return; }
       item = savedItem;
       const loaded = await window.SplitAppDetails.load(item, { ...detailSettings(), librarySync: true });
+      if (cancelledDownloadIds.has(String(item.id))) return;
       if (itemById(item.id) !== item) { setupDownloads.delete(String(item.id)); return; }
       applyLoadedMetadata(item, loaded, { queueArtwork: false });
       await saveLibraryItemToIDB(item);
@@ -3280,6 +3355,7 @@
     let queued = 0;
     for (const item of list) {
       if (!item || item.fullDetailsAt) continue;
+      cancelledDownloadIds.delete(String(item.id));
       if (item.metadataSource && item.providerId) { hydrateSavedItem(item); queued++; continue; }
       if (hydrating.has(item.id)) continue;
       hydrating.add(item.id); markDownload(item, "queued"); queued++;
@@ -3297,7 +3373,7 @@
   }
   let hydrateRenderTimer = 0;
   function scheduleHydrateRender() { if (!hydrateRenderTimer) hydrateRenderTimer = setTimeout(() => { hydrateRenderTimer = 0; if (!document.hidden) render(); }, page === "sync" ? 400 : 1500); }
-  let metadataSync = null;
+  let metadataSync = null, metadataSyncPaused = false, metadataSyncResumeWaiters = [];
   let metadataSyncSaveTimer = 0, metadataSyncRenderTimer = 0;
   let metadataSyncCountState = null, metadataSyncCounters = null;
   function saveMetadataSyncState() {
@@ -3403,6 +3479,17 @@
       if (navigator.onLine && prefs.metadataMode !== "offline") done();
     });
   }
+  async function waitForMetadataSyncResume() {
+    while (metadataSyncPaused) await new Promise(resolve => metadataSyncResumeWaiters.push(resolve));
+  }
+  function setMetadataSyncPaused(paused) {
+    if (!metadataSync || metadataSyncPaused === paused) return;
+    metadataSyncPaused = paused;
+    if (metadataSyncState) metadataSyncState.paused = paused;
+    if (!paused) { const waiters = metadataSyncResumeWaiters; metadataSyncResumeWaiters = []; waiters.forEach(resolve => resolve()); }
+    render();
+    toast(paused ? "Metadata refresh paused after current requests." : "Metadata refresh resumed.");
+  }
   async function startMetadataSync(ids = null, retry = false, scope = "all", quiet = false, automatic = false) {
     if (metadataSync) { toast("Metadata refresh is already running."); return metadataSync; }
     if (prefs.metadataMode === "offline" || !navigator.onLine) { toast("Connect to the internet and enable online metadata to refresh."); return; }
@@ -3429,8 +3516,10 @@
     if (!queue.length) { if (!quiet) toast(retry ? "No failed metadata requests to retry." : scope === "needed" ? "No saved titles need a metadata refresh." : "No saved titles can be refreshed from the enabled sources."); render(); return; }
     const total = metadataSyncState.entries.length;
     if (!quiet) toast(`Refreshing metadata · ${syncCounts().done + syncCounts().failed} of ${total}`); render();
+    metadataSyncState.active = true;
     metadataSync = (async () => {
       let nextStartAt = 0, queueIndex = 0;
+      let lastLibraryPersist = Promise.resolve();
       const reportedMemory = Number(navigator.deviceMemory) || 4;
       const reportedCores = Number(navigator.hardwareConcurrency) || 4;
       const memoryLimit = nativeAndroid
@@ -3438,10 +3527,13 @@
         : reportedMemory <= 2 ? 1 : 3;
       const workers = Array.from({ length: Math.min(memoryLimit, 3, Math.max(1, Number(prefs.metadataSyncWorkers) || 2), queue.length) }, async () => {
         while (queueIndex < queue.length) {
+          await waitForMetadataSyncResume();
           if (!navigator.onLine || prefs.metadataMode === "offline") { await waitForSyncResume(); continue; }
           await yieldToUser();
+          await waitForMetadataSyncResume();
           const requestDelay = Math.max(0, Number(prefs.syncRequestDelay) || 0);
           if (requestDelay) { const startAt = Math.max(Date.now(), nextStartAt); nextStartAt = startAt + requestDelay; if (startAt > Date.now()) await new Promise(resolve => setTimeout(resolve, startAt - Date.now())); }
+          await waitForMetadataSyncResume();
           if (!navigator.onLine || prefs.metadataMode === "offline") continue;
           if (queueIndex >= queue.length) return;
           const entry = queue[queueIndex++], item = itemById(entry.id); if (!item) { setMetadataSyncStatus(entry, "failed"); entry.error = "Title was removed."; markMetadataSyncEntryDirty(entry); deferMetadataSyncUpdate(); continue; }
@@ -3460,14 +3552,18 @@
             if (metadataSourceIdentity(item) !== requestIdentity) throw new Error("The metadata source or match changed during refresh. Retry to sync the current match.");
             const changed = metadataComparison(item.cachedDetails, Boolean(item.cachedDetails?.trimmed)) !== metadataComparison(loaded, Boolean(item.cachedDetails?.trimmed));
             applyLoadedMetadata(item, loaded, { cacheDetails: changed, replaceFacts: Boolean(item.relinkFresh) });
-            await persist({ ids: [item.id] }); setMetadataSyncStatus(entry, changed ? "done" : "checked"); entry.error = ""; delete entry.retryAfterAt; markMetadataSyncEntryDirty(entry);
+            // The WebView/IndexedDB save is debounced and coalesced across
+            // workers. Let network requests continue while native recovery
+            // snapshots and the selected-folder mirror catch up in order.
+            lastLibraryPersist = persist({ ids: [item.id] }); setMetadataSyncStatus(entry, changed ? "done" : "checked"); entry.error = ""; delete entry.retryAfterAt; markMetadataSyncEntryDirty(entry);
           } catch (error) { setMetadataSyncStatus(entry, "failed"); entry.error = String(error?.message || "Metadata refresh failed.").slice(0, 240); if (automatic) entry.retryAfterAt = Date.now() + 6 * 60 * 60 * 1000; markMetadataSyncEntryDirty(entry); recordLog("warning", `Metadata refresh failed for ${item.title}: ${entry.error}`); }
           deferMetadataSyncUpdate(); const counts = syncCounts(); if (!quiet) toast(`Refreshing metadata · ${counts.done + counts.failed} of ${total}`);
         }
       });
       try { await Promise.all(workers); }
       finally {
-        metadataSync = null; if (!syncCounts().remaining) metadataSyncState.finishedAt = Date.now(); else delete metadataSyncState.finishedAt; saveMetadataSyncState(); clearTimeout(metadataSyncRenderTimer); metadataSyncRenderTimer = 0; render();
+        await lastLibraryPersist;
+        metadataSync = null; metadataSyncPaused = false; metadataSyncResumeWaiters = []; if (metadataSyncState) { metadataSyncState.paused = false; metadataSyncState.active = false; } if (!syncCounts().remaining) metadataSyncState.finishedAt = Date.now(); else delete metadataSyncState.finishedAt; saveMetadataSyncState(); clearTimeout(metadataSyncRenderTimer); metadataSyncRenderTimer = 0; render();
         const counts = syncCounts(); if (!quiet) toast(`Metadata refresh: ${counts.changed} updated · ${counts.unchanged} unchanged${counts.failed ? ` · ${counts.failed} failed` : ""}.`);
       }
     })();
@@ -3676,6 +3772,7 @@
     const item = itemById(id); if (!item) return;
     recordLibraryChange("removed", `Deleted ${item.title}.`, [id]);
     if (prefs.backupBeforeDestructive) exportList({ silent: true });
+    moveToTrash(item);
     items = items.filter(entry => entry.id !== id); itemIndexItems = null;
     detailItemId = null; detailData = null; detailPreview = null;
     persist({ removed: [id] }); goto(detailReturnPage); toast("Entry deleted.");
@@ -3779,6 +3876,7 @@
         else if (action === "remove") {
           if (!(await appConfirm(`Remove “${target.title}” from your collection?`, { title: "Remove title", confirmLabel: "Remove", danger: true }))) return;
           if (prefs.backupBeforeDestructive) exportList({ silent: true });
+          moveToTrash(target);
           recordLibraryChange("removed", `Removed ${target.title}.`, [target.id]); items = items.filter(entry => entry.id !== target.id); itemIndexItems = null; persist({ removed: [target.id] }); render(); toast("Entry removed.");
         } else if (action !== "cancel") { setItemStatus(target, action); render(); toast(`Marked as ${action}.`); }
       });
@@ -3973,22 +4071,37 @@
       }
     } catch (error) { toast(error?.message || "Could not export title names."); }
   }
+  async function createEncryptedTransfer({ share = false } = {}) {
+    if (!nativeAndroid || !window.SplitAppBackend?.exportLibrary) { toast("Encrypted transfer files are currently available in the Android app."); return; }
+    const password = await appPrompt("Create a transfer password (at least 8 characters). You will need it on the receiving device.", { title: "Protect transfer", inputLabel: "New password", confirmLabel: "Continue", autocomplete: "new-password", minLength: 8 });
+    if (password == null) return;
+    const confirmation = await appPrompt("Enter the transfer password again to confirm.", { title: "Confirm transfer password", inputLabel: "Confirm password", confirmLabel: "Create transfer", autocomplete: "new-password", minLength: 8 });
+    if (confirmation == null) return;
+    if (password !== confirmation) { toast("The passwords do not match."); return; }
+    try {
+      toast(share ? "Preparing encrypted transfer to share…" : "Creating encrypted transfer file…");
+      await exportList({ password, share });
+    } catch (error) { toast(error?.message || "Could not create the encrypted transfer file."); }
+  }
   async function exportList(options = {}) {
     if (exportRunning) { toast("An export is already running."); return; }
     exportRunning = true;
     try { return await exportListBody(options); }
     finally { exportRunning = false; }
   }
-  async function exportListBody({ silent = false } = {}) {
+  async function exportListBody({ silent = false, password = "", share = false } = {}) {
     const backend = window.SplitAppBackend;
+    if (password && (!nativeAndroid || !backend?.exportLibrary)) { toast("Password-protected transfer files are currently available in the Android app."); return; }
     if (nativeAndroid && backend?.exportLibrary) {
       let lastToast = 0;
       try {
-        if (!silent) toast("Choose where to save your library…");
-        const result = await backend.exportLibrary({ items, history, preferences: prefs }, { mode: silent ? "folder" : "ask", onProgress: (done, total) => {
+        if (!silent && !share) toast("Choose where to save your library…");
+        const result = await backend.exportLibrary({ items, history, preferences: prefs }, { mode: silent ? "folder" : share ? "share" : "ask", password, onProgress: (done, total, status) => {
+          if (status?.notificationsAllowed === false) { toast("Allow notifications to see export progress while ScreenMark is in the background."); lastToast = Date.now(); return; }
           if (Date.now() - lastToast > 700 && done < total) { lastToast = Date.now(); toast(`Exporting… ${Math.round(done / total * 100)}%`); }
         } });
-        toast(silent ? `Backup saved: ${result.fileName}` : `Exported ${items.length} titles.`);
+        toast(share ? "Encrypted transfer ready to share." : password ? `Encrypted transfer saved: ${result.fileName}. Share it from the location you chose.` : silent ? `Backup saved: ${result.fileName}` : `Exported ${items.length} titles.`);
+        return result;
       } catch (error) {
         const message = String(error?.message || error);
         if (!/cancel/i.test(message)) { toast(`Export failed: ${message}`); recordLog("error", `Export failed: ${message}`); }
@@ -3999,7 +4112,7 @@
     const parts = [`{"app":${JSON.stringify(config.name)},"version":2,"exportedAt":${JSON.stringify(new Date().toISOString())},"index":${JSON.stringify(items.map(item => backend?.backupRefOf ? backend.backupRefOf(item) : { id: String(item.id), source: item.metadataSource || "manual", providerId: String(item.providerId || "") }))},"items":[`];
     for (let offset = 0, first = true; offset < items.length; offset += 8) {
       const batch = backend?.detailedItems ? await backend.detailedItems(items.slice(offset, offset + 8)) : items.slice(offset, offset + 8);
-      batch.forEach(item => { parts.push((first ? "" : ",") + JSON.stringify(backend?.backupItem ? backend.backupItem(item) : item)); first = false; });
+      for (const item of batch) { parts.push((first ? "" : ",") + JSON.stringify(backend?.backupItem ? await backend.backupItem(item) : item)); first = false; }
     }
     parts.push(`],"history":${JSON.stringify(history)},"preferences":${JSON.stringify(prefs)}}`);
     let blob = new Blob(parts, { type: "application/json" }), name = fileName;
@@ -4017,15 +4130,46 @@
     try { return await new Response(file.stream().pipeThrough(new DecompressionStream("gzip"))).text(); }
     catch (_) { throw new Error("This compressed backup is damaged or incomplete, so it could not be read."); }
   }
+  function restoreTransferImages(item) {
+    const copy = { ...item }, images = copy.transferImages;
+    delete copy.transferImages;
+    delete copy.localImageFiles; delete copy.thumbnailPath; delete copy.thumbnailMime; delete copy.localImageFingerprint;
+    if (images && typeof images === "object") for (const [key, value] of Object.entries(images)) {
+      if (typeof value !== "string" || !/^data:image\//i.test(value)) continue;
+    }
+    return copy;
+  }
+  async function cacheImportedTransferImages(item, images) {
+    if (!images || typeof images !== "object") return;
+    const writes = [];
+    const artworkEntries = window.SplitAppBackend?.artworkCacheEntries?.(item) || [];
+    for (const [path, dataUrl] of Object.entries(images)) {
+      if (typeof dataUrl !== "string" || !/^data:image\//i.test(dataUrl)) continue;
+      const blob = await dataUrlToBlob(dataUrl); if (!blob) continue;
+      const entry = artworkEntries.find(row => row.paths?.some(imagePath => imagePath.join(".") === path));
+      if (entry) writes.push([entry.key, entry.signature, blob]);
+      const episode = /^cachedDetails\.episodesById\.([^.]+)\.image$/.exec(path);
+      if (episode && window.SplitAppIDB?.putThumbs) {
+        const row = (item.cachedDetails?.episodesById || {})[episode[1]]
+          || (item.cachedDetails?.sections || []).flatMap(section => section?.kind === "episodes" ? section.items || [] : []).find(value => String(value.id) === episode[1]);
+        if (row?.image) try { await window.SplitAppIDB.putThumbs([[`${config.key}:episode:${String(item.id)}:${episode[1]}`, row.image, blob]]); } catch (_) {}
+      }
+    }
+    try { if (writes.length) await window.SplitAppIDB?.putThumbs?.(writes); } catch (_) {}
+  }
   async function importList(file) {
     if (!file) return;
     recordLog("info", `Library import started: ${file.name || "unnamed file"} (${Number(file.size) || 0} bytes).`);
     try {
       const encryptedImportIds = [];
+      const fileHead = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+      const encryptedTransfer = window.SplitAppTransferCrypto?.isEncryptedHeader(fileHead) || /\.sqx$/i.test(file.name || "");
+      const transferPassword = encryptedTransfer ? await appPrompt("Enter the password for this encrypted transfer file.", { title: "Unlock transfer", confirmLabel: "Open transfer" }) : "";
+      if (encryptedTransfer && transferPassword == null) throw new Error("Import cancelled.");
       // Big JSON backups are read one title at a time from the stream instead of as one giant string; any problem falls back to the whole-file path.
       let streamed = null;
-      if (/\.(json|gz)$/i.test(file.name) && !/\.sqdb/i.test(file.name) && file.size > 2 * 1024 * 1024 && window.SplitAppBackupStream) {
-        try { streamed = await window.SplitAppBackupStream.parseFile(file, { onProgress: count => toast(`Reading backup… ${count.toLocaleString()} titles`) }); } catch (_) { streamed = null; }
+      if (encryptedTransfer || (/\.(json|gz)$/i.test(file.name) && !/\.sqdb/i.test(file.name) && file.size > 2 * 1024 * 1024)) {
+        try { streamed = await window.SplitAppBackupStream.parseFile(file, { password: transferPassword, onProgress: count => toast(`Reading backup… ${count.toLocaleString()} titles`) }); } catch (error) { if (encryptedTransfer) throw error; streamed = null; }
       }
       const text = streamed ? "" : await readBackupText(file);
       const parseCsv = value => {
@@ -4071,6 +4215,7 @@
         data = streamed || JSON.parse(text); incoming = Array.isArray(data) ? data : data.items;
       }
       if (!Array.isArray(incoming)) throw new Error("No item list found in this file.");
+      if (!Array.isArray(data) && data.app && data.app !== config.name) throw new Error(`This transfer belongs to ${data.app}, not ${config.name}.`);
       const now = Date.now(), idMap = new Map();
       const stamp = value => { const n = Number(value) || Date.parse(value) || 0; return n > 0 && n <= now ? n : now; };
       // Keep the backup's own dates so Timeline and Statistics → Activity show when things really happened.
@@ -4078,7 +4223,7 @@
         const id = crypto.randomUUID();
         if (item.id != null) idMap.set(String(item.id), id);
         const categoryKey = config.categories.some(cat => cat.key === item.category) ? item.category : config.categories[0].key;
-        const cleanItem = stripLocalScores({ ...item });
+        const cleanItem = stripLocalScores(restoreTransferImages(item));
         // Backups carry the source and its id: use them to rebuild the metadata link and to match titles exactly.
         const ref = item.backupRef && typeof item.backupRef === "object" ? item.backupRef : null;
         if (ref) {
@@ -4086,7 +4231,9 @@
           if (!cleanItem.providerId && ref.providerId) cleanItem.providerId = ref.providerId;
         }
         delete cleanItem.backupRef;
-        return { ...cleanItem, id, category: categoryKey, status: item.status || defaultStatus(categoryKey), createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
+        const normalizedItem = { ...cleanItem, id, category: categoryKey, status: item.status || defaultStatus(categoryKey), createdAt: stamp(item.createdAt), updatedAt: stamp(item.updatedAt) };
+        if (item.transferImages && typeof item.transferImages === "object") normalizedItem._transferImagesPending = item.transferImages;
+        return normalizedItem;
       });
       const byIdentity = new Map(items.map(item => [titleIdentity(item), item]));
       const fresh = [], patches = [];
@@ -4096,9 +4243,9 @@
         const existing = (imported.metadataSource && imported.providerId ? itemByProvider(imported.metadataSource, imported.category, imported.providerId) : null) || byIdentity.get(titleIdentity(imported));
         if (!existing) { fresh.push(imported); continue; }
         const patch = {};
-        for (const field of fillFields) if (empty(existing[field]) && !empty(imported[field])) patch[field] = imported[field];
+        for (const field of [...fillFields, "localThumbnailData", "localPortraitData", "localLandscapeData"]) if (empty(existing[field]) && !empty(imported[field])) patch[field] = imported[field];
         // Keep ScreenMark's episode checklist and per-episode notes when filling an existing title.
-        if (Object.keys(patch).length) patches.push({ item: existing, patch });
+        if (Object.keys(patch).length || imported._transferImagesPending) patches.push({ item: existing, patch, transferImages: imported._transferImagesPending || null });
       }
       const duplicateKey = title => String(title || "").toLocaleLowerCase().replace(/^the\s+/, "").replace(/\b(definitive|complete|ultimate|deluxe|enhanced|special|gold|standard|anniversary|remastered|remaster|edition|extended|director'?s cut|remake)\b/g, " ").replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
       const nearDuplicate = (left, right) => {
@@ -4137,10 +4284,22 @@
       let importedHistory = (Array.isArray(data.history) ? data.history : []).filter(entry => entry && idMap.has(String(entry.itemId)) && freshIds.has(idMap.get(String(entry.itemId)))).map(entry => ({ ...entry, itemId: idMap.get(String(entry.itemId)) }));
       if (!importedHistory.length) importedHistory = fresh.filter(item => trackedStatuses.includes(item.status)).map(item => ({ itemId: item.id, title: item.title, action: item.status, status: item.status, at: item.updatedAt }));
       items = [...fresh, ...items]; itemIndexItems = null;
-      for (const { item, patch } of patches) Object.assign(item, patch, { updatedAt: Date.now() });
+      for (const { item, patch } of patches) {
+        Object.assign(item, patch, { updatedAt: Object.keys(patch).length ? Date.now() : item.updatedAt });
+        if (Object.keys(patch).length) itemMutationRevisions.set(String(item.id), localMutationRevision + 1);
+      }
+      const restoredArtItems = [...fresh, ...patches.map(row => row.item)];
+      const transferImageMaps = new Map([
+        ...fresh.filter(item => item._transferImagesPending).map(item => [String(item.id), item._transferImagesPending]),
+        ...patches.filter(row => row.transferImages).map(row => [String(row.item.id), row.transferImages])
+      ]);
+      restoredArtItems.forEach(item => { delete item._transferImagesPending; });
+      if (data.preferences && typeof data.preferences === "object" && !Array.isArray(data.preferences)) Object.assign(prefs, data.preferences);
       history = [...importedHistory, ...history].sort((a, c) => (Number(c.at) || Date.parse(c.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0));
       recordLibraryChange("imported", `Imported ${fresh.length} ${fresh.length === 1 ? "title" : "titles"}.`, fresh.map(item => item.id));
       await persist({ ids: [...fresh, ...patches.map(row => row.item)].map(item => item.id), meta: true });
+      for (const item of restoredArtItems) await cacheImportedTransferImages(item, transferImageMaps.get(String(item.id)));
+      applyPreferences();
       if (encryptedImportIds.length) {
         const retained = new Set(items.map(item => String(item.id)));
         const store = window.Capacitor?.Plugins?.EncryptedStore;
@@ -4390,7 +4549,7 @@
       return;
     }
     const syncAction = eventClosest(event, "[data-metadata-sync-action]");
-    if (syncAction) { if (syncAction.dataset.metadataSyncAction === "start") syncMetadataNow(); else if (syncAction.dataset.metadataSyncAction === "retry") retryMetadataSync(syncAction.dataset.id || null); else if (syncAction.dataset.metadataSyncAction === "clear") clearMetadataSyncState(); return; }
+    if (syncAction) { if (syncAction.dataset.metadataSyncAction === "start") syncMetadataNow(); else if (syncAction.dataset.metadataSyncAction === "retry") retryMetadataSync(syncAction.dataset.id || null); else if (syncAction.dataset.metadataSyncAction === "clear") clearMetadataSyncState(); else if (syncAction.dataset.metadataSyncAction === "toggle") setMetadataSyncPaused(!metadataSyncPaused); return; }
     const settingPicker = eventClosest(event, "[data-setting-picker]");
     if (settingPicker) { openSettingPicker(settingPicker); return; }
     if (eventClosest(event, "[data-close-setting-picker]")) { closePopup($("#setting-picker-dialog")); return; }
@@ -4537,7 +4696,8 @@
       if (detailTab === "cast" && root.querySelector("[data-cast-lazy]")) loadDetailCast();
       return;
     }
-    if (eventClosest(event, "[data-setup-download-clear]")) { [...setupDownloads].forEach(([id, row]) => { if (row.status === "done") setupDownloads.delete(id); }); saveDownloads(); render(); return; }
+    if (eventClosest(event, "[data-setup-download-toggle]")) { if (setupDownloadsPaused) resumeSetupDownloads(); else setSetupDownloadsPaused(true); return; }
+    if (eventClosest(event, "[data-setup-download-clear]")) { clearSetupDownloads(); return; }
     const retryDownload = eventClosest(event, "[data-setup-download-retry]");
     if (retryDownload) { retryDownloadButton(retryDownload); return; }
     if (eventClosest(event, "[data-cast-load]")) { loadDetailCast(true); return; }
@@ -4574,7 +4734,7 @@
     const settingAction = eventClosest(event, "[data-setting-action]");
     if (settingAction && settingAction.type !== "file") {
       const key = settingAction.dataset.settingAction;
-      if (key === "export") exportList(); else if (key === "export-txt") exportNames("txt"); else if (key === "export-csv") exportNames("csv"); else if (key === "sync-metadata") syncMetadataNow(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
+      if (key === "export") exportList(); else if (key === "export-encrypted") createEncryptedTransfer(); else if (key === "export-share") createEncryptedTransfer({ share: true }); else if (key === "export-txt") exportNames("txt"); else if (key === "export-csv") exportNames("csv"); else if (key === "sync-metadata") syncMetadataNow(); else if (key === "resetAnimations") resetAnimations(); else if (key === "previewAnimations") previewAnimations(); else if (key === "resetAppearance") resetAppearance();
       else if (key.startsWith("clear-")) {
         clearAppCaches(key === "clear-images" ? "images" : key === "clear-metadata" ? "metadata" : "temporary");
         toast("Temporary cache cleared.");
