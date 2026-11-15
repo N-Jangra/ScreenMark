@@ -243,8 +243,7 @@ public class ShareIntentPlugin extends Plugin {
                     chunkOut.close(); chunkOut = null;
                     source = chunkFile;
                 }
-                byte[] bytes = java.nio.file.Files.readAllBytes(source.toPath());
-                String location = saveDownload(safeName, new ImageData(bytes, mime));
+                String location = saveDownload(safeName, mime, source);
                 String actualName = location.substring(location.lastIndexOf('/') + 1);
                 boolean notified = postDownloadNotification(actualName, location);
                 JSObject result = new JSObject(); result.put("location", location); result.put("notification", notified);
@@ -520,6 +519,50 @@ public class ShareIntentPlugin extends Plugin {
         File target = new File(directory, filename);
         try (FileOutputStream output = new FileOutputStream(target)) { output.write(image.bytes); }
         return target.getAbsolutePath();
+    }
+
+    /** Copies chunked exports to Downloads without loading the entire file into heap memory. */
+    private String saveDownload(String baseName, String mimeType, File source) throws Exception {
+        String filename = baseName.replaceAll("\\.[A-Za-z0-9]{2,5}$", "") + "." + extension(mimeType);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Downloads.DISPLAY_NAME, filename);
+            values.put(MediaStore.Downloads.MIME_TYPE, mimeType);
+            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+            values.put(MediaStore.Downloads.IS_PENDING, 1);
+            Uri uri = getContext().getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) throw new Exception("Could not save the file to Downloads.");
+            try (InputStream input = new java.io.FileInputStream(source);
+                 OutputStream output = getContext().getContentResolver().openOutputStream(uri)) {
+                if (output == null) throw new Exception("Could not write the downloaded file.");
+                copy(input, output);
+            } catch (Exception error) {
+                getContext().getContentResolver().delete(uri, null, null);
+                throw error;
+            }
+            ContentValues ready = new ContentValues(); ready.put(MediaStore.Downloads.IS_PENDING, 0);
+            if (getContext().getContentResolver().update(uri, ready, null, null) <= 0) {
+                getContext().getContentResolver().delete(uri, null, null);
+                throw new Exception("Could not finish saving the file to Downloads.");
+            }
+            return "Downloads/" + filename;
+        }
+        File directory = getContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+        if (directory == null) throw new Exception("Downloads storage is unavailable.");
+        if (!directory.exists() && !directory.mkdirs()) throw new Exception("Could not prepare Downloads.");
+        File target = new File(directory, filename);
+        try (InputStream input = new java.io.FileInputStream(source); OutputStream output = new FileOutputStream(target)) {
+            copy(input, output);
+        }
+        return target.getAbsolutePath();
+    }
+
+    private long copy(InputStream input, OutputStream output) throws Exception {
+        byte[] buffer = new byte[64 * 1024];
+        long total = 0;
+        int count;
+        while ((count = input.read(buffer)) != -1) { output.write(buffer, 0, count); total += count; }
+        return total;
     }
 
     private boolean postDownloadNotification(String filename, String location) {
