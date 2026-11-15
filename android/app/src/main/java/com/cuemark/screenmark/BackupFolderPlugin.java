@@ -141,7 +141,8 @@ public class BackupFolderPlugin extends Plugin {
                 Uri treeUri = Uri.parse(treeUriStr);
                 Uri dirUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
                 Uri existing = findChildDocument(treeUri, dirUri, fileName);
-                Uri target = existing != null ? existing : DocumentsContract.createDocument(getContext().getContentResolver(), dirUri, fileName.toLowerCase().endsWith(".gz") ? "application/gzip" : "application/json", fileName);
+                String mimeType = fileName.toLowerCase().endsWith(".sqx") ? "application/octet-stream" : fileName.toLowerCase().endsWith(".gz") ? "application/gzip" : "application/json";
+                Uri target = existing != null ? existing : DocumentsContract.createDocument(getContext().getContentResolver(), dirUri, mimeType, fileName);
                 if (target == null) throw new Exception("Failed to create the file in the backup folder");
                 exportStream = getContext().getContentResolver().openOutputStream(target, "wt");
                 if (exportStream == null) throw new Exception("Could not open the file for writing");
