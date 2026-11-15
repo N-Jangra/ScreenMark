@@ -36,5 +36,5 @@ window.APP_CONFIG = {
       "statuses": ["Watchlist", "In Progress", "On Hold", "Dropped", "Completed"]
     }
   ],
-  "version": "0.1.9"
+  "version": "0.1.11"
 };

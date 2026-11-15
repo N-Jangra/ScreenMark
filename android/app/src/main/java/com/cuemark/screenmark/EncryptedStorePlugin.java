@@ -3,6 +3,7 @@ package com.cuemark.screenmark;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.system.Os;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.KeyPairGeneratorSpec;
 import android.security.keystore.KeyProperties;
@@ -15,12 +16,17 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.nio.charset.StandardCharsets;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.security.MessageDigest;
 import java.math.BigInteger;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.util.Calendar;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import javax.crypto.KeyGenerator;
@@ -40,6 +46,156 @@ public class EncryptedStorePlugin extends Plugin {
     private static final String KEY_ALIAS = "screenmark_state_key";
     private static final String LEGACY_RSA_ALIAS = "screenmark_state_rsa_key";
     private static final String LEGACY_WRAPPED_KEY = "legacy_wrapped_key";
+    private final Object mirrorLock = new Object();
+
+    // Redundant encrypted snapshot under Android/data/<package>/files. IndexedDB
+    // remains Chromium's live database; this mirror is only a native recovery copy.
+    private File mirrorDirectory() throws Exception {
+        File external = getContext().getExternalFilesDir(null);
+        if (external == null) throw new IllegalStateException("App-specific external storage is unavailable");
+        File directory = new File(external, "CueMark/ScreenMark/records");
+        if (!directory.isDirectory() && !directory.mkdirs()) throw new IllegalStateException("Could not create app data mirror");
+        return directory;
+    }
+
+    private String safeRecordName(String id) throws Exception {
+        byte[] digest = MessageDigest.getInstance("SHA-256").digest(id.getBytes(StandardCharsets.UTF_8));
+        StringBuilder name = new StringBuilder();
+        for (byte value : digest) name.append(String.format(java.util.Locale.ROOT, "%02x", value & 0xff));
+        return name.toString() + ".enc";
+    }
+
+    private File recordFile(File directory, String id) throws Exception { return new File(directory, safeRecordName(id)); }
+    private File deletionFile(File directory, String id) throws Exception { return new File(directory, safeRecordName(id).replace(".enc", ".deleted")); }
+    private long deletionTime(File file) {
+        try { return Long.parseLong(readMirror(file)); } catch (Exception ignored) { return 0; }
+    }
+
+    private void writeMirror(File target, String value) throws Exception {
+        File temporary = new File(target.getParentFile(), target.getName() + ".tmp");
+        try (FileOutputStream output = new FileOutputStream(temporary)) {
+            output.write(value.getBytes(StandardCharsets.UTF_8));
+            output.getFD().sync();
+        }
+        try { Os.rename(temporary.getAbsolutePath(), target.getAbsolutePath()); }
+        catch (Exception error) { temporary.delete(); throw new IllegalStateException("Could not publish mirrored record", error); }
+    }
+
+    private String readMirror(File target) throws Exception {
+        if (!target.isFile()) return null;
+        try (FileInputStream input = new FileInputStream(target); java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192]; int count;
+            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+            return output.toString("UTF-8");
+        }
+    }
+
+    private void deleteMirror() {
+        File external = getContext().getExternalFilesDir(null);
+        deleteRecursively(external == null ? null : new File(external, "CueMark/ScreenMark"));
+    }
+
+    private void deleteRecursively(File file) {
+        if (file == null || !file.exists()) return;
+        File[] children = file.listFiles();
+        if (children != null) for (File child : children) deleteRecursively(child);
+        file.delete();
+    }
+
+    @PluginMethod
+    public void getMirrorLocation(PluginCall call) {
+        try { call.resolve(new JSObject().put("path", mirrorDirectory().getParentFile().getAbsolutePath())); }
+        catch (Exception e) { call.reject("App data mirror is unavailable", e); }
+    }
+
+    @PluginMethod
+    public void ensureMirror(PluginCall call) {
+        new Thread(() -> {
+            try {
+                synchronized (mirrorLock) {
+                    File records = mirrorDirectory(), root = records.getParentFile();
+                    File marker = new File(root, "mirror-v1.ready");
+                    if (!marker.isFile()) {
+                        SharedPreferences prefs = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+                        for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
+                            if (!(entry.getValue() instanceof String)) continue;
+                            String key = entry.getKey(), packed = (String) entry.getValue();
+                            if (key.startsWith(ITEM_PREFIX)) {
+                                try {
+                                    String id = new JSONObject(decrypt(packed)).optString("id", "");
+                                    if (!id.isEmpty()) writeMirror(new File(records, safeRecordName(id)), packed);
+                                } catch (Exception ignored) { }
+                            } else if (key.equals(META_VALUE) || key.equals(VALUE)) {
+                                writeMirror(new File(root, key.equals(META_VALUE) ? "meta.enc" : "state.enc"), packed);
+                            }
+                        }
+                        writeMirror(marker, "1");
+                    }
+                }
+                call.resolve(new JSObject().put("success", true));
+            } catch (Exception e) { call.reject("Could not prepare app data recovery mirror", e); }
+        }, "ScreenMark-AppDataMirror").start();
+    }
+
+    @PluginMethod
+    public void isLibraryMirrorReady(PluginCall call) {
+        try {
+            File records = mirrorDirectory();
+            JSONArray ids = call.getArray("ids");
+            int count = 0;
+            if (ids != null) {
+                for (int index = 0; index < ids.length(); index++) {
+                    String id = ids.optString(index, "");
+                    if (!id.isEmpty() && recordFile(records, id).isFile()) count++;
+                }
+                call.resolve(new JSObject().put("ready", count == ids.length()).put("count", count));
+            } else {
+                String saved = readMirror(new File(records.getParentFile(), "library-v1.ready"));
+                call.resolve(new JSObject().put("ready", saved != null).put("count", saved == null ? -1 : Integer.parseInt(saved)));
+            }
+        }
+        catch (Exception e) { call.reject("Could not inspect app data mirror", e); }
+    }
+
+    @PluginMethod
+    public void syncMirrorBatch(PluginCall call) {
+        JSONArray items = call.getArray("items");
+        if (items == null) { call.reject("Missing mirror item batch"); return; }
+        try {
+            synchronized (mirrorLock) {
+                File records = mirrorDirectory();
+                for (int i = 0; i < items.length(); i++) {
+                    JSONObject item = items.optJSONObject(i);
+                    if (item == null || item.isNull("id")) continue;
+                    String id = item.optString("id", "");
+                    if (id.isEmpty()) continue;
+                    File deleted = deletionFile(records, id), target = recordFile(records, id);
+                    if (deletionTime(deleted) >= item.optLong("updatedAt")) continue;
+                    if (target.isFile()) try {
+                        JSONObject previous = new JSONObject(decrypt(readMirror(target)));
+                        if (previous.optLong("updatedAt") > item.optLong("updatedAt")) continue;
+                    } catch (Exception ignored) { }
+                    writeMirror(target, encrypt(item.toString()));
+                    // Keep a deletion tombstone until the replacement has been
+                    // atomically published. A failed write must not let an old
+                    // mirror record reappear on the next recovery read.
+                    deleted.delete();
+                }
+            }
+            call.resolve(new JSObject().put("written", items.length()));
+        } catch (Exception e) { call.reject("Could not mirror library records", e); }
+    }
+
+    @PluginMethod
+    public void finishLibraryMirrorSync(PluginCall call) {
+        try {
+            synchronized (mirrorLock) {
+                int count = call.getInt("count", 0);
+                writeMirror(new File(mirrorDirectory().getParentFile(), "library-v1.ready"), Integer.toString(count));
+            }
+            call.resolve(new JSObject().put("success", true));
+        } catch (Exception e) { call.reject("Could not finalize app data mirror", e); }
+    }
 
     public static String readPackedState(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -63,6 +219,7 @@ public class EncryptedStorePlugin extends Plugin {
         try {
             SharedPreferences prefs = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
             String packed = prefs.getString(VALUE, null);
+            if (packed == null) try { packed = readMirror(new File(mirrorDirectory().getParentFile(), "state.enc")); } catch (Exception ignored) { }
             JSObject result = new JSObject();
             result.put("exists", packed != null && !packed.isEmpty());
             if (packed != null && !packed.isEmpty()) result.put("data", decrypt(packed));
@@ -80,8 +237,9 @@ public class EncryptedStorePlugin extends Plugin {
             return;
         }
         try {
-            getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putString(VALUE, encrypt(data)).apply();
+            String packed = encrypt(data);
+            getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(VALUE, packed).apply();
+            try { synchronized (mirrorLock) { writeMirror(new File(mirrorDirectory().getParentFile(), "state.enc"), packed); } } catch (Exception ignored) { }
             call.resolve(new JSObject().put("success", true));
         } catch (Exception e) {
             call.reject("Could not encrypt local database", e);
@@ -93,15 +251,28 @@ public class EncryptedStorePlugin extends Plugin {
     public void getItems(PluginCall call) {
         try {
             SharedPreferences prefs = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            JSONArray items = new JSONArray();
+            Map<String, JSONObject> byId = new LinkedHashMap<>();
+            File records = null;
+            try { records = mirrorDirectory(); } catch (Exception ignored) { }
             for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
                 if (!entry.getKey().startsWith(ITEM_PREFIX) || !(entry.getValue() instanceof String)) continue;
                 try {
-                    items.put(new JSONObject(decrypt((String) entry.getValue())));
+                    JSONObject item = new JSONObject(decrypt((String) entry.getValue()));
+                    String id = item.optString("id", entry.getKey().substring(ITEM_PREFIX.length()));
+                    if (records == null || deletionTime(deletionFile(records, id)) < item.optLong("updatedAt")) byId.put(id, item);
                 } catch (Exception ignored) {
                     // A damaged item should not prevent the rest of the library from opening.
                 }
             }
+            File[] recordFiles = records == null ? null : records.listFiles((directory, name) -> name.endsWith(".enc"));
+            if (recordFiles != null) for (File record : recordFiles) try {
+                JSONObject item = new JSONObject(decrypt(readMirror(record)));
+                String id = item.optString("id", ""); JSONObject previous = byId.get(id);
+                if (!id.isEmpty() && deletionTime(deletionFile(records, id)) < item.optLong("updatedAt")
+                    && (previous == null || item.optLong("updatedAt") >= previous.optLong("updatedAt"))) byId.put(id, item);
+            } catch (Exception ignored) { }
+            JSONArray items = new JSONArray();
+            for (JSONObject item : byId.values()) items.put(item);
             JSObject result = new JSObject();
             result.put("exists", items.length() > 0);
             result.put("data", items.toString());
@@ -122,8 +293,9 @@ public class EncryptedStorePlugin extends Plugin {
         try {
             // Validate before writing so malformed calls cannot create unusable records.
             new JSONObject(data);
-            getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putString(ITEM_PREFIX + id, encrypt(data)).apply();
+            String packed = encrypt(data);
+            getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(ITEM_PREFIX + id, packed).apply();
+            try { synchronized (mirrorLock) { File records = mirrorDirectory(); deletionFile(records, id).delete(); writeMirror(recordFile(records, id), packed); } } catch (Exception ignored) { }
             call.resolve(new JSObject().put("success", true));
         } catch (Exception e) {
             call.reject("Could not encrypt item", e);
@@ -137,8 +309,8 @@ public class EncryptedStorePlugin extends Plugin {
             call.reject("Missing item id");
             return;
         }
-        getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().remove(ITEM_PREFIX + id).apply();
+        getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(ITEM_PREFIX + id).apply();
+        try { synchronized (mirrorLock) { File records = mirrorDirectory(); recordFile(records, id).delete(); writeMirror(deletionFile(records, id), Long.toString(System.currentTimeMillis())); } } catch (Exception ignored) { }
         call.resolve(new JSObject().put("success", true));
     }
 
@@ -147,6 +319,7 @@ public class EncryptedStorePlugin extends Plugin {
         try {
             SharedPreferences prefs = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
             String packed = prefs.getString(META_VALUE, null);
+            if (packed == null) try { packed = readMirror(new File(mirrorDirectory().getParentFile(), "meta.enc")); } catch (Exception ignored) { }
             JSObject result = new JSObject();
             result.put("exists", packed != null && !packed.isEmpty());
             if (packed != null && !packed.isEmpty()) result.put("data", decrypt(packed));
@@ -165,8 +338,9 @@ public class EncryptedStorePlugin extends Plugin {
         }
         try {
             new JSONObject(data);
-            getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putString(META_VALUE, encrypt(data)).apply();
+            String packed = encrypt(data);
+            getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(META_VALUE, packed).apply();
+            try { synchronized (mirrorLock) { writeMirror(new File(mirrorDirectory().getParentFile(), "meta.enc"), packed); } } catch (Exception ignored) { }
             call.resolve(new JSObject().put("success", true));
         } catch (Exception e) {
             call.reject("Could not encrypt metadata", e);
@@ -178,6 +352,8 @@ public class EncryptedStorePlugin extends Plugin {
     public void clearLegacyState(PluginCall call) {
         getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().remove(VALUE).apply();
+            File external = getContext().getExternalFilesDir(null);
+            if (external != null) new File(external, "CueMark/ScreenMark/state.enc").delete();
         call.resolve(new JSObject().put("success", true));
     }
 
@@ -220,16 +396,32 @@ public class EncryptedStorePlugin extends Plugin {
                 if (restoredState == null) throw new IllegalArgumentException("Backup contains no restorable library records");
                 // Replace the encrypted snapshot as a whole. Keeping keys that are
                 // absent from the backup would resurrect titles deleted earlier.
-                SharedPreferences.Editor editor = prefs.edit().clear();
-                for (java.util.Iterator<String> it = verifiedRecords.keys(); it.hasNext();) {
-                    String key = it.next();
-                    editor.putString(key, verifiedRecords.getString(key));
+                synchronized (mirrorLock) {
+                    // Remove stale mirror rows before publishing replacement
+                    // preferences. A crash after commit must not merge in old
+                    // external mirror files during recovery.
+                    deleteMirror();
+                    SharedPreferences.Editor editor = prefs.edit().clear();
+                    for (java.util.Iterator<String> it = verifiedRecords.keys(); it.hasNext();) {
+                        String key = it.next();
+                        editor.putString(key, verifiedRecords.getString(key));
+                    }
+                    if (!editor.commit()) throw new IllegalStateException("Could not write encrypted backup records");
+                    File mirror = mirrorDirectory(), parent = mirror.getParentFile();
+                    for (java.util.Iterator<String> it = verifiedRecords.keys(); it.hasNext();) {
+                        String key = it.next(), value = verifiedRecords.getString(key);
+                        if (key.startsWith(ITEM_PREFIX)) {
+                            String id = new JSONObject(decrypt(value)).optString("id", "");
+                            if (!id.isEmpty()) writeMirror(new File(mirror, safeRecordName(id)), value);
+                        } else if (key.equals(META_VALUE)) writeMirror(new File(parent, "meta.enc"), value);
+                        else if (key.equals(VALUE)) writeMirror(new File(parent, "state.enc"), value);
+                    }
                 }
-                if (!editor.commit()) throw new IllegalStateException("Could not write encrypted backup records");
             } else {
                 // Backward compatibility with the original single-blob .sqdb format.
                 restoredState = new JSONObject(decrypt(packed));
                 if (!prefs.edit().putString(VALUE, packed).commit()) throw new IllegalStateException("Could not write encrypted backup state");
+                writeMirror(new File(mirrorDirectory().getParentFile(), "state.enc"), packed);
             }
             if (restoredState == null) throw new IllegalArgumentException("Backup contains no restorable library records");
             call.resolve(new JSObject().put("success", true).put("data", restoredState));
@@ -241,6 +433,7 @@ public class EncryptedStorePlugin extends Plugin {
     @PluginMethod
     public void clearState(PluginCall call) {
         getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply();
+        deleteMirror();
         call.resolve(new JSObject().put("success", true));
     }
 

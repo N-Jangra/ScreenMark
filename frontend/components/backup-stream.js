@@ -67,11 +67,15 @@
     }
     return out;
   }
-  async function parseFile(file, options) {
+  async function parseFile(file, options = {}) {
     if (!file?.stream || typeof TextDecoderStream !== "function") throw new Error("Streaming is not available.");
-    const head = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
     let stream = file.stream();
-    if (head[0] === 0x1f && head[1] === 0x8b) {
+    if (window.SplitAppTransferCrypto?.isEncryptedHeader(head)) {
+      if (!options.password) throw new Error("Enter the password used to create this transfer file.");
+      stream = window.SplitAppTransferCrypto.decryptStream(stream, options.password);
+      stream = stream.pipeThrough(new DecompressionStream("gzip"));
+    } else if (head[0] === 0x1f && head[1] === 0x8b) {
       if (typeof DecompressionStream !== "function") throw new Error("This device cannot open compressed backups.");
       stream = stream.pipeThrough(new DecompressionStream("gzip"));
     }

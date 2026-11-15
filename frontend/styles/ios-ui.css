@@ -689,6 +689,7 @@ dialog.app-confirm::backdrop{background:#0009;backdrop-filter:blur(3px)}
 .app-confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
 .app-confirm-actions .button{min-height:44px;border-radius:14px;font-weight:700}
 .app-confirm-actions .button.danger{background:#ef4444;border-color:#ef4444;color:#fff}
+.app-prompt-field{display:grid;gap:6px;text-align:left;color:var(--muted);font-size:.78rem;font-weight:700}.app-prompt-field input{width:100%;min-height:44px;box-sizing:border-box;padding:0 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2,var(--surface));color:var(--text,inherit);font:inherit;font-size:.95rem}.app-prompt-error{margin:0;color:var(--danger-text,#dc3545);font-size:.76rem;text-align:left}
 dialog.app-confirm[open]{animation:sp-pop calc(var(--speed,180ms) * 1.2) var(--ease-out) both}
 
 /* ---- Details heading: heart and delete share one size and baseline ---- */

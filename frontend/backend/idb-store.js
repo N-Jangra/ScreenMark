@@ -477,6 +477,13 @@
     tx.objectStore("thumbs").clear();
     await done(tx);
   }
+  async function getImages(entries) {
+    const db = await open(), store = db.transaction("thumbs", "readonly").objectStore("thumbs");
+    const rows = await Promise.all(entries.map(([key]) => result(store.get(key)).catch(() => null)));
+    const hits = [];
+    rows.forEach((row, index) => { if (typeof Blob !== "undefined" && row?.blob instanceof Blob && row.sig === entries[index][1]) hits.push([row.key, row.blob]); });
+    return hits;
+  }
   async function deleteThumbs(keys) {
     if (!keys.length) return;
     const db = await open();
@@ -495,7 +502,7 @@
     rows.forEach(row => { counts[row.kind] = (counts[row.kind] || 0) + 1; });
     return counts;
   }
-  const core = Object.freeze({ listImages, imageCounts, open, loadAll, findByProvider, save, saveSome, getDetails, getDetailsBatch, getMetaValue, setMetaValue, getRecord, readBatch, migrateDetailsBatch, compactDetails, getThumbs, putThumbs, listThumbKeys, clearThumbs, deleteThumbs });
+  const core = Object.freeze({ listImages, imageCounts, open, loadAll, findByProvider, save, saveSome, getDetails, getDetailsBatch, getMetaValue, setMetaValue, getRecord, readBatch, migrateDetailsBatch, compactDetails, getThumbs, getImages, putThumbs, listThumbKeys, clearThumbs, deleteThumbs });
   root.SplitAppIDBCore = core;
   if (typeof window === "undefined") return; // inside the data worker: expose the core only
 
@@ -587,6 +594,14 @@
   }
   root.SplitAppIDB = Object.freeze({
     open: () => call("open").then(() => undefined),
+    // Best-effort durability request: Chromium can otherwise reclaim origin
+    // storage under device pressure, treating the library like disposable data.
+    persistStorage: async () => {
+      try { return Boolean(await root.navigator?.storage?.persist?.()); } catch (_) { return false; }
+    },
+    estimateStorage: async () => {
+      try { return await root.navigator?.storage?.estimate?.() || null; } catch (_) { return null; }
+    },
     loadAll: options => call("loadAll", options),
     getDetails: id => call("getDetails", id),
     getDetailsBatch: ids => call("getDetailsBatch", ids),
@@ -599,6 +614,7 @@
     save: data => call("save", data),
     saveSome: data => call("saveSome", data),
     getThumbs: entries => call("getThumbs", entries),
+    getImages: entries => call("getImages", entries),
     putThumbs: entries => call("putThumbs", entries),
     listThumbKeys: () => call("listThumbKeys"),
     clearThumbs: () => call("clearThumbs"),

@@ -22,12 +22,12 @@ The test runner uses Node's built-in `node:test`, plus `fake-indexeddb` to run t
 - `theme-colors.test.js`: Light and AMOLED CSS do not override the dynamic Default or custom accent selected in Appearance.
 - `watchlist-poster.test.js`: poster-grid markup, portrait art, episode/progress overlays and responsive poster CSS.
 - `upcoming-episodes.test.js`: date-only air-date handling, immediate Upcoming filtering after marking, and disabled watch controls for unaired episodes.
-- `database.test.js`: version 6 schema migration, load/save/saveSome behavior, changed and removed records, malformed metadata repair, blocked-upgrade recovery, thumbnail Blob/signature queries and cleanup, data-worker dispatch, and the public API fallback when workers are unavailable.
+- `database.test.js`: current version 8 schema and legacy-detail migration, separate full-detail storage, compact-detail hydration, load/save/saveSome behavior, changed and removed records, malformed metadata repair, blocked-upgrade recovery, artwork Blob/signature queries and cleanup, data-worker dispatch, and the public API fallback when workers are unavailable.
 - `share-pdf-options.test.js`: list and title share option controls plus generated PDF page counts for list, poster-grid and optional title-page layouts.
 
 The fixture tests verify request shapes and app-side mapping. They do not establish current availability, credentials, rate limits or response compatibility of live external providers.
 - `release-0-1-5.test.js`: Quick setup downloads on the sync page, the two-step Edit profile picker, backup source/id references and restore matching, fresh-install wizard and download queue wiring, the missing-page fallback, cast persistence and Full list styles, and 0.1.5 version consistency.
-- `details-page.test.js` also covers the lazy Cast & Crew tab and the sideways-scroll CSS; `database.test.js` also covers the IndexedDB artwork catalog (`images` store, version 7).
+- `details-page.test.js` also covers the lazy Cast & Crew tab and the sideways-scroll CSS; `database.test.js` also covers the IndexedDB artwork catalog (`images` store, added in version 7) and separate detail store (added in version 8).
 - `backup-compression.test.js`: native export streams valid gzip as base64 chunks and restores the same library, plain-text fallback, failed writes, import by content for plain / gzip / mislabeled files, and clear messages for empty, truncated and corrupt backups.
 - `jikan-source.test.js`: Jikan v4 search, details, person / character / episode pages from fixtures, the breaker, and the AniList mirror when the host is unreachable.
 - `imdb-source.test.js`: exact TVmaze lookup by IMDb id, full cast enrichment, the blocked-page fallback and the blocked episode fallback.

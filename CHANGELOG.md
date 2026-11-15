@@ -2,6 +2,49 @@
 
 All notable changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [0.1.11] — 2026-11-15
+
+### Fixed
+
+- Folder selection now persists only Android's actually granted read/write permissions and reports unavailable grants cleanly instead of throwing from the picker callback.
+- Deleting a title from its details page or collection action sheet now adds it to Recently deleted, alongside the main delete confirmation flow.
+- Fixed Export List encrypted-transfer and share actions so tapping them opens password confirmation and the Android save/share flow.
+- Request Android notification permission before opening the destination picker; show live backup/transfer progress and completion notifications when permitted, and explain when notifications are disabled.
+- Replaced unsupported Android WebView password prompts with an in-app password dialog for encrypted transfer export and import.
+- Fixed a ScreenMark image-routing error caused by reading dynamically compiled inline `onerror` handlers; proxy fallback now uses a capturing event listener.
+- User-cancelled Android storage-folder selection is logged as a warning; existing matching log entries are also displayed with the corrected severity.
+- Encrypted mirror recovery keeps deletion markers until replacement records are published; encrypted backup replacement clears stale mirror records before committing the new snapshot.
+- Large chunked exports now stream from their temporary file to Downloads instead of loading the entire file into memory.
+
+### Changed
+
+- Sync status now has matching empty states across ScreenMark and SavePoint. Artwork-download jobs provide Pause/Resume, Clear sync, and icon-only failed-row retries; unfinished download work stays paused after restart, while active requests finish before the queue stops.
+
+## [0.1.10] — 2026-11-15
+
+### Added
+
+- Added password-protected `.sqx` transfer exports. Android compresses and encrypts bounded chunks with AES-GCM and a PBKDF2-derived password key; import decrypts and decompresses the file as streams.
+- Transfer files include saved artwork from IndexedDB image stores and the selected folder, then restore it without sender-device folder URIs. Imported backup preferences and activity history are restored with the library.
+- Startup makes a best-effort request for persistent IndexedDB storage. Chromium may deny it; Android’s encrypted title mirror provides separate library and metadata recovery.
+- Android offers a direct share-sheet action for encrypted transfers, so nearby sharing and installed file-sharing apps can receive the file.
+- Android backfills the full IndexedDB title list into Keystore-encrypted per-title records under app-specific `Android/data/<package>/files/CueMark/ScreenMark/` in bounded background batches; an empty IndexedDB/internal item store can recover from those files.
+
+### Changed
+
+- Custom status rename and removal actions now use accessible Save and Remove icons. Android library exports show a persistent, permission-aware notification with progress and success/failure status.
+- Android requests notification permission before opening the backup destination picker so progress can appear as soon as file writing begins.
+- Clarified that `.sqx` contains the library, source links, saved details, settings, history, and cached artwork, and can be shared directly or sent from a file manager for import on another device.
+- Documented that IndexedDB lives in WebView origin storage rather than a visible file under `Android/data`. The separate encrypted app-files mirror survives cache clearing; use a transfer file for cross-device moves and recovery after uninstall or clear-data.
+- Added the Android chunked ShareIntent bridge used by encrypted transfer sharing and other image shares. Artwork reads during export now run in low-memory-aware parallel batches, metadata refresh no longer waits on each debounced local/native mirror write, and the status manager uses accessible icon-only Hide/Show and Add controls.
+
+### Fixed
+
+- Fixed the Export List encrypted transfer and share buttons: their local settings handler had stopped clicks before the app-wide handler received them.
+- Cross-device transfer imports preserve source artwork URLs and write embedded art directly into the destination's existing IndexedDB thumbnail keys, including episode artwork. This avoids retaining base64 image payloads on each library item.
+- Transfer exports now also read the current per-image IndexedDB keys used for cached galleries and episode stills, alongside legacy poster and episode-thumbnail keys; this covers artwork that exists only in the WebView database and never reached the selected folder.
+- Android share chooser intents now include explicit `ClipData` URI grants; this avoids FileProvider access failures in sharing targets. Old temporary share-cache files are pruned when a new transfer begins.
+
 ## [0.1.9] — 2026-11-15
 
 ### Added

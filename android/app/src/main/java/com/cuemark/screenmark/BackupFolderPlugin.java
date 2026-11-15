@@ -71,10 +71,19 @@ public class BackupFolderPlugin extends Plugin {
             return;
         }
 
-        getContext().getContentResolver().takePersistableUriPermission(
-            treeUri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        );
+        int accessFlags = result.getData().getFlags()
+            & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        if ((accessFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0
+            || (accessFlags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) {
+            call.reject("Android did not grant read and write access to that folder. Choose another folder.");
+            return;
+        }
+        try {
+            getContext().getContentResolver().takePersistableUriPermission(treeUri, accessFlags);
+        } catch (SecurityException e) {
+            call.reject("Android could not keep access to that folder. Choose another folder.", e);
+            return;
+        }
 
         JSObject result_ = new JSObject();
         result_.put("uri", treeUri.toString());
@@ -141,7 +150,8 @@ public class BackupFolderPlugin extends Plugin {
                 Uri treeUri = Uri.parse(treeUriStr);
                 Uri dirUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
                 Uri existing = findChildDocument(treeUri, dirUri, fileName);
-                Uri target = existing != null ? existing : DocumentsContract.createDocument(getContext().getContentResolver(), dirUri, fileName.toLowerCase().endsWith(".gz") ? "application/gzip" : "application/json", fileName);
+                String mimeType = fileName.toLowerCase().endsWith(".sqx") ? "application/octet-stream" : fileName.toLowerCase().endsWith(".gz") ? "application/gzip" : "application/json";
+                Uri target = existing != null ? existing : DocumentsContract.createDocument(getContext().getContentResolver(), dirUri, mimeType, fileName);
                 if (target == null) throw new Exception("Failed to create the file in the backup folder");
                 exportStream = getContext().getContentResolver().openOutputStream(target, "wt");
                 if (exportStream == null) throw new Exception("Could not open the file for writing");
