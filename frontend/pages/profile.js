@@ -318,7 +318,7 @@
     const art = imageMarkup
       ? imageMarkup(item, thumb, "", fallback, "", episode)
       : thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" decoding="async" onerror="this.hidden=true">` : fallback;
-    if (view === "posters") {
+    if (view === "posters" || view === "large") {
       const progressInfo = !isMovie ? window.SplitAppLibrary.episodeInfo(item) : null;
       const posterThumb = item.customCover || item.localThumbnailData || item.localPortraitData || item.image || "";
       const posterArt = imageMarkup
@@ -328,16 +328,8 @@
       const trackedDone = Math.max(Number(progressInfo?.done) || 0, Number(item.progress) || 0, watchedIds.size);
       const done = total ? Math.min(total, trackedDone) : trackedDone;
       const percent = total ? Math.min(100, Math.round(done / total * 100)) : 0;
-      const episodeLabel = !isMovie && episode
-        ? `S${String(season).padStart(2, "0")} · E${String(number).padStart(2, "0")}`
-        : isMovie ? (item.year ? String(item.year).slice(0, 4) : "MOVIE") : "EPISODES";
-      const progressCount = isMovie
-        ? total ? `${done} / ${total} min` : "Movie"
-        : total ? `${done} / ${total} eps` : `${done} eps`;
-      const progress = !upcoming ? `<span class="watchlist-poster-progress-count">${esc(progressCount)}</span><span class="watchlist-poster-progress"><i class="${percent >= 100 ? "is-done" : ""}" style="width:${percent}%"></i></span>` : "";
-      const posterTitle = `<span class="watchlist-poster-title">${esc(item.title)}</span>`;
-      const badge = `<span class="watchlist-poster-episode${upcoming ? " is-upcoming" : ""}">${esc(upcoming ? daysUntil(airdate) : episodeLabel)}</span>`;
-      return `<article class="watchlist-card is-poster-view${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${cardOpen}><div class="watchlist-thumb">${posterArt}</div><span class="watchlist-poster-shade" aria-hidden="true"></span>${badge}${posterTitle}${progress}${check}</article>`;
+      const bar = upcoming ? "" : `<span class="watchlist-poster-bar" aria-hidden="true"><i class="${percent >= 100 ? "is-done" : ""}" style="width:${percent}%"></i></span>`;
+      return `<article class="watchlist-card is-poster-view${view === "large" ? " is-large-view" : ""}${upcoming ? " is-upcoming" : ""}" data-watchlist-root="${esc(item.id)}" ${cardOpen}><div class="watchlist-thumb">${posterArt}</div>${bar}${check}</article>`;
     }
     if (view === "cards") {
       const progressInfo = !isMovie ? window.SplitAppLibrary.episodeInfo(item) : null;
@@ -418,11 +410,11 @@
     const hasRows = sections.length > 0;
     const empty = `<div class="watchlist-empty"><span class="watchlist-empty-illustration"><i data-lucide="${category === "series" ? "tv" : "popcorn"}" aria-hidden="true"></i></span><h2>${tab === "upcoming" ? `No upcoming ${category === "series" ? "episodes" : "movies"} yet` : "Your watchlist is empty!"}</h2><p>${tab === "upcoming" ? "Upcoming titles with a known release date will appear here." : `Add ${category === "series" ? "shows" : "movies"} you want to watch.`}</p><button type="button" data-go="discover">Discover ${category === "series" ? "shows" : "movies"}</button></div>`;
     const loading = context.libraryLoading && !items.length
-      ? `<div class="watchlist-loading-skeleton is-${esc(watchlistView)}" role="status" aria-label="Loading library">${Array.from({ length: watchlistView === "posters" ? 6 : 3 }, () => `<span aria-hidden="true"></span>`).join("")}</div>`
+      ? `<div class="watchlist-loading-skeleton is-${esc(watchlistView)}" role="status" aria-label="Loading library">${Array.from({ length: watchlistView === "posters" || watchlistView === "large" ? 6 : 3 }, () => `<span aria-hidden="true"></span>`).join("")}</div>`
       : empty;
-    const viewOrder = ["list", "posters", "cards"], viewIndex = Math.max(0, viewOrder.indexOf(watchlistView)), currentView = viewOrder[viewIndex];
-    const viewIcon = currentView === "list" ? "list" : currentView === "posters" ? "layout-grid" : "rectangle-horizontal";
-    const viewLabel = currentView === "list" ? "List" : currentView === "posters" ? "Posters" : "Cards";
+    const viewOrder = ["list", "posters", "cards", "large"], viewIndex = Math.max(0, viewOrder.indexOf(watchlistView)), currentView = viewOrder[viewIndex];
+    const viewIcon = { list: "list", posters: "layout-grid", cards: "rectangle-horizontal", large: "square" }[currentView];
+    const viewLabel = { list: "List", posters: "Posters", cards: "Cards", large: "Large" }[currentView];
     const viewToggle = `<button type="button" class="watchlist-view-toggle" data-watchlist-view aria-label="Current view: ${viewLabel}. Tap to change view" title="${viewLabel} view · tap to cycle"><i data-lucide="${viewIcon}" aria-hidden="true"></i></button>`;
     if (hasRows) {
       const firstSection = sections.findIndex(section => section.includes("<h3>"));

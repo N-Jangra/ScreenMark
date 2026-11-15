@@ -1088,3 +1088,34 @@ body .profile-reorder-dialog nav { width:100%; max-width:680px; margin-inline:au
 .trash-btn.restore { border-color:color-mix(in srgb,var(--accent,#f1b01f) 55%,transparent); background:color-mix(in srgb,var(--accent,#f1b01f) 16%,transparent); color:var(--accent-text,var(--accent,var(--d-gold,#f1b01f))); }
 .trash-btn.delete { border-color:#f43f5e55; background:#f43f5e1f; color:#f87185; }
 .trash-btn:active { transform:scale(.97); }
+
+/* Shows / Movies watchlists "Large" view: two big poster tiles per row, sharp corners, poster only (progress bar + check button) */
+.watchlist-content.is-large .watchlist-section { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding-inline:12px; }
+.watchlist-content.is-large .watchlist-section > h3,
+.watchlist-content.is-large .watchlist-section > .watchlist-section-heading,
+.watchlist-content.is-large .watchlist-section > .watchlist-browse,
+.watchlist-content.is-large .watchlist-section > .watchlist-heading { grid-column:1 / -1; }
+.watchlist-content.is-large .watchlist-section > .watchlist-section-heading { width:100%; }
+.watchlist-card.is-large-view, .watchlist-card.is-large-view .watchlist-thumb { border-radius:1px; }
+.watchlist-card.is-large-view .watchlist-poster-bar { position:absolute; left:0; right:0; bottom:0; height:4px; background:rgba(255,255,255,.18); }
+.watchlist-card.is-large-view .watchlist-poster-bar i { display:block; height:100%; background:var(--accent,var(--d-gold,#f1b01f)); }
+.watchlist-card.is-large-view .watchlist-poster-bar i.is-done { background:#a100ff; }
+.watchlist-card.is-large-view .watchlist-check, .watchlist-card.is-large-view .watchlist-seen-toggle { right:8px; bottom:14px; }
+.watchlist-loading-skeleton.is-large { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.watchlist-loading-skeleton.is-large > span { aspect-ratio:2 / 3; border-radius:1px; }
+
+/* Sharp corners on watchlist poster tiles (Posters, Cards, Large) and the Profile poster rows, like the Shows / Movies library pages */
+.watchlist-content .watchlist-card.is-poster-view,
+.watchlist-content .watchlist-card.is-poster-view .watchlist-thumb,
+.watchlist-content .watchlist-card.is-poster-view .watchlist-thumb img,
+.watchlist-content .watchlist-card.is-card-view,
+.watchlist-content .watchlist-card.is-card-view .watchlist-card-art,
+.watchlist-content .watchlist-card.is-card-view .watchlist-card-art img { border-radius:1px; }
+.profile-poster-rail .profile-poster, .profile-poster-rail .profile-poster img, .profile-poster-rail .profile-poster-wrap { border-radius:1px; }
+.watchlist-loading-skeleton > span { border-radius:1px; }
+
+/* Posters view is poster-only as well: thin progress bar + check button */
+.watchlist-card.is-poster-view .watchlist-poster-bar { position:absolute; left:0; right:0; bottom:0; height:4px; background:rgba(255,255,255,.18); }
+.watchlist-card.is-poster-view .watchlist-poster-bar i { display:block; height:100%; background:var(--accent,var(--d-gold,#f1b01f)); }
+.watchlist-card.is-poster-view .watchlist-poster-bar i.is-done { background:#a100ff; }
+.watchlist-card.is-poster-view .watchlist-check, .watchlist-card.is-poster-view .watchlist-seen-toggle { right:8px; bottom:14px; }

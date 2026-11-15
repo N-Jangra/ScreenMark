@@ -18,7 +18,7 @@ const window = {
 };
 vm.runInNewContext(fs.readFileSync(path.join(root, "frontend/pages/profile.js"), "utf8"), vm.createContext({ window }));
 
-test("watchlist poster view renders portrait series art with episode and progress overlays", () => {
+test("watchlist poster view renders poster-only tiles with a progress bar and no episode pill or title", () => {
   const html = window.SplitAppPages["series-watchlist"]({
     items: [{ id: "show-1", title: "Example Show", category: "series", status: "In Progress", progress: 4, image: "https://img.example/poster.jpg" }],
     esc: value => String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"),
@@ -30,10 +30,10 @@ test("watchlist poster view renders portrait series art with episode and progres
   assert.match(html, /watchlist-card is-poster-view/);
   assert.match(html, /src="https:\/\/img\.example\/poster\.jpg"/);
   assert.doesNotMatch(html, /src="https:\/\/img\.example\/episode\.jpg"/);
-  assert.match(html, /watchlist-poster-episode[^>]*>S02 · E05</);
-  assert.match(html, /watchlist-poster-title[^>]*>Example Show</);
-  assert.match(html, /watchlist-poster-progress-count[^>]*>4 \/ 10 eps</);
-  assert.match(html, /watchlist-poster-progress[^>]*><i[^>]*width:40%/);
+  assert.doesNotMatch(html, /watchlist-poster-episode/);
+  assert.doesNotMatch(html, /watchlist-poster-title/);
+  assert.doesNotMatch(html, /watchlist-poster-progress-count/);
+  assert.match(html, /watchlist-poster-bar[^>]*><i[^>]*width:40%/);
 });
 
 test("watchlist poster CSS defines a portrait grid and overlays instead of list rows", () => {

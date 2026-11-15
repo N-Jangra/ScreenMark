@@ -227,7 +227,7 @@
   let watchlistSwipe = null;
   try {
     const savedViews = JSON.parse(localStorage.getItem(`${storageKey}_watchlist_views`) || "{}");
-    for (const kind of ["series", "movie"]) if (["list", "posters", "cards"].includes(savedViews[kind])) watchlistViews[kind] = savedViews[kind];
+    for (const kind of ["series", "movie"]) if (["list", "posters", "cards", "large"].includes(savedViews[kind])) watchlistViews[kind] = savedViews[kind];
   } catch (_) {}
   const currentWatchlistView = () => watchlistViews[page === "movie-watchlist" ? "movie" : "series"];
   let logQuery = "", logFrom = "", logTo = "";
@@ -4402,7 +4402,7 @@
     if (eventClosest(event, "[data-watchlist-view]")) {
       const kind = page === "movie-watchlist" ? "movie" : "series";
       const current = watchlistViews[kind];
-      watchlistViews[kind] = current === "list" ? "posters" : current === "posters" ? "cards" : "list";
+      watchlistViews[kind] = current === "list" ? "posters" : current === "posters" ? "cards" : current === "cards" ? "large" : "list";
       try { localStorage.setItem(`${storageKey}_watchlist_views`, JSON.stringify(watchlistViews)); } catch (_) {}
       render(); syncPageNavigation(); return;
     }
