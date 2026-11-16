@@ -23,6 +23,7 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 - Closing the app during an export no longer leaves a permanent notification (cancelled on destroy, swept on launch, expires if the process dies).
 - "Load more" no longer flashes empty tiles: cached posters paint synchronously on re-render, the next batch is requested about 1800px ahead and virtual grids rebuild before the drawn edge.
 - Achievement share is an icon in the top bar.
+- Achievements page is lighter and no longer laggy: the badge calculation is cached until the library changes, badge placeholders no longer run endless shimmer animations, and off-screen sections and tiles are skipped by layout and painting.
 - Grouping by status (eye button) on Shows and Movies orders sections In Progress, On Hold, Completed, Dropped, Watchlist (custom statuses follow On Hold).
 
 ### Changed

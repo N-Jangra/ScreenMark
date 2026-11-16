@@ -29,3 +29,8 @@ Backup JSON never contains temporary `blob:` image links (they are dropped on ex
 - Importing writes, per image: the artwork cache row, episode still rows (`cachedDetails.episodesById.<id>.image`) and the grid poster row (`<id>:p`, signature = `thumbSigOf(item)`). Without the poster row imported posters only survive until the next restart.
 - Titles are decoded and saved three at a time (two on low-memory devices).
 - An ongoing notification is cancelled when the activity is destroyed, swept on launch and expires after two minutes without updates.
+
+## Achievements page performance (0.1.12)
+
+- `entries()` caches its last result keyed by the library array, its length, the sum of `updatedAt` stamps and the favourite count; a changed library recomputes. The profile, the achievements page, award checks and shares all share that result.
+- Badge placeholders are static (no `ach-shimmer` animation), `.ach-section` and grid tiles use `content-visibility:auto`, and badge images are `loading="lazy" decoding="async"`.
