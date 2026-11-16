@@ -260,3 +260,20 @@ test("grouped Shows/Movies order is In Progress, On Hold, Completed, Dropped, Wa
   const order = [...html.matchAll(/<section class="profile-status-group"><h3>([^<]+)<\/h3>/g)].map(match => match[1]);
   assert.deepEqual(order, ["In Progress", "On Hold", "Completed", "Dropped", "Watchlist"]);
 });
+
+test("achievements reuse their last result until the library changes", () => {
+  const achievements = loadPages(["frontend/pages/achievements.js"]).SplitAppAchievements;
+  const items = [{ id: "1", title: "A", category: "movie", status: "Completed", progress: 90, goal: 90, updatedAt: 1 }];
+  const first = achievements.entries(items, {}), again = achievements.entries(items, {});
+  assert.deepEqual(JSON.parse(JSON.stringify(first)), JSON.parse(JSON.stringify(again)));
+  const before = first.find(row => row.family === first[0].family).current;
+  items.push({ id: "2", title: "B", category: "movie", status: "Completed", progress: 90, goal: 90, updatedAt: 2 });
+  assert.notEqual(achievements.entries(items, {}).find(row => row.family === first[0].family).current, before, "a changed library is recomputed");
+});
+
+test("the achievements page has no endless placeholder animation and skips off-screen sections", () => {
+  const css = read("frontend/styles/ui-polish.css");
+  assert.doesNotMatch(css, /\.ach-art-wrap::before[^}]*animation:ach-shimmer/);
+  assert.match(css, /\.ach-section \{ content-visibility:auto; contain-intrinsic-size:auto 190px; \}/);
+  assert.match(css, /\.ach-grid > \.ach-badge \{ content-visibility:auto;/);
+});
