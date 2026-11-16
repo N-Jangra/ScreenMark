@@ -6,6 +6,7 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.app.NotificationChannel;
+import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.graphics.BitmapFactory;
@@ -51,7 +52,37 @@ public class ShareIntentPlugin extends Plugin {
     private final ExecutorService imageExecutor = Executors.newSingleThreadExecutor();
     private static final String DOWNLOAD_CHANNEL_ID = "image-downloads";
     private static final String EXPORT_CHANNEL_ID = "data-exports";
+    // A running export refreshes its notification on every update; if the app is killed the stale one expires by itself.
+    private static final long EXPORT_PROGRESS_TIMEOUT_MS = 2 * 60 * 1000L;
     private final ConcurrentHashMap<String, Integer> exportNotificationIds = new ConcurrentHashMap<>();
+
+    @Override
+    public void load() {
+        // The previous process may have died mid-export; its ongoing (non-swipeable) notification must not outlive it.
+        cancelStaleExportNotifications();
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        // Closing the app stops the export, so its progress notification has to go too.
+        cancelStaleExportNotifications();
+        exportNotificationIds.clear();
+    }
+
+    private void cancelStaleExportNotifications() {
+        try {
+            NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager == null) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                for (android.service.notification.StatusBarNotification active : manager.getActiveNotifications()) {
+                    Notification posted = active.getNotification();
+                    boolean exportProgress = posted != null && EXPORT_CHANNEL_ID.equals(posted.getChannelId()) && (posted.flags & Notification.FLAG_ONGOING_EVENT) != 0;
+                    if (exportProgress) manager.cancel(active.getTag(), active.getId());
+                }
+            }
+            for (int notificationId : exportNotificationIds.values()) manager.cancel(notificationId);
+        } catch (Exception ignored) {}
+    }
 
     @PluginMethod
     public void requestExportNotificationPermission(PluginCall call) {
@@ -85,12 +116,13 @@ public class ShareIntentPlugin extends Plugin {
         boolean shared = Boolean.TRUE.equals(call.getBoolean("shared", false));
         boolean encrypted = Boolean.TRUE.equals(call.getBoolean("encrypted", false));
         String detail = call.getString("message", "");
+        boolean isImport = "import".equals(call.getString("kind", "export"));
         int notificationId = exportNotificationIds.computeIfAbsent(id, key -> 410000 + (key.hashCode() & 0x0fffffff));
         try {
             if (notificationsAllowed()) {
                 ensureExportChannel();
-                String title = success ? (shared ? "Encrypted transfer ready to share" : encrypted ? "Encrypted transfer saved" : "Backup export complete") : (encrypted ? "Encrypted transfer failed" : "Backup export failed");
-                String body = success ? filename + (shared ? " is ready in the share sheet." : " was saved.") : (detail.isEmpty() ? "Could not create " + filename : detail);
+                String title = isImport ? (success ? "Import complete" : "Import failed") : success ? (shared ? "Encrypted transfer ready to share" : encrypted ? "Encrypted transfer saved" : "Backup export complete") : (encrypted ? "Encrypted transfer failed" : "Backup export failed");
+                String body = isImport ? (detail.isEmpty() ? (success ? "Your library was restored." : "Could not import " + filename) : detail) : success ? filename + (shared ? " is ready in the share sheet." : " was saved.") : (detail.isEmpty() ? "Could not create " + filename : detail);
                 NotificationCompat.Builder notification = new NotificationCompat.Builder(getContext(), EXPORT_CHANNEL_ID)
                     .setSmallIcon(success ? android.R.drawable.stat_sys_download_done : android.R.drawable.stat_notify_error)
                     .setContentTitle(title).setContentText(body).setStyle(new NotificationCompat.BigTextStyle().bigText(body))
@@ -116,11 +148,11 @@ public class ShareIntentPlugin extends Plugin {
                 ensureExportChannel();
                 NotificationCompat.Builder notification = new NotificationCompat.Builder(getContext(), EXPORT_CHANNEL_ID)
                     .setSmallIcon(android.R.drawable.stat_sys_download)
-                    .setContentTitle(encrypted ? "Creating encrypted transfer" : "Exporting backup")
-                    .setContentText(total > 0 ? filename + " · " + Math.round(done * 100f / total) + "%" : filename)
+                    .setContentTitle("import".equals(call.getString("kind", "export")) ? "Importing backup" : encrypted ? "Creating encrypted transfer" : "Exporting backup")
+                    .setContentText(total > 0 ? ("import".equals(call.getString("kind", "export")) ? call.getString("message", filename) : filename) + " · " + Math.round(done * 100f / total) + "%" : call.getString("message", filename))
                     .setProgress(total, done, total == 0)
                     .setCategory(NotificationCompat.CATEGORY_PROGRESS).setPriority(NotificationCompat.PRIORITY_LOW)
-                    .setOngoing(true).setOnlyAlertOnce(true).setAutoCancel(false);
+                    .setOngoing(true).setOnlyAlertOnce(true).setAutoCancel(false).setTimeoutAfter(EXPORT_PROGRESS_TIMEOUT_MS);
                 setExportNotificationIntent(notification);
                 NotificationManagerCompat.from(getContext()).notify(notificationId, notification.build());
             }
