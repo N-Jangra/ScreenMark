@@ -68,3 +68,16 @@ Settings → Metadata Sources → a source's ⚙ page stores `preferences.source
 - **TheTVDB** exposes no user rating and no episode scores, so those sections are hidden; specials (season 0) are not part of the guide.
 - **Developer probe:** `ROOT=$PWD OMDB=… TMDB=… TVDB=… PLAN='[["tmdb","series","breaking bad","Breaking Bad"]]' DEEP=1 node tests/tools/probe-sources.js` loads real data through the app's own loaders; `tests/tools/probe-discover.js` checks every Discover shelf and search.
 - **Jikan fallback:** if `api.jikan.moe` cannot be reached (it is a single host that some networks cannot connect to), Jikan search, Discover shelves and details are served from AniList by MAL id, labelled "via AniList"; person / character / episode pages from before the outage may still need Jikan.
+
+## Cast, crew and character pages by source (0.1.12)
+
+| Source | Cast / crew card opens | Notes |
+|---|---|---|
+| TVmaze | TVmaze person (series, crew credits, guest appearances) and character pages | Guest appearances render as an episode list. |
+| AniList / Jikan / Kitsu | The source's own staff, voice-actor and character pages | Person ids are prefixed (`anilist-staff:`, `jikan-person:`, `kitsu-person:`) and the page checks that source, not the parent title's. |
+| TMDB / TheTVDB | `tmdb:` / `tvdb:` person pages with filmography | Need the source's API key. |
+| IMDb | `imdb:nm…` profile scraped from the IMDb name page | If IMDb blocks the page, the TMDB profile (with a key) is used, then the catalogue's profile labelled "IMDb (via …)" linking to the IMDb page, then a basic profile. When IMDb blocks the title itself, people are still looked up on IMDb by name through IMDb's name-suggestion service. |
+| Rotten Tomatoes | `rt-celebrity:<slug>` profile read from the person's Rotten Tomatoes page | Portrait, birthday, birthplace, highest/lowest rated, biography, Photos gallery and movie credits (structured data lists movies only; placeholder artwork is replaced by the page's poster tile when present). Photos are shown whole on the first page; only credits are paged. |
+| OMDb | `omdb-person:<name>` resolved by name | OMDb returns names only. The profile comes from TMDB (key saved) or TVmaze people search and is labelled "OMDb (via …)"; with no match a basic profile explains why. |
+
+Grouping Shows or Movies by status (eye button) orders sections In Progress, On Hold, custom statuses, Completed, Dropped, Watchlist.

@@ -2,6 +2,33 @@
 
 All notable changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [0.1.12] — 2026-11-17
+
+### Added
+
+- Import and export progress button with a full progress page laid out like SavePoint's (icon, step, live bar, percentage); it opens from the floating button and follows the transfer live.
+- Android notification progress for imports (reading → saving → complete/failed).
+- Image viewer controls: rotate, download, copy, share, close and an image counter, matching SavePoint.
+- Sync page offers Clear updated, Clear failed and Clear all.
+
+### Fixed
+
+- TVMaze cast profiles stayed on the loading skeleton: the Guest appearances list referenced an undefined variable. Cast and character pages now check the source named by the person id rather than the parent title's source, and IMDb/Rotten Tomatoes cast fall back to a basic profile instead of an error. Profile fact pills share one style.
+- Change cover rows no longer overlap when the list is longer than the sheet, and the picker shows on-device copies so it works offline.
+- Rotten Tomatoes cast and crew now open a full profile (portrait, birthday, birthplace, highest/lowest rated, biography and movie credits that open their own pages, and a Photos gallery shown first, whole, and opening in the image viewer; credits whose image is Rotten Tomatoes' placeholder use the real poster from the page when it has one, otherwise no image) loaded from the person's Rotten Tomatoes page; before they only showed a name and picture.
+- IMDb titles keep IMDb profile links for the cast IMDb lists when the catalogue (TVmaze) supplies a fuller cast; the catalogue profile is used only if IMDb blocks the profile request. If IMDb blocks the title itself, the title loads through the catalogue but its people are still looked up on IMDb by name: the profile links to their IMDb page and is labelled "IMDb (via TVmaze)" when IMDb's own page is blocked.
+- OMDb cast, directors and writers (which OMDb only provides as names) now open real profiles, found by name through TMDB when a key is saved or TVmaze otherwise; if nothing matches, a basic profile explains why.
+- Detail-page tags are outlined pills like the Links, sitting directly on the page with no card around them.
+- Imported posters vanished after a restart because the grid poster cache row (`<id>:p`) was never written; imports now write it. Imports decode and save several titles at once.
+- Closing the app during an export no longer leaves a permanent notification (cancelled on destroy, swept on launch, expires if the process dies).
+- "Load more" no longer flashes empty tiles: cached posters paint synchronously on re-render, the next batch is requested about 1800px ahead and virtual grids rebuild before the drawn edge.
+- Achievement share is an icon in the top bar.
+- Grouping by status (eye button) on Shows and Movies orders sections In Progress, On Hold, Completed, Dropped, Watchlist (custom statuses follow On Hold).
+
+### Changed
+
+- Bump Android and app version metadata for this release.
+
 ## [0.1.11] — 2026-11-15
 
 ### Fixed

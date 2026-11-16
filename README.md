@@ -1,4 +1,4 @@
-# ScreenMark 0.1.11
+# ScreenMark 0.1.12
 
 ScreenMark is a local-first tracker for **movies and TV series**. It runs as a browser single-page app and as a Capacitor Android app, with an iOS-style interface that adapts from phones to tablets and desktops, and keeps its library in an app-specific storage namespace.
 
@@ -29,9 +29,13 @@ ScreenMark is a local-first tracker for **movies and TV series**. It runs as a b
 - **Custom sources:** add any JSON search API on a guided page.
 - Export (Android Save As screen, streamed and gzip-compressed as `.json.gz`) and import JSON, `.json.gz`, password-protected `.sqx`, encrypted `.sqdb`, CSV or TXT. `.sqx` contains the complete library, source links, saved details, preferences, history, and cached artwork from IndexedDB and the selected folder. It uses chunked AES-GCM encryption with a password-derived key; share it directly from ScreenMark or from a file manager, then import it on the receiving device. Android shows progress and completion notifications when notifications are allowed. IndexedDB is WebView origin storage, not a regular file under `Android/data`; startup makes a best-effort persistent-storage request (the tested Android WebView denied it). Android also keeps Keystore-encrypted recovery records internally and atomically mirrors the full title list under `/sdcard/Android/data/<package>/files/CueMark/ScreenMark/` in small background batches. If IndexedDB and the internal records are empty, titles and metadata can be recovered from this mirror. It survives cache clearing, but app-data clearing or uninstall removes it; export `.sqx` for cross-device migration or uninstall recovery. Artwork remains in IndexedDB and, when configured, the selected folder.
 
+- Imports and exports show a floating percentage button that opens a live progress page (same layout as SavePoint) and post Android notification progress; the image viewer has rotate, download, copy and share.
+
 ## Metadata providers
 
 - TVmaze (series), AniList, MyAnimeList through Jikan, and Kitsu (anime series and movies), The Movie Database and TheTVDB (movies and series; free API key), OMDb (movies and series; free API key), IMDb and Rotten Tomatoes (movies and series; unofficial, no key, may be blocked).
+
+Cast, crew and character cards open a profile for every source (Rotten Tomatoes and OMDb people are resolved from their pages or by name; see [metadata](docs/metadata.md#cast-crew-and-character-pages-by-source-0112)).
 
 The app lists them under **Settings → Metadata Sources**. TMDB, TheTVDB and OMDb need their own API keys. IMDb and Rotten Tomatoes use user-initiated provider pages and may ask for a session or block requests. Online discovery needs an internet connection.
 
@@ -52,7 +56,7 @@ The app lists them under **Settings → Metadata Sources**. TMDB, TheTVDB and OM
 - [Metadata sources](docs/metadata.md) — providers, API keys and fetching behavior.
 - [Storage](docs/storage.md) — library persistence, image cache and backups.
 - [Data schema](docs/db-schema.md) and [file layout](docs/file-schema.md).
-- [Release notes](CHANGELOG.md) — current 0.1.11 changes and earlier release notes.
+- [Release notes](CHANGELOG.md) — current 0.1.12 changes and earlier release notes.
 - The sibling Kotlin Android test app and its device load-test results are documented in `../ScreenMark-kot/KOTLIN-PORT-REPORT.md`.
 - [Frontend module map](frontend/README.md).
 
