@@ -723,6 +723,67 @@
     const node = $("#toast"); node.textContent = message; node.classList.add("show");
     clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove("show"), 2300);
   }
+  // Persistent import progress card: stays visible until the import finishes (a toast disappears after 2s).
+  let importProgressHideTimer = 0;
+  // Android notification for imports (same channel as exports, import wording). Silently does nothing off-device or without permission.
+  let importNotifyAt = 0, importNotifyAsked = false;
+  async function importNotify(method, data = {}) {
+    const plugin = window.Capacitor?.Plugins?.ShareIntent; if (!plugin?.[method]) return;
+    try {
+      if (!importNotifyAsked && method === "startExportNotification") { importNotifyAsked = true; await plugin.requestExportNotificationPermission?.(); }
+      await plugin[method]({ id: "import", kind: "import", filename: data.filename || "backup", ...data });
+    } catch (_) {}
+  }
+  let exportCardShown = false;
+  function importProgress(message, fraction = null, { done = false, error = false, quiet = false } = {}) {
+    let node = $("#import-progress");
+    if (!node) {
+      node = document.createElement("button"); node.id = "import-progress"; node.type = "button"; node.className = "sync-fab import-fab"; node.setAttribute("aria-live", "polite");
+      node.innerHTML = '<span class="sync-fab-pie"><b></b></span>';
+      node.addEventListener("click", () => openImportDetails());
+      document.body.appendChild(node);
+    }
+    clearTimeout(importProgressHideTimer);
+    const known = typeof fraction === "number" && isFinite(fraction), percent = known ? Math.max(0, Math.min(100, Math.round(fraction * 100))) : null;
+    node.hidden = false;
+    node.style.setProperty("--p", (done && !error ? 100 : percent || 0) + "%");
+    node.classList.toggle("is-done", done); node.classList.toggle("has-failed", error); node.classList.toggle("is-indeterminate", !known && !done);
+    node.classList.remove("is-hidden-card"); node.classList.add("show");
+    node.querySelector("b").textContent = error ? "!" : done ? "✓" : known ? `${percent}%` : "…";
+    node.setAttribute("aria-label", `${message} ${known ? percent + "%" : ""}. Open details.`);
+    node.dataset.stage = message; node.dataset.percent = known ? String(percent) : "";
+    updateImportDetails();
+    if (quiet) { /* exports have their own notification */ }
+    else if (!node.dataset.notified) { node.dataset.notified = "1"; importNotify("startExportNotification", { total: 100, done: percent || 0, message }); }
+    else if (done) importNotify("finishExportNotification", { success: !error, message });
+    else if (Date.now() - importNotifyAt > 600) { importNotifyAt = Date.now(); importNotify("updateExportNotification", { total: 100, done: percent || 0, message }); }
+    if (done) importProgressHideTimer = setTimeout(() => { node.remove(); const dialog = $("#import-details-dialog"); if (dialog?.open) updateImportDetails(true); }, error ? 6000 : 3500);
+  }
+  // Tapping the progress button opens a page laid out like SavePoint's import progress page; it follows the transfer live.
+  function updateImportDetails(finished = false) {
+    const dialog = $("#import-details-dialog"); if (!dialog) return;
+    const card = $("#import-progress");
+    const stage = card?.dataset.stage || "Finished", percent = card?.dataset.percent || "", done = finished || !card || card.classList.contains("is-done"), failed = Boolean(card?.classList.contains("has-failed"));
+    const kind = /export/i.test(stage) ? "export" : "import";
+    const set = (selector, value) => { const node = dialog.querySelector(selector); if (node) node.textContent = value; };
+    set("[data-import-kind]", failed ? "TRANSFER FAILED" : done ? (kind === "export" ? "BACKUP COMPLETE" : "RESTORE COMPLETE") : kind === "export" ? "CREATING YOUR BACKUP" : "RESTORING YOUR LIBRARY");
+    set("[data-import-title]", failed ? "Something went wrong" : done ? (kind === "export" ? "Export complete" : "Import complete") : kind === "export" ? "Exporting titles" : "Importing titles");
+    set("[data-import-stage]", stage);
+    set("[data-import-percent]", done && !failed ? "100%" : percent ? `${percent}%` : "");
+    const track = dialog.querySelector(".import-progress-track"), bar = track?.firstElementChild;
+    track?.classList.toggle("is-indeterminate", !percent && !done); track?.classList.toggle("is-error", failed);
+    if (bar) bar.style.width = done && !failed ? "100%" : percent ? `${percent}%` : "";
+    const live = dialog.querySelector("[data-import-live]"); if (live) live.hidden = done;
+    const icon = dialog.querySelector(".import-restore-icon"); if (icon) icon.classList.toggle("is-complete", done && !failed);
+  }
+  function openImportDetails() {
+    let dialog = $("#import-details-dialog");
+    if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "import-details-dialog"; dialog.className = "import-page-dialog"; document.body.appendChild(dialog); }
+    dialog.innerHTML = `<section class="import-restore-page import-restore-active"><header class="settings-page-heading settings-subpage-heading import-page-heading"><button type="button" class="settings-back" data-import-details-close><span aria-hidden="true">‹</span> Back</button><h1>Import List</h1><span class="settings-subpage-icon" aria-hidden="true"><i data-lucide="file-down"></i></span></header><div class="import-progress-card" role="status" aria-live="polite"><span class="import-restore-icon"><i data-lucide="library-big" aria-hidden="true"></i></span><p class="settings-overline" data-import-kind></p><h1 data-import-title></h1><p class="import-progress-message" data-import-stage></p><div class="import-progress-track" role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax="100"><span style="width:0%"></span></div><div class="import-progress-summary"><strong data-import-percent></strong></div><div class="import-progress-live" data-import-live><span class="import-restore-spinner" aria-hidden="true"></span><span>Keep ScreenMark open while this finishes.</span></div></div></section>`;
+    dialog.onclick = event => { if (eventClosest(event, "[data-import-details-close]")) closePopup(dialog); };
+    window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
+    showPopup(dialog); updateImportDetails();
+  }
   function applyPreferences() {
     normalizeMotionPreferences();
     document.body.dataset.page = page;
@@ -1093,12 +1154,14 @@
     if (!(metrics.row > 0)) return false;
     const total = source.count, rows = Math.ceil(total / metrics.columns);
     const top = -grid.getBoundingClientRect().top, viewport = window.innerHeight || document.documentElement.clientHeight || 800;
-    const buffer = viewport * 1.5;
+    const buffer = viewport * 2.5;
     const first = Math.max(0, Math.min(rows, Math.floor((top - buffer) / metrics.row)));
     const last = Math.max(first, Math.min(rows, Math.ceil((top + viewport + buffer) / metrics.row)));
     const needFirst = Math.max(0, Math.floor(top / metrics.row)), needLast = Math.min(rows, Math.ceil((top + viewport) / metrics.row));
     // Redraw only when the visible rows are no longer inside the drawn window (or the column count / size changed).
-    if (!force && entry.start !== undefined && entry.columns === metrics.columns && entry.row === metrics.row && needFirst >= entry.start && needLast <= entry.end) return false;
+    // Rebuild while the visible rows are still a screenful away from the edge of the drawn window (not after they have run past it), so a fast flick never reaches empty space.
+    const lead = Math.max(2, Math.ceil(viewport / metrics.row));
+    if (!force && entry.start !== undefined && entry.columns === metrics.columns && entry.row === metrics.row && (needFirst - lead >= entry.start || entry.start === 0) && (needLast + lead <= entry.end || entry.end >= rows)) return false;
     const start = Math.max(0, first - 2), end = Math.min(rows, last + 2);
     entry.start = start; entry.end = end; entry.columns = metrics.columns; entry.row = metrics.row;
     grid.style.gridAutoRows = `${metrics.tile}px`;
@@ -1513,11 +1576,23 @@
       deferredObserver.unobserve(entry.target);
       activateDeferredImage(entry.target);
     }), { rootMargin: "700px 0px" });
-    images.forEach(image => deferredObserver.observe(image));
+    images.forEach(image => {
+      // Posters whose thumbnail is already in memory are painted synchronously: a re-render (e.g. "load more") must not flash empty tiles.
+      const item = image.dataset.localItemId && itemById(image.dataset.localItemId);
+      if (item && !image.dataset.localEpisodeId && !image.dataset.customCover) {
+        const key = image.dataset.localCacheKey || thumbKeyOf(item), signature = image.dataset.localCacheSignature || thumbSigOf(item);
+        if (thumbUrlCache.get(`${key}|${signature}`)) { image.decoding = "sync"; activateDeferredImage(image); return; }
+      }
+      deferredObserver.observe(image);
+    });
   }
 
   let metadataLibraryReady = false;
   let libraryRestoreComplete = false;
+  // A re-render that would produce exactly the HTML already on screen is skipped: swapping the grid recreates every poster <img>,
+  // which blanks and reloads all thumbnails (the visible "blink").
+  const STABLE_RENDER_PAGES = new Set(["profile", "series", "movies", "series-favorites", "movie-favorites", "series-watchlist", "movie-watchlist"]);
+  let lastPageHtml = "", lastPageHtmlRoute = "";
   function render() {
     if (metadataLibraryReady && !metadataSync && metadataSyncState?.entries?.some(entry => ["queued", "running"].includes(entry.status)) && navigator.onLine && prefs.metadataMode !== "offline" && !document.hidden) queueMicrotask(() => startMetadataSync(null, true, "needed", true, true));
     document.body.dataset.page = page;
@@ -1574,6 +1649,11 @@
       if (renderedRoute !== null) inAppNav = true;
       renderedRoute = route;
     }
+    let nextHtml = null;
+    if (preservePageState && STABLE_RENDER_PAGES.has(page) && lastPageHtmlRoute === route && typeof window.SplitAppPages[page] === "function") {
+      nextHtml = window.SplitAppPages[page](pageContext());
+      if (nextHtml === lastPageHtml && content.firstElementChild && !content.querySelector("[data-virtual-grid]")) { return; }
+    }
     const previousCollectionToolbar = document.getElementById("collection-toolbar");
     if (previousCollectionToolbar) {
       // The toolbar is portaled to body, outside #page-content; dispose its
@@ -1590,7 +1670,9 @@
       if (!fallback || fallback === page) { content.innerHTML = `<section class="settings-page"><p class="app-info">This page could not be loaded. Restart ScreenMark.</p></section>`; return; }
       page = fallback; setupStarted = false;
     }
-    content.innerHTML = window.SplitAppPages[page](pageContext());
+    const pageHtml = nextHtml ?? window.SplitAppPages[page](pageContext());
+    lastPageHtml = STABLE_RENDER_PAGES.has(page) ? pageHtml : ""; lastPageHtmlRoute = STABLE_RENDER_PAGES.has(page) ? route : "";
+    content.innerHTML = pageHtml;
     if (page === "setup") { const grid = $("#setup-grid"); if (grid) routeRemoteImages(grid); }
     if (["series", "movies", "series-favorites", "movie-favorites"].includes(page)) trackPosterLoading(content);
     if (page === "details") { prioritizeVisibleDetailImages(content); if (detailTab === "cast" && !detailRef && content.querySelector("[data-cast-lazy]")) Promise.resolve().then(() => loadDetailCast()); }
@@ -1723,7 +1805,7 @@
       const observer = new IntersectionObserver(entries => {
         if (!entries.some(entry => entry.isIntersecting)) return;
         observer.disconnect(); contentObservers.delete(observer); collectionMore.click();
-      }, { rootMargin: "900px 0px" });
+      }, { rootMargin: "1800px 0px" });
       contentObservers.set(observer, collectionMore);
       observer.observe(collectionMore);
     }
@@ -1736,7 +1818,7 @@
         const observer = new IntersectionObserver(entries => {
           if (!entries.some(entry => entry.isIntersecting)) return;
           observer.disconnect(); contentObservers.delete(observer); button.click();
-        }, { rootMargin: "900px 0px" });
+        }, { rootMargin: "1800px 0px" });
         contentObservers.set(observer, button);
         observer.observe(button);
       }
@@ -3012,7 +3094,9 @@
         ? (parent.cachedDetails?.sections || []).filter(section => section.kind === "episodes").flatMap(section => section.items || []).find(row => String(row.id) === String(ref.id) || String(row.ref?.id) === String(ref.id))
         : null;
       const cachedMediaSections = cachedEpisode?.mediaSections || [];
-      const referenceSourceKey = parent?.metadataSource || ({ tenrai: "anilist" }[ref.extra?.source] || ref.extra?.source) || String(ref.id || "").match(/^(tmdb|tvdb|imdb|anilist):/i)?.[1]?.toLowerCase() || "tvmaze";
+      // A person/character id names the source that serves its page (e.g. imdb:nm…, tmdb:…, kitsu-person:…); only fall back to the parent title's source for plain ids.
+      const idSource = ({ "jikan-person": "jikan", "jikan-character": "jikan", "kitsu-person": "kitsu", "kitsu-character": "kitsu", "anilist-staff": "anilist", "anilist-character": "anilist", "tmdb-character": "tmdb", "tmdb-episode": "tmdb", "imdb-episode": "imdb", "rt-celebrity": "rottentomatoes" })[String(ref.id || "").match(/^([a-z-]+):/i)?.[1]?.toLowerCase()] || String(ref.id || "").match(/^(tmdb|tvdb|imdb|anilist):/i)?.[1]?.toLowerCase() || "";
+      const referenceSourceKey = idSource || parent?.metadataSource || ({ tenrai: "anilist" }[ref.extra?.source] || ref.extra?.source) || "tvmaze";
       const referenceSource = window.SplitAppSources.list().find(source => source.key === referenceSourceKey);
       const referenceSourceUnavailable = Boolean(referenceSource && (!window.SplitAppSources.isEnabled(referenceSource.key, prefs) || (referenceSource.keyRequired && !prefs.apiKeys?.[referenceSource.key]?.trim())));
       const localOnly = prefs.metadataMode === "offline" || !navigator.onLine || referenceSourceUnavailable;
@@ -3616,6 +3700,15 @@
     return startMetadataSync(null, false, "needed");
   }
   async function retryMetadataSync(id = null) { return startMetadataSync(id == null ? null : [id], true); }
+  // Remove only the finished rows of one kind (updated = changed + unchanged, or failed); queued/running rows stay.
+  function clearMetadataSyncEntries(kind) {
+    if (metadataSync || !metadataSyncState) return;
+    const drop = kind === "failed" ? new Set(["failed"]) : new Set(["done", "checked"]);
+    const entries = (metadataSyncState.entries || []).filter(entry => !drop.has(entry.status));
+    metadataSyncState = entries.length ? { ...metadataSyncState, entries } : null;
+    metadataSyncCounters = null;
+    saveMetadataSyncState(); render();
+  }
   function clearMetadataSyncState() { if (metadataSync) return; metadataSyncState = null; saveMetadataSyncState(); render(); }
   // Watch progress and the episode checklist are one thing: for a series with a saved episode guide the watched episodes are the truth and `progress` is their count.
   function reconcileEpisodes(item) {
@@ -3847,17 +3940,27 @@
     dialog.onkeydown = event => { if (event.key === "Enter" && event.target.matches("[data-fix-query]")) { event.preventDefault(); search(); } };
     paint(); showPopup(dialog);
   }
-  function coverCandidates(item) {
-    const details = item.cachedDetails || {}, urls = [details.portraitImage, details.image, details.landscapeImage, details.backgroundImage, item.image, item.backdrop];
-    (details.sections || []).filter(section => section.kind === "gallery").forEach(section => (section.items || []).slice(0, 8).forEach(row => urls.push(row.image)));
-    return [...new Set(urls.filter(url => /^https?:/i.test(url || "")))];
+  // Pictures this title has, as { url, src }: `url` is saved as the cover, `src` is shown (the on-device copy when there is one, so it works offline).
+  function coverCandidates(item, local = {}) {
+    const details = item.cachedDetails || {}, rows = [];
+    const add = (url, ...paths) => {
+      if (!/^https?:/i.test(url || "") || rows.some(row => row.url === url)) return;
+      rows.push({ url, src: paths.map(path => path === "@portrait" ? (item.localPortraitData || item.localThumbnailData) : path === "@landscape" ? item.localLandscapeData : local[path]).find(src => src && !/^blob:.*undefined/.test(src)) || local[`imageUrl:${url}`] || url });
+    };
+    add(details.portraitImage, "cachedDetails.portraitImage", "@portrait"); add(details.image, "cachedDetails.image", "@portrait");
+    add(details.landscapeImage, "cachedDetails.landscapeImage", "@landscape"); add(details.backgroundImage, "cachedDetails.backgroundImage", "@landscape");
+    add(item.image, "image", "@portrait"); add(item.backdrop, "backdrop", "@landscape");
+    (details.sections || []).forEach((section, sectionIndex) => { if (section.kind !== "gallery") return; (section.items || []).slice(0, 8).forEach((row, index) => add(row.image, `cachedDetails.sections.${sectionIndex}.items.${index}.image`)); });
+    return navigator.onLine ? rows : rows.filter(row => row.src !== row.url);
   }
   async function openCoverPicker(id) {
     const item = itemById(String(id)); if (!item) return;
     let dialog = $("#cover-picker-dialog"); if (!dialog) { dialog = document.createElement("dialog"); dialog.id = "cover-picker-dialog"; dialog.className = "choice-dialog cover-picker-dialog"; document.body.appendChild(dialog); }
     if (item.cachedDetails?.compact) await hydrateDetails(item);
-    const urls = coverCandidates(item);
-    dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">COVER</p><h2>${esc(item.title)}</h2></div><button class="choice-dialog-close" type="button" data-cover-close aria-label="Close">×</button></header><div class="cover-picker-body"><p class="fix-match-status">${item.customCover ? "Using your chosen cover." : "Pick a cover; it stays when metadata refreshes."}</p><div class="cover-picker-grid">${urls.map(url => `<button type="button" class="cover-choice${item.customCover === url ? " is-current" : ""}" data-cover-url="${esc(url)}"><img src="${esc(url)}" alt="" loading="lazy" decoding="async" onerror="this.closest('button').hidden=true"></button>`).join("")}</div>${item.customCover ? '<button type="button" class="button secondary" data-cover-auto>Use automatic cover</button>' : ""}</div>`;
+    let localImages = item.localImageData || {};
+    try { const loaded = await window.SplitAppBackend?.loadItemImages?.(item); if (loaded && Object.keys(loaded).length) { localImages = loaded; item.localImageData = loaded; } } catch (_) {}
+    const urls = coverCandidates(item, localImages);
+    dialog.innerHTML = `<div class="choice-dialog-grabber"></div><header class="choice-dialog-header"><div><p class="settings-overline">COVER</p><h2>${esc(item.title)}</h2></div><button class="choice-dialog-close" type="button" data-cover-close aria-label="Close">×</button></header><div class="cover-picker-body"><p class="fix-match-status">${item.customCover ? "Using your chosen cover." : "Pick a cover; it stays when metadata refreshes."}</p><div class="cover-picker-grid">${urls.length ? urls.map(({ url, src }) => `<button type="button" class="cover-choice${item.customCover === url ? " is-current" : ""}" data-cover-url="${esc(url)}"><img src="${esc(src)}" alt="" loading="lazy" decoding="async" onerror="this.closest('button').hidden=true"></button>`).join("") : `<p class="fix-match-status">No saved pictures yet. Open this title once online to save them for offline use.</p>`}</div>${item.customCover ? '<button type="button" class="button secondary" data-cover-auto>Use automatic cover</button>' : ""}</div>`;
     dialog.onclick = event => { if (event.target === dialog || eventClosest(event, "[data-cover-close]")) { closePopup(dialog); return; } const choice = eventClosest(event, "[data-cover-url]"), automatic = eventClosest(event, "[data-cover-auto]"); if (!choice && !automatic) return; if (choice) { item.customCover = choice.dataset.coverUrl; item.image = item.customCover; } else delete item.customCover; item.updatedAt = Date.now(); persist({ ids: [item.id] }); closePopup(dialog); render(); toast(automatic ? "Automatic cover restored." : "Cover updated."); };
     showPopup(dialog);
   }
@@ -3904,7 +4007,77 @@
     $("[data-detail-modal-caption]", dialog).textContent = image.alt;
     $("[data-detail-image-prev]", dialog).hidden = triggers.length < 2;
     $("[data-detail-image-next]", dialog).hidden = triggers.length < 2;
-    if (!dialog.open) showPopup(dialog);
+    const counter = $("[data-detail-image-counter]", dialog); if (counter) counter.textContent = triggers.length > 1 ? `${detailImagePosition + 1} / ${triggers.length}` : "";
+    if (!dialog.open) { dialog.classList.remove("is-rotated"); dialog.dataset.rotate = ""; showPopup(dialog); window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } }); }
+  }
+  function currentDetailImage() {
+    const trigger = $$("#page-content [data-detail-image-src]")[detailImagePosition];
+    const src = trigger?.dataset.detailImageSrc;
+    if (!src) { toast("Image is unavailable."); return null; }
+    const label = trigger.dataset.detailImageLabel || "ScreenMark image";
+    const baseName = label.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "screenmark-image";
+    return { src, label, baseName };
+  }
+  async function detailImageBlob(src) { const response = await fetch(src); if (!response.ok) throw new Error("Could not read this image."); return response.blob(); }
+  const detailImageFilename = (baseName, blob) => `${baseName}.${({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/avif": "avif" })[blob.type] || "jpg"}`;
+  function rotateDetailImage() {
+    const modal = $("#detail-image-modal"); if (!modal) return;
+    const next = { "": "cw", cw: "ccw", ccw: "" }[modal.dataset.rotate || ""];
+    modal.dataset.rotate = next; modal.classList.toggle("is-rotated", Boolean(next));
+  }
+  async function downloadDetailImage() {
+    const image = currentDetailImage(); if (!image) return;
+    const nativeShare = window.Capacitor?.Plugins?.ShareIntent;
+    if (nativeShare?.downloadImage) {
+      try { const result = await nativeShare.downloadImage({ src: image.src, filename: image.baseName, title: image.label }); toast(`Saved ${result?.location || "image to Downloads"}.`); }
+      catch (error) { toast(error?.message || "Could not save the image."); }
+      return;
+    }
+    try {
+      const blob = await detailImageBlob(image.src), url = URL.createObjectURL(blob), anchor = document.createElement("a");
+      anchor.href = url; anchor.download = detailImageFilename(image.baseName, blob); anchor.style.display = "none";
+      document.body.appendChild(anchor); anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); toast("Image downloaded.");
+    } catch (_) {
+      const anchor = document.createElement("a"); anchor.href = image.src; anchor.download = `${image.baseName}.jpg`; anchor.target = "_blank"; anchor.rel = "noopener noreferrer";
+      document.body.appendChild(anchor); anchor.click(); anchor.remove(); toast("Opened the image so you can save it.");
+    }
+  }
+  async function copyDetailImage() {
+    const image = currentDetailImage(); if (!image) return;
+    const nativeShare = window.Capacitor?.Plugins?.ShareIntent;
+    if (nativeShare?.copyImage) {
+      try { await nativeShare.copyImage({ src: image.src, filename: image.baseName, title: image.label }); toast("Image copied to clipboard."); }
+      catch (error) { toast(error?.message || "Could not copy the image."); }
+      return;
+    }
+    try {
+      const blob = await detailImageBlob(image.src);
+      if (navigator.clipboard?.write && window.ClipboardItem && /^image\/(png|jpeg|webp)$/.test(blob.type)) { await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]); toast("Image copied."); return; }
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(image.src); toast("Image link copied.");
+    } catch (_) {
+      try { await navigator.clipboard.writeText(image.src); toast("Image link copied."); } catch (__) { toast("Could not copy this image on this device."); }
+    }
+  }
+  async function shareDetailImage() {
+    const image = currentDetailImage(); if (!image) return;
+    const nativeShare = window.Capacitor?.Plugins?.ShareIntent;
+    if (nativeShare?.shareImage) {
+      try { await nativeShare.shareImage({ src: image.src, filename: image.baseName, title: image.label }); }
+      catch (error) { toast(error?.message || "Could not open Android sharing."); }
+      return;
+    }
+    try {
+      const blob = await detailImageBlob(image.src), file = new File([blob], detailImageFilename(image.baseName, blob), { type: blob.type || "image/jpeg" });
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) { await navigator.share({ files: [file], title: image.label }); return; }
+      if (navigator.share) { await navigator.share({ title: image.label, text: image.label, url: image.src }); return; }
+      if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(image.src); toast("Sharing isn’t available here; image link copied."); return; }
+      toast("Sharing isn’t available on this device.");
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      try { if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(image.src); toast("Image link copied."); return; } } catch (_) {}
+      toast("Could not share this image.");
+    }
   }
 
 
@@ -4091,7 +4264,7 @@
     if (exportRunning) { toast("An export is already running."); return; }
     exportRunning = true;
     try { return await exportListBody(options); }
-    finally { exportRunning = false; }
+    finally { exportRunning = false; if (exportCardShown) { exportCardShown = false; importProgress("Export finished", 1, { done: true, quiet: true }); } }
   }
   async function exportListBody({ silent = false, password = "", share = false } = {}) {
     const backend = window.SplitAppBackend;
@@ -4102,6 +4275,7 @@
         if (!silent && !share) toast("Choose where to save your library…");
         const result = await backend.exportLibrary({ items, history, preferences: prefs }, { mode: silent ? "folder" : share ? "share" : "ask", password, onProgress: (done, total, status) => {
           if (status?.notificationsAllowed === false) { toast("Allow notifications to see export progress while ScreenMark is in the background."); lastToast = Date.now(); return; }
+          importProgress("Exporting backup…", total ? done / total : null, { quiet: true }); exportCardShown = true;
           if (Date.now() - lastToast > 700 && done < total) { lastToast = Date.now(); toast(`Exporting… ${Math.round(done / total * 100)}%`); }
         } });
         toast(share ? "Encrypted transfer ready to share." : password ? `Encrypted transfer saved: ${result.fileName}. Share it from the location you chose.` : silent ? `Backup saved: ${result.fileName}` : `Exported ${items.length} titles.`);
@@ -4143,15 +4317,23 @@
     }
     return copy;
   }
+  // Runs `worker` over `list` with at most `limit` in flight (order of results is kept).
+  async function mapPool(list, limit, worker) {
+    const out = new Array(list.length); let next = 0;
+    await Promise.all(Array.from({ length: Math.min(limit, list.length) }, async () => { for (;;) { const at = next++; if (at >= list.length) return; out[at] = await worker(list[at], at); } }));
+    return out;
+  }
   async function cacheImportedTransferImages(item, images) {
     if (!images || typeof images !== "object") return;
     const writes = [];
     const artworkEntries = window.SplitAppBackend?.artworkCacheEntries?.(item) || [];
-    for (const [path, dataUrl] of Object.entries(images)) {
-      if (typeof dataUrl !== "string" || !/^data:image\//i.test(dataUrl)) continue;
-      const blob = await dataUrlToBlob(dataUrl); if (!blob) continue;
+    const decoded = await mapPool(Object.entries(images).filter(([, dataUrl]) => typeof dataUrl === "string" && /^data:image\//i.test(dataUrl)), 4, async ([path, dataUrl]) => [path, await dataUrlToBlob(dataUrl)]);
+    for (const [path, blob] of decoded) {
+      if (!blob) continue;
       const entry = artworkEntries.find(row => row.paths?.some(imagePath => imagePath.join(".") === path));
       if (entry) writes.push([entry.key, entry.signature, blob]);
+      // The grid poster reads its own cache row (<id>:p); without it the imported poster only lives in memory until the next restart.
+      if (path === "image") writes.push([thumbKeyOf(item), thumbSigOf(item), blob]);
       const episode = /^cachedDetails\.episodesById\.([^.]+)\.image$/.exec(path);
       if (episode && window.SplitAppIDB?.putThumbs) {
         const row = (item.cachedDetails?.episodesById || {})[episode[1]]
@@ -4165,15 +4347,17 @@
     if (!file) return;
     recordLog("info", `Library import started: ${file.name || "unnamed file"} (${Number(file.size) || 0} bytes).`);
     try {
+      importProgress("Reading backup…");
       const encryptedImportIds = [];
       const fileHead = new Uint8Array(await file.slice(0, 4).arrayBuffer());
       const encryptedTransfer = window.SplitAppTransferCrypto?.isEncryptedHeader(fileHead) || /\.sqx$/i.test(file.name || "");
       const transferPassword = encryptedTransfer ? await appPrompt("Enter the password for this encrypted transfer file.", { title: "Unlock transfer", confirmLabel: "Open transfer" }) : "";
       if (encryptedTransfer && transferPassword == null) throw new Error("Import cancelled.");
+      importProgress(encryptedTransfer ? "Decrypting transfer…" : "Reading backup…");
       // Big JSON backups are read one title at a time from the stream instead of as one giant string; any problem falls back to the whole-file path.
       let streamed = null;
       if (encryptedTransfer || (/\.(json|gz)$/i.test(file.name) && !/\.sqdb/i.test(file.name) && file.size > 2 * 1024 * 1024)) {
-        try { streamed = await window.SplitAppBackupStream.parseFile(file, { password: transferPassword, onProgress: count => toast(`Reading backup… ${count.toLocaleString()} titles`) }); } catch (error) { if (encryptedTransfer) throw error; streamed = null; }
+        try { streamed = await window.SplitAppBackupStream.parseFile(file, { password: transferPassword, onBytes: (done, total) => importProgress(`${encryptedTransfer ? "Decrypting & reading" : "Reading"} backup…`, total ? 0.5 * done / total : null) }); } catch (error) { if (encryptedTransfer) throw error; streamed = null; }
       }
       const text = streamed ? "" : await readBackupText(file);
       const parseCsv = value => {
@@ -4220,6 +4404,8 @@
       }
       if (!Array.isArray(incoming)) throw new Error("No item list found in this file.");
       if (!Array.isArray(data) && data.app && data.app !== config.name) throw new Error(`This transfer belongs to ${data.app}, not ${config.name}.`);
+      importProgress("Matching titles with your library…");
+      await new Promise(resolve => setTimeout(resolve, 0));
       const now = Date.now(), idMap = new Map();
       const stamp = value => { const n = Number(value) || Date.parse(value) || 0; return n > 0 && n <= now ? n : now; };
       // Keep the backup's own dates so Timeline and Statistics → Activity show when things really happened.
@@ -4301,18 +4487,27 @@
       if (data.preferences && typeof data.preferences === "object" && !Array.isArray(data.preferences)) Object.assign(prefs, data.preferences);
       history = [...importedHistory, ...history].sort((a, c) => (Number(c.at) || Date.parse(c.at) || 0) - (Number(a.at) || Date.parse(a.at) || 0));
       recordLibraryChange("imported", `Imported ${fresh.length} ${fresh.length === 1 ? "title" : "titles"}.`, fresh.map(item => item.id));
+      importProgress(`Saving ${fresh.length} ${fresh.length === 1 ? "title" : "titles"}…`, 0.55);
+      await new Promise(resolve => requestAnimationFrame(resolve));
       await persist({ ids: [...fresh, ...patches.map(row => row.item)].map(item => item.id), meta: true });
-      for (const item of restoredArtItems) await cacheImportedTransferImages(item, transferImageMaps.get(String(item.id)));
+      let artDone = 0;
+      await mapPool(restoredArtItems, Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 2 ? 2 : 3, async item => {
+        await cacheImportedTransferImages(item, transferImageMaps.get(String(item.id)));
+        artDone += 1;
+        if (artDone % 3 === 0 || artDone === restoredArtItems.length) importProgress("Saving covers and images…", 0.55 + 0.37 * artDone / restoredArtItems.length);
+      });
       applyPreferences();
       if (encryptedImportIds.length) {
         const retained = new Set(items.map(item => String(item.id)));
         const store = window.Capacitor?.Plugins?.EncryptedStore;
         for (const id of encryptedImportIds) if (!retained.has(id)) await store?.deleteItem?.({ id });
       }
+      importProgress("Preparing thumbnails…", 0.95);
       await primeThumbCache(fresh).catch(() => 0);
       const syncing = syncImported([...fresh, ...patches.map(row => row.item)]);
+      importProgress(`Imported ${fresh.length} ${fresh.length === 1 ? "entry" : "entries"}`, 1, { done: true });
       render(); setTimeout(fillThumbCache, 800); if (syncing) setTimeout(() => toast(`Syncing ${syncing} ${syncing === 1 ? "title" : "titles"} with their sources. Progress: Metadata Sync → Refresh status.`), 1800); toast(`Imported ${fresh.length} ${fresh.length === 1 ? "entry" : "entries"}${patches.length ? ` and restored details for ${patches.length} existing ${patches.length === 1 ? "title" : "titles"}` : ""}.`);
-    } catch (error) { recordLog("error", `Library import failed: ${error.message || "Could not import this file."}`); toast(error.message || "Could not import this file."); }
+    } catch (error) { recordLog("error", `Library import failed: ${error.message || "Could not import this file."}`); importProgress(error.message || "Could not import this file.", null, { done: true, error: true }); toast(error.message || "Could not import this file."); }
   }
   function resetAnimations() {
     ["reduceMotion", "animationSpeed", "pageTransition", "sheetAnimation", "pressEffect", "progressAnimation", "progressStyle", "skeletonShimmer", "placeholderAnimation"].forEach(key => { prefs[key] = JSON.parse(JSON.stringify(prefsDefaults[key])); });
@@ -4394,6 +4589,10 @@
       showDetailImage($$("[data-detail-image-src]", $("#page-content")).indexOf(detailImage));
       return;
     }
+    if (eventClosest(event, "[data-detail-image-rotate]")) { rotateDetailImage(); return; }
+    if (eventClosest(event, "[data-detail-image-download]")) { downloadDetailImage(); return; }
+    if (eventClosest(event, "[data-detail-image-copy]")) { copyDetailImage(); return; }
+    if (eventClosest(event, "[data-detail-image-share]")) { shareDetailImage(); return; }
     if (eventClosest(event, "[data-detail-image-close]")) { closePopup($("#detail-image-modal")); return; }
     if (eventClosest(event, "[data-detail-image-prev]")) { showDetailImage(detailImagePosition - 1); return; }
     if (eventClosest(event, "[data-detail-image-next]")) { showDetailImage(detailImagePosition + 1); return; }
@@ -4553,7 +4752,7 @@
       return;
     }
     const syncAction = eventClosest(event, "[data-metadata-sync-action]");
-    if (syncAction) { if (syncAction.dataset.metadataSyncAction === "start") syncMetadataNow(); else if (syncAction.dataset.metadataSyncAction === "retry") retryMetadataSync(syncAction.dataset.id || null); else if (syncAction.dataset.metadataSyncAction === "clear") clearMetadataSyncState(); else if (syncAction.dataset.metadataSyncAction === "toggle") setMetadataSyncPaused(!metadataSyncPaused); return; }
+    if (syncAction) { if (syncAction.dataset.metadataSyncAction === "start") syncMetadataNow(); else if (syncAction.dataset.metadataSyncAction === "retry") retryMetadataSync(syncAction.dataset.id || null); else if (syncAction.dataset.metadataSyncAction === "clear") clearMetadataSyncState(); else if (syncAction.dataset.metadataSyncAction === "clear-updated") clearMetadataSyncEntries("updated"); else if (syncAction.dataset.metadataSyncAction === "clear-failed") clearMetadataSyncEntries("failed"); else if (syncAction.dataset.metadataSyncAction === "toggle") setMetadataSyncPaused(!metadataSyncPaused); return; }
     const settingPicker = eventClosest(event, "[data-setting-picker]");
     if (settingPicker) { openSettingPicker(settingPicker); return; }
     if (eventClosest(event, "[data-close-setting-picker]")) { closePopup($("#setting-picker-dialog")); return; }
