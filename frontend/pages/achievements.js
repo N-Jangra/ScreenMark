@@ -156,15 +156,24 @@
     return out;
   };
 
-  const entries = (items, roles = {}) => {
-    const base = baseRows(items, roles), dates = readDates() || {};
+  // The badge maths walks the whole library several times, and entries() is called by the profile, this page, awards and shares:
+  // keep the last result and reuse it while the library has not changed (same array, same size, same update stamps).
+  let memo = { items: null, roles: null, key: "", rows: null };
+  const libraryKey = items => { let stamp = 0, favorites = 0; for (const item of items) { stamp += Number(item.updatedAt) || 0; if (item.favorite) favorites++; } return `${items.length}:${stamp}:${favorites}`; };
+  const computeRows = (items, roles) => {
+    const base = baseRows(items, roles);
     let level = 1 + Math.floor(sum(base.filter(row => row.unlocked), row => row.xp) / LEVEL_XP), meta = metaRows(context(base, level));
     for (let i = 0; i < 8; i++) {
       const next = 1 + Math.floor(sum([...base, ...meta].filter(row => row.unlocked), row => row.xp) / LEVEL_XP);
       if (next === level) break;
       level = next; meta = metaRows(context(base, level));
     }
-    return [...base, ...meta].map(row => {
+    return [...base, ...meta];
+  };
+  const entries = (items, roles = {}) => {
+    const dates = readDates() || {}, key = libraryKey(items);
+    if (!(memo.items === items && memo.key === key)) memo = { items, roles, key, rows: computeRows(items, roles) };
+    return memo.rows.map(row => {
       const asset = `icons/achievement-badges/${row.id}.svg`, unlockedAt = row.unlocked ? Number(dates[row.id]) || 0 : 0;
       return { ...row, asset, unlockedAt, rarity: RARITY[row.tier], percent: row.unlocked ? 100 : Math.min(99, Math.floor(row.current / Math.max(1, row.target) * 100)),
         name: row.title, level: row.unlocked ? 1 : 0, earned: row.unlocked ? [{ id: row.legacyId, name: row.title, target: row.target, xp: row.xp, asset }] : [] };
