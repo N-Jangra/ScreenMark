@@ -16,6 +16,7 @@
   ];
   const navKeys = navItems.map(item => item.key);
   const prefsDefaults = {
+    splashStyle: "a", splashSize: 100, splashName: false,
     theme: "system", textSize: "normal", dateFormat: "auto", imageStorage: "all", libraryMemory: "auto", reduceMotion: false, animationSpeed: "fast", pageTransition: "slide", sheetAnimation: "slide", pressEffect: "shrink", progressAnimation: true, progressStyle: "smooth", skeletonShimmer: true, placeholderAnimation: "shimmer", mainColor: "default", accentColorDefaultVersion: 2,
     profileCoverSource: "both", profileCoverMode: "random", profileCoverInterval: "visit", profileAvatarSource: "custom", profileAvatarMode: "random", profileAvatarInterval: "visit", profileAvatarPinned: "", profileCoverPinned: "", profileAvatarPinnedImage: "", profileCoverPinnedImage: "", showSidebar: true, showScrollbars: false, bottomBarStyle: "icon-color", bottomBarLabels: "icons-labels", bottomBarBackground: "solid", bottomBarTransparency: 100, navIcons: { discover: "bookmark", "series-watchlist": "tv", "movie-watchlist": "clapperboard", profile: "user-round" },
     navBar: { order: navKeys, visible: { "series-watchlist": true, "movie-watchlist": true, discover: true, profile: true } },
@@ -784,7 +785,35 @@
     window.lucide?.createIcons({ root: dialog, attrs: { "aria-hidden": "true" } });
     showPopup(dialog); updateImportDetails();
   }
+  // Opening animation: the choice and its layout (size %, name below logo) live in their own localStorage entries so the boot screen can read them.
+  const SPLASH_KEY = "screenmark_splash_style", SPLASH_LAYOUT_KEY = "screenmark_splash_layout", SPLASH_IDS = ["a", "b", "c", "d"];
+  function syncSplashStyle() {
+    let saved = "";
+    try { saved = localStorage.getItem(SPLASH_KEY) || ""; } catch (_) {}
+    if (SPLASH_IDS.includes(saved)) prefs.splashStyle = saved;
+    else { prefs.splashStyle = SPLASH_IDS.includes(prefs.splashStyle) ? prefs.splashStyle : "a"; try { localStorage.setItem(SPLASH_KEY, prefs.splashStyle); } catch (_) {} }
+  }
+  function splashLayout(style = prefs.splashStyle) {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(SPLASH_LAYOUT_KEY) || "{}") || {}; } catch (_) {}
+    return { size: Math.min(130, Math.max(50, Number(saved.size) || 100)), name: typeof saved.name === "boolean" ? saved.name : false };
+  }
+  // Bridge used by the opening-animation page (pages/splash-studio.js).
+  window.SplashHost = {
+    layout: () => splashLayout(),
+    style: () => prefs.splashStyle || "a",
+    layoutSaved: () => { try { return typeof JSON.parse(localStorage.getItem(SPLASH_LAYOUT_KEY) || "{}").name === "boolean"; } catch (_) { return false; } },
+    toast: message => toast(message),
+    save({ id, size, name }) {
+      if (SPLASH_IDS.includes(id)) { try { localStorage.setItem(SPLASH_KEY, id); } catch (_) {} setPreference("splashStyle", id); }
+      if (size === undefined) { toast("Opening screen saved."); return; }
+      try { localStorage.setItem(SPLASH_LAYOUT_KEY, JSON.stringify({ size, name })); } catch (_) {}
+      setPreference("splashSize", size); setPreference("splashName", name);
+      toast("Opening screen saved.");
+    }
+  };
   function applyPreferences() {
+    syncSplashStyle();
     normalizeMotionPreferences();
     document.body.dataset.page = page;
     const selectedTheme = prefs.theme === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "amoled" : "light") : prefs.theme;

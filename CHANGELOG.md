@@ -6,6 +6,7 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 
 ### Added
 
+- Opening animation studio (Settings → Animations → Opening animation, laid out like SavePoint's): choose A Episode stack (the original intro), B Stack draw, C Fan flip or D Card deal from swipeable cards, preview them on a live stage, set the logo size (50–130%) and whether "ScreenMark" shows under the logo, try it with Test boot (browser full-screen mode on the web), then Save with the round button above the bottom bar. The choice and layout are stored in their own entries and applied at the next launch; reduced motion keeps the static mark.
 - Import and export progress button with a full progress page laid out like SavePoint's (icon, step, live bar, percentage); it opens from the floating button and follows the transfer live.
 - Android notification progress for imports (reading → saving → complete/failed).
 - Image viewer controls: rotate, download, copy, share, close and an image counter, matching SavePoint.
@@ -28,6 +29,7 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 
 ### Changed
 
+- The launch intro and the new opening animations play as muted MP4/WebM video with a still poster while loading (smoother on phones; the GIFs are no longer bundled and the poster is the fallback). Opening animation files total about 0.5 MB.
 - Bump Android and app version metadata for this release.
 
 ## [0.1.11] — 2026-11-15
