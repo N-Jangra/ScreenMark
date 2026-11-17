@@ -14,6 +14,8 @@ All notable changes are recorded here. The project follows [Keep a Changelog](ht
 
 ### Fixed
 
+- Profile → Add manually did nothing useful (it landed on Discover) because the Add page had dropped out of the app's page list; it opens the Add page again.
+- Add title page: the bottom bar is hidden, Cancel / Save title sit flush at the bottom (full width, above the phone's bottom safe area) instead of floating with a gap, and the Type card no longer touches the top bar.
 - TVMaze cast profiles stayed on the loading skeleton: the Guest appearances list referenced an undefined variable. Cast and character pages now check the source named by the person id rather than the parent title's source, and IMDb/Rotten Tomatoes cast fall back to a basic profile instead of an error. Profile fact pills share one style.
 - Change cover rows no longer overlap when the list is longer than the sheet, and the picker shows on-device copies so it works offline.
 - Rotten Tomatoes cast and crew now open a full profile (portrait, birthday, birthplace, highest/lowest rated, biography and movie credits that open their own pages, and a Photos gallery shown first, whole, and opening in the image viewer; credits whose image is Rotten Tomatoes' placeholder use the real poster from the page when it has one, otherwise no image) loaded from the person's Rotten Tomatoes page; before they only showed a name and picture.

@@ -1325,3 +1325,9 @@ video.ss-media, img.ss-media { border-radius:var(--ss-radius,0); }
 .ss-fab-btn[hidden] { display:none; }
 .ss-fab-btn:active:not(:disabled) { transform:scale(.92); }
 .ss-page { padding-bottom:84px; }
+
+/* Add / Edit title: no bottom bar here; Cancel and Save are pinned flush to the bottom */
+body[data-page="add"] .bottom-bar { display:none !important; }
+body[data-page="add"] .add-entry-footer { position:fixed !important; left:0 !important; right:0 !important; width:auto !important; max-width:none !important; bottom:0 !important; z-index:30; margin:0 !important; padding:10px 14px calc(10px + env(safe-area-inset-bottom)) !important; border-top:1px solid var(--line); border-radius:0 !important; background:var(--surface); backdrop-filter:none; box-shadow:0 -10px 18px -12px rgba(0,0,0,.35); }
+body[data-page="add"] .app-shell { padding-bottom:calc(84px + env(safe-area-inset-bottom)); }
+body[data-page="add"] #page-content { padding-top:16px; padding-bottom:0; }

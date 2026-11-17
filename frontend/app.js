@@ -6,7 +6,7 @@
   // pressure eviction. Portable exports remain necessary for uninstall or a
   // deliberate clear-storage action.
   window.SplitAppIDB?.persistStorage?.().catch(() => {});
-  const titles = { status: "Status", discover: "Discover", details: "Details", timeline: "Timeline", statistics: "Statistics", help: "Help & FAQ", "whats-new": "What’s new", profile: "Profile", achievements: "Achievements", setup: "Quick setup", "profile-cover": "Profile cover", series: "Series", movies: "Movies", "series-favorites": "Series Favorites", "movie-favorites": "Movie Favorites", "series-watchlist": "Shows Watchlist", "movie-watchlist": "Movies Watchlist", settings: "Settings", sync: "Metadata Sync" };
+  const titles = { add: "Add title", status: "Status", discover: "Discover", details: "Details", timeline: "Timeline", statistics: "Statistics", help: "Help & FAQ", "whats-new": "What’s new", profile: "Profile", achievements: "Achievements", setup: "Quick setup", "profile-cover": "Profile cover", series: "Series", movies: "Movies", "series-favorites": "Series Favorites", "movie-favorites": "Movie Favorites", "series-watchlist": "Shows Watchlist", "movie-watchlist": "Movies Watchlist", settings: "Settings", sync: "Metadata Sync" };
   const hasPage = name => Object.prototype.hasOwnProperty.call(titles, name);
   const navItems = [
     { key: "series-watchlist", label: "Shows", icon: "tv" },
@@ -5388,6 +5388,11 @@
   });
   $("[data-close-setting-picker]")?.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); closePopup($("#setting-picker-dialog")); });
   $("#setting-picker-dialog")?.addEventListener("cancel", event => { event.preventDefault(); closePopup(event.currentTarget); });
+  // Keep --bar-h equal to the bottom bar's real height so sticky action bars (Add title) sit directly on it.
+  const syncBarHeight = () => { const bar = document.querySelector(".bottom-bar"), h = bar ? Math.round(bar.getBoundingClientRect().height) : 0; const rect = bar?.getBoundingClientRect(), root = document.documentElement.style; root.setProperty("--bar-h", `${h}px`); root.setProperty("--bar-l", `${Math.round(rect?.left || 0)}px`); root.setProperty("--bar-w", `${Math.round(rect?.width || innerWidth)}px`); };
+  window.addEventListener("resize", syncBarHeight);
+  try { const bar = document.querySelector(".bottom-bar"); if (bar && window.ResizeObserver) new ResizeObserver(syncBarHeight).observe(bar); } catch (_) {}
+  syncBarHeight();
   function syncRouteFromHash() {
     rememberScroll();
     const [hashPath, hashQuery = ""] = location.hash.slice(1).split("?");
