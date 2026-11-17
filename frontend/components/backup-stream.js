@@ -71,6 +71,10 @@
     if (!file?.stream || typeof TextDecoderStream !== "function") throw new Error("Streaming is not available.");
     const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
     let stream = file.stream();
+    if (options.onBytes && typeof TransformStream === "function") {
+      let read = 0; const total = Number(file.size) || 0;
+      stream = stream.pipeThrough(new TransformStream({ transform(chunk, controller) { read += chunk.byteLength || chunk.length || 0; options.onBytes(Math.min(read, total || read), total); controller.enqueue(chunk); } }));
+    }
     if (window.SplitAppTransferCrypto?.isEncryptedHeader(head)) {
       if (!options.password) throw new Error("Enter the password used to create this transfer file.");
       stream = window.SplitAppTransferCrypto.decryptStream(stream, options.password);

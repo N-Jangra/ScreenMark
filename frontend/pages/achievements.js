@@ -156,15 +156,24 @@
     return out;
   };
 
-  const entries = (items, roles = {}) => {
-    const base = baseRows(items, roles), dates = readDates() || {};
+  // The badge maths walks the whole library several times, and entries() is called by the profile, this page, awards and shares:
+  // keep the last result and reuse it while the library has not changed (same array, same size, same update stamps).
+  let memo = { items: null, roles: null, key: "", rows: null };
+  const libraryKey = items => { let stamp = 0, favorites = 0; for (const item of items) { stamp += Number(item.updatedAt) || 0; if (item.favorite) favorites++; } return `${items.length}:${stamp}:${favorites}`; };
+  const computeRows = (items, roles) => {
+    const base = baseRows(items, roles);
     let level = 1 + Math.floor(sum(base.filter(row => row.unlocked), row => row.xp) / LEVEL_XP), meta = metaRows(context(base, level));
     for (let i = 0; i < 8; i++) {
       const next = 1 + Math.floor(sum([...base, ...meta].filter(row => row.unlocked), row => row.xp) / LEVEL_XP);
       if (next === level) break;
       level = next; meta = metaRows(context(base, level));
     }
-    return [...base, ...meta].map(row => {
+    return [...base, ...meta];
+  };
+  const entries = (items, roles = {}) => {
+    const dates = readDates() || {}, key = libraryKey(items);
+    if (!(memo.items === items && memo.key === key)) memo = { items, roles, key, rows: computeRows(items, roles) };
+    return memo.rows.map(row => {
       const asset = `icons/achievement-badges/${row.id}.svg`, unlockedAt = row.unlocked ? Number(dates[row.id]) || 0 : 0;
       return { ...row, asset, unlockedAt, rarity: RARITY[row.tier], percent: row.unlocked ? 100 : Math.min(99, Math.floor(row.current / Math.max(1, row.target) * 100)),
         name: row.title, level: row.unlocked ? 1 : 0, earned: row.unlocked ? [{ id: row.legacyId, name: row.title, target: row.target, xp: row.xp, asset }] : [] };
@@ -216,7 +225,7 @@
       if (!row) return `<section class="achievements-page">${head("#achievements")}<h1>Achievement not found</h1></section>`;
       const group = ALL_GROUPS.find(item => item[0] === row.group), date = dateText(row);
       const status = row.unlocked ? (date ? `Unlocked on ${date}` : "Unlocked") : "Not unlocked yet";
-      return `<section class="achievements-page">${head(`#achievements/g-${row.group}`, group ? group[1] : "Achievements")}<article class="achievement-detail-card ach-detail is-${row.tier}${row.unlocked ? " is-unlocked" : ""}"><span class="ach-tier-chip">${MEDALS.find(m => m[0] === row.tier)?.[1] || "Legendary"}${row.kind === "badge" ? ` · ${esc(row.familyTitle)}` : ""}</span><h1>${esc(row.title)}</h1><p>${esc(row.description)}</p>${artImg(row, "achievement-art is-large", 220)}<p class="ach-detail-status${row.unlocked ? " is-done" : ""}">${esc(status)}</p>${row.unlocked ? "" : `<div class="achievement-progress"><span><i style="width:${row.percent}%"></i></span><small>${Math.floor(row.current).toLocaleString()} / ${esc(requirement(row))}</small></div>`}<div class="ach-stats"><div><strong>${esc(requirement(row))}</strong><small>Goal</small></div><div><strong>${esc(row.rarity)}</strong><small>Rarity</small></div><div><strong>+${row.xp} XP</strong><small>${row.unlocked ? "Earned" : "Reward"}</small></div></div><button type="button" class="button secondary" data-share-badge="${esc(row.id)}">Share badge image</button></article></section>`;
+      return `<section class="achievements-page">${head(`#achievements/g-${row.group}`, group ? group[1] : "Achievements", `<button type="button" class="ach-share-icon" data-share-badge="${esc(row.id)}" aria-label="Share badge image" title="Share badge"><i data-lucide="share-2" aria-hidden="true"></i></button>`)}<article class="achievement-detail-card ach-detail is-${row.tier}${row.unlocked ? " is-unlocked" : ""}"><span class="ach-tier-chip">${MEDALS.find(m => m[0] === row.tier)?.[1] || "Legendary"}${row.kind === "badge" ? ` · ${esc(row.familyTitle)}` : ""}</span><h1>${esc(row.title)}</h1><p>${esc(row.description)}</p>${artImg(row, "achievement-art is-large", 220)}<p class="ach-detail-status${row.unlocked ? " is-done" : ""}">${esc(status)}</p>${row.unlocked ? "" : `<div class="achievement-progress"><span><i style="width:${row.percent}%"></i></span><small>${Math.floor(row.current).toLocaleString()} / ${esc(requirement(row))}</small></div>`}<div class="ach-stats"><div><strong>${esc(requirement(row))}</strong><small>Goal</small></div><div><strong>${esc(row.rarity)}</strong><small>Rarity</small></div><div><strong>+${row.xp} XP</strong><small>${row.unlocked ? "Earned" : "Reward"}</small></div></div></article></section>`;
     }
     const sections = ALL_GROUPS.map(([id, title]) => {
       const list = groupRows(rows, id); if (!list.length) return "";

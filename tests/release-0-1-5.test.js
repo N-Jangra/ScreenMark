@@ -224,12 +224,12 @@ test("cast and crew is never persisted and full-list expansion has styles", () =
   assert.match(css, /\.demo-cast-section \.detail-carousel\.expanded \{[^}]*display: grid !important/);
 });
 
-test("0.1.11 version and changelog are consistent", () => {
+test("0.1.12 version and changelog are consistent", () => {
   const version = JSON.parse(read("package.json")).version;
-  assert.equal(version, "0.1.11");
-  assert.match(read("frontend/app-config.js"), /"version": "0\.1\.11"/);
-  assert.match(read("android/app/build.gradle"), /versionName "0\.1\.11"/);
-  assert.match(read("CHANGELOG.md"), /## \[0\.1\.11\]/);
+  assert.equal(version, "0.1.12");
+  assert.match(read("frontend/app-config.js"), /"version": "0\.1\.12"/);
+  assert.match(read("android/app/build.gradle"), /versionName "0\.1\.12"/);
+  assert.match(read("CHANGELOG.md"), /## \[0\.1\.12\]/);
 });
 
 test("Quick setup shows a wait message while sources load", () => {

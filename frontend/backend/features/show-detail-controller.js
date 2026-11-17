@@ -614,7 +614,10 @@
         if (!match) throw new Error(reason);
         const base = await loaders[match.source]({ ...item, metadataSource: match.source, providerId: match.id }, s);
         const links = [{ label: "IMDb", url: `https://www.imdb.com/title/${id}/` }, ...(base.links || []).filter(link => link.label !== "IMDb")];
-        return { ...base, links, url: `https://www.imdb.com/title/${id}/`, facts: { ...base.facts, source: "imdb" }, source: `IMDb (via ${base.source || match.source})` };
+        // People still open through IMDb: their IMDb id is found by name when the page is opened.
+        const viaImdb = row => row.ref?.type === "person" && !String(row.ref.id).startsWith("imdb:") ? { ...row, ref: { ...row.ref, extra: { ...(row.ref.extra || {}), via: "imdb" } } } : row;
+        const sections = (base.sections || []).map(section => /^(cast|staff|crew)/i.test(section.title || "") ? { ...section, items: (section.items || []).map(viaImdb) } : section);
+        return { ...base, sections, links, url: `https://www.imdb.com/title/${id}/`, facts: { ...base.facts, source: "imdb" }, source: `IMDb (via ${base.source || match.source})` };
       };
       let page;
       try { page = await controller.sourceText("imdb", `https://www.imdb.com/title/${encode(id)}/`, s, { noCache: true }); }
@@ -679,7 +682,15 @@
             if (castLike.test(section.title)) {
               const own = imdbOut.sections.findIndex(row => row.title === section.title);
               if (own < 0) imdbOut.sections.push(section);
-              else if (section.items.length > count(section.title)) imdbOut.sections[own] = section;
+              else if (section.items.length > count(section.title)) {
+                // Keep IMDb's own profile link for everyone IMDb lists; the catalogue's profile stays as a fallback for when IMDb blocks the page.
+                const norm = value => String(value || "").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "");
+                const mine = new Map((imdbOut.sections[own].items || []).filter(row => row.ref?.id).map(row => [norm(row.title), row]));
+                imdbOut.sections[own] = { ...section, items: section.items.map(row => {
+                  const imdbRow = mine.get(norm(row.title));
+                  return imdbRow ? { ...row, url: imdbRow.url || row.url, ref: { ...imdbRow.ref, extra: { ...(imdbRow.ref.extra || {}), ...(row.ref?.id ? { alt: row.ref } : {}) } } } : row;
+                }) };
+              }
             } else if (section.kind === "gallery" && !imdbOut.sections.some(row => row.title === section.title)) imdbOut.sections.push(section);
           }
           if (!imdbOut.landscapeImage && alt.landscapeImage) imdbOut.landscapeImage = alt.landscapeImage;
@@ -695,7 +706,7 @@
       const ld = ldJson(page); if (!ld) throw new Error("Rotten Tomatoes did not return readable title details. Open the source below, complete any prompt, then ScreenMark will retry.");
       const score = name => rtScore(page, name) || "";
       const critics = score("tomatometer") || ld.aggregateRating?.ratingValue || "", audience = score("audience");
-      const person = rows => (Array.isArray(rows) ? rows : rows ? [rows] : []).map(entry => { const url = String(entry.sameAs || ""), personId = url.match(/\/name\/(nm\d+)/i)?.[1]; return { title: entry.name, image: rtImage(entry.image), url, ref: personId ? { type: "person", id: `imdb:${personId}`, title: entry.name, extra: { source: "imdb" } } : null }; }).filter(entry => entry.title);
+      const person = rows => (Array.isArray(rows) ? rows : rows ? [rows] : []).map(entry => { const url = String(entry.sameAs || entry.url || ""), personId = url.match(/\/name\/(nm\d+)/i)?.[1], celebrity = url.match(/rottentomatoes\.com\/celebrity\/([a-z0-9_.-]+)/i)?.[1]; return { title: entry.name, image: rtImage(entry.image), url, ref: personId ? { type: "person", id: `imdb:${personId}`, title: entry.name, extra: { source: "imdb" } } : celebrity ? { type: "person", id: `rt-celebrity:${celebrity}`, title: entry.name, extra: { source: "rottentomatoes", image: rtImage(entry.image) } } : null }; }).filter(entry => entry.title);
       const isSeries = item.category === "series" || /TVSeries/i.test([].concat(ld["@type"] || []).join(" ")) || path.startsWith("/tv/");
       const seriesName = ld.name || item.title;
       const declaredSeasons = [].concat(ld.containsSeason || []).filter(Boolean);
@@ -816,10 +827,12 @@
       });
       const episodeCounts = seasonResults.map((seasonData, index) => [index + 1, { premiere: seasonData?.Episodes?.find(ep => na(ep.Released))?.Released || "" }]);
       const breakdown = ratings.map(row => ({ label: row.Source.replace("Internet Movie Database", "IMDb"), percent: /%/.test(row.Value) ? numberFrom(row.Value) : /\/10$/.test(row.Value) ? numberFrom(row.Value) * 10 : /\/100$/.test(row.Value) ? numberFrom(row.Value) : 0 }));
-      const cast = toList(na(d.Actors)).map(name => ({ title: name, meta: "Actor", image: "" }));
+      // OMDb only returns names: each opens a profile resolved from TMDB (with a key) or TVmaze by that name.
+      const personRef = (name, role) => ({ type: "person", id: `omdb-person:${encodeURIComponent(name)}`, title: name, extra: { source: "omdb", role } });
+      const cast = toList(na(d.Actors)).map(name => ({ title: name, meta: "Actor", image: "", ref: personRef(name, "Actor") }));
       const staff = [
-        ...toList(na(d.Director)).map(name => ({ title: name, meta: "Director", image: "" })),
-        ...toList(na(d.Writer)).map(name => ({ title: name, meta: "Writer", image: "" }))
+        ...toList(na(d.Director)).map(name => ({ title: name, meta: "Director", image: "", ref: personRef(name, "Director") })),
+        ...toList(na(d.Writer)).map(name => ({ title: name, meta: "Writer", image: "", ref: personRef(name, "Writer") }))
       ].filter((row, index, rows) => rows.findIndex(candidate => candidate.title.toLowerCase() === row.title.toLowerCase()) === index);
       return details("omdb", item, {
         title: d.Title, description: na(d.Plot), image: na(d.Poster), year: na(d.Year).slice(0, 4), rating: na(d.imdbRating) ? Number(d.imdbRating) : 0, url: `https://www.imdb.com/title/${d.imdbID}/`,
@@ -848,6 +861,66 @@
       const { actor, show, image } = ref.extra;
       return { type: "character", source: "TMDB", title: ref.title || "Character", image: image || "", subtitle: show?.title || "", url: `https://www.themoviedb.org/person/${actor.id}`, facts: [["Played by", actor.name], ["Appears in", show?.title]].filter(([, value]) => value),
         sections: [{ title: "Played by", kind: "people", items: [{ title: actor.name, meta: "Actor", image: image || "", ref: { type: "person", id: `tmdb:${actor.id}`, title: actor.name } }] }, ...(show?.id ? [{ title: "Appears in", kind: "shows", items: [{ id: show.id, title: show.title, image: show.image || "", ref: { type: "show", id: show.id, title: show.title, extra: { source: "tmdb", category: show.category } } }] }] : [])] };
+    }
+    if (ref.type === "person" && ref.extra?.via === "imdb" && !ref.extra.viaDone) {
+      const plain = { ...ref, extra: { ...ref.extra, viaDone: true } };
+      const wanted = String(ref.title || "").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "");
+      let nm = "";
+      try {
+        const slug = String(ref.title || "").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+        const found = (await get(`https://v2.sg.media-imdb.com/suggestion/${encode(slug.charAt(0) || "a")}/${encode(slug)}.json`, settings)).d || [];
+        nm = (found.find(row => /^nm\d+$/.test(row.id || "") && String(row.l || "").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "") === wanted) || {}).id || "";
+      } catch (_) { /* no IMDb id: use the catalogue profile below */ }
+      if (nm) return loadRef({ type: "person", id: `imdb:${nm}`, title: ref.title, extra: { source: "imdb", alt: plain } }, settings);
+      const direct = await loadRef(plain, settings);
+      return { ...direct, source: `IMDb (via ${direct.source || "catalogue"})` };
+    }
+    if (ref.type === "person" && /^omdb-person:/i.test(String(ref.id))) {
+      const name = decodeURIComponent(String(ref.id).slice("omdb-person:".length)), role = ref.extra?.role || "";
+      const norm = value => String(value || "").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const label = base => ({ ...base, source: `OMDb (via ${base.source || "catalogue"})`, subtitle: base.subtitle || role });
+      if (settings.apiKeys?.tmdb?.trim()) {
+        try {
+          const found = (await controller.tmdbGet(`/search/person?query=${encode(name)}`, settings)).results || [];
+          const match = found.find(row => norm(row.name) === norm(name)) || found[0];
+          if (match?.id) return label(await loadRef({ type: "person", id: `tmdb:${match.id}`, title: name }, settings));
+        } catch (_) { /* fall through to TVmaze */ }
+      }
+      try {
+        const found = (await get(`${base}/search/people?q=${encode(name)}`, settings) || []).map(row => row.person).filter(Boolean);
+        const match = found.find(row => norm(row.name) === norm(name)) || found[0];
+        if (match?.id) return label(await loadRef({ type: "person", id: match.id, title: name }, settings));
+      } catch (_) { /* basic profile below */ }
+      return { type: "person", source: "OMDb", title: name, image: "", subtitle: role, facts: role ? [["Role", role]] : [], description: "OMDb lists only names. No matching profile was found in TVmaze (or TMDB when a key is saved).", sections: [] };
+    }
+    if (ref.type === "person" && /^rt-celebrity:/i.test(String(ref.id))) {
+      const slug = String(ref.id).split(":")[1], pageUrl = `https://www.rottentomatoes.com/celebrity/${encode(slug)}`;
+      const html = await controller.sourceText("rottentomatoes", pageUrl, settings, { noCache: true }).catch(error => { throw new Error(error?.status === 403 ? "Rotten Tomatoes blocked this profile request. Open Rotten Tomatoes below, complete any prompt, then ScreenMark will retry." : error?.message || "Rotten Tomatoes profile could not be loaded."); });
+      const person = ldJsonType(html, "Person") || ldJson(html) || {};
+      const block = name => { const match = html.match(new RegExp(`data-qa="celebrity-bio-${name}"[^>]*>([\\s\\S]*?)</p>`, "i")); return match ? clean(match[1]).replace(/^[A-Za-z ]+:\s*/, "").replace(/\s+/g, " ").trim() : ""; };
+      const portrait = html.match(/celebrity-bio__hero-img"[^>]*\ssrc="([^"]+)"/i)?.[1] || html.match(/<rt-img[^>]*class="celebrity-bio__hero-img"[^>]*src="([^"]+)"/i)?.[1] || ref.extra?.image || "";
+      const lists = [].concat(person.itemListElement || []).filter(list => Array.isArray(list?.itemListElement));
+      // Credits whose structured image is Rotten Tomatoes' placeholder get the real poster from the page's own poster tiles when it has one.
+      const posters = new Map([...html.matchAll(/<rt-img[^>]*alt="([^"]+?) poster image"[^>]*\ssrc="([^"]+)"/gi)].map(([, name, src]) => [clean(name).toLowerCase(), src]));
+      const credit = (row, kind) => {
+        const link = String(row.url || ""), path = link.replace(/^https?:\/\/www\.rottentomatoes\.com/i, ""), category = /^\/tv\//i.test(path) || /TV/i.test(kind) ? "series" : "movie";
+        const score = Number(row.aggregateRating?.ratingValue);
+        const structuredImage = rtImage(row.image), image = /rtvideodefault|poster-default|default-thumbnail/i.test(structuredImage) || !structuredImage ? (posters.get(String(row.name).toLowerCase()) || "") : structuredImage;
+        return { id: path, title: row.name, image, url: link, meta: [row.dateCreated || row.datePublished, Number.isFinite(score) && score > 0 ? `${score}%` : ""].filter(Boolean).join(" · "),
+          ref: path.startsWith("/") ? { type: "show", id: path, title: row.name, extra: { source: "rottentomatoes", category } } : null };
+      };
+      const sections = lists.map(list => ({ title: `${list.name || "Credits"} (${list.itemListElement.length})`, kind: "shows", items: list.itemListElement.filter(row => row?.name).map(row => credit(row, list.name || "")) })).filter(section => section.items.length);
+      // Photos carousel: each tile carries a caption and a resized URL whose last segment is the original image.
+      const photos = [...html.matchAll(/<tile-photo[\s\S]*?<\/tile-photo>/gi)].map(([tile]) => {
+        const src = tile.match(/<rt-img[^>]*\ssrc="([^"]+)"/i)?.[1] || "", original = src.split(",")[0].split(/\/v2\/(?=https?:)/).pop(), caption = clean(tile.match(/<span class="sr-only">([\s\S]*?)<\/span>/i)?.[1] || "");
+        const image = /^https:/i.test(original) ? original : src.split(",")[0]; // plain-http originals are blocked: use the https resized copy
+        return /^https:/i.test(image) ? { title: caption || person.name || ref.title, image, url: image } : null;
+      }).filter(Boolean);
+      if (photos.length) sections.unshift({ title: `Photos (${photos.length})`, kind: "gallery", items: photos });
+      const facts = [["Born", person.birthDate || block("bday")], ["Birthplace", person.birthPlace?.name || block("birthplace")], ["Highest rated", block("highest-rated")], ["Lowest rated", block("lowest-rated")]].filter(([, value]) => value);
+      const bio = block("summary");
+      if (!person.name && !bio && !sections.length) throw new Error("Rotten Tomatoes did not return readable profile details. Open Rotten Tomatoes below, complete any prompt, then ScreenMark will retry.");
+      return { type: "person", source: "Rotten Tomatoes", title: person.name || ref.title, image: portrait, url: pageUrl, description: bio, facts, sections };
     }
     if (ref.type === "person") {
       const jikanPerson = String(ref.id).match(/^jikan-person:(\d+)$/), kitsuPerson = String(ref.id).match(/^kitsu-person:([^:]+)$/);
@@ -910,7 +983,10 @@
               if (match?.id) return { ...(await loadRef({ ...ref, id: `tmdb:${match.id}` }, settings)), source: "IMDb (via TMDB)", url: `https://www.imdb.com/name/${personId}/` };
             } catch (_) {}
           }
-          throw new Error(reason);
+          // The same person from the catalogue that supplied the cast list (e.g. TVmaze) is the next best thing to IMDb's own page.
+          if (ref.extra?.alt?.id) { try { const alt = await loadRef({ ...ref.extra.alt }, settings); return { ...alt, source: `IMDb (via ${alt.source || "catalogue"})`, url: `https://www.imdb.com/name/${personId}/` }; } catch (_) {} }
+          // No TMDB fallback: still open a basic profile (name + IMDb link) instead of a dead-end error.
+          return { type: "person", source: "IMDb", title: ref.title || "Cast member", image: "", url: `https://www.imdb.com/name/${personId}/`, description: `${reason} Use the link to open the full profile on IMDb, or add a TMDB API key in Metadata Sources to load it here.`, facts: [], sections: [] };
         };
         let html;
         try { html = await controller.sourceText("imdb", `https://www.imdb.com/name/${encode(personId)}/`, settings, { noCache: true }); }
@@ -966,7 +1042,7 @@
         return { id: ep.id, title: `${parent?.name ? `${parent.name} · ` : ""}S${ep.season}E${ep.number} · ${ep.name}`, meta: [roleOf(row), ep.airdate].filter(Boolean).join(" · "), image: ep.image?.medium || parent?.image?.medium || "", ref: { type: "episode", id: ep.id, title: ep.name } };
       });
       const facts = [["Born", person.birthday], ["Died", person.deathday], ["Country", person.country?.name], ["Gender", person.gender]].filter(([, value]) => value);
-      return { type: "person", title: person.name, image: person.image?.original || person.image?.medium || "", url: person.url, facts, sections: [
+      return { type: "person", source: "TVmaze", title: person.name, image: person.image?.original || person.image?.medium || "", url: person.url, facts, sections: [
         { title: `Series (${castShows.length})`, kind: "shows", items: castShows },
         { title: `Crew credits (${crewShows.length})`, kind: "shows", items: crewShows },
         { title: `Guest appearances (${guestEpisodes.length})`, kind: "episodes-list", items: guestEpisodes }
@@ -1004,7 +1080,7 @@
       const character = await get(`${base}/characters/${id}`, settings), extra = ref.extra || {};
       const actors = extra.person ? [{ title: extra.person.name, image: extra.person.image || "", ref: { type: "person", id: extra.person.id, title: extra.person.name } }] : [];
       const shows = extra.show ? [{ id: extra.show.id, title: extra.show.name, image: extra.show.image || "", meta: "Series" }] : [];
-      return { type: "character", title: character.name, image: character.image?.original || character.image?.medium || "", url: character.url, facts: [], sections: [{ title: "Played by", kind: "people", items: actors }, { title: "Appears in", kind: "shows", items: shows }].filter(section => section.items.length) };
+      return { type: "character", source: "TVmaze", title: character.name, image: character.image?.original || character.image?.medium || "", url: character.url, facts: [], sections: [{ title: "Played by", kind: "people", items: actors }, { title: "Appears in", kind: "shows", items: shows }].filter(section => section.items.length) };
     }
     if (ref.type === "episode") {
       if (ref.extra?.source === "jikan") {

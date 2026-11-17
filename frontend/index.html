@@ -58,11 +58,12 @@
   <script defer src="pages/achievements.js"></script>
   <script defer src="pages/setup.js"></script>
   <script defer src="pages/settings.js"></script>
+  <script defer src="pages/splash-studio.js"></script>
   <script defer src="pages/sync.js"></script>
   <script defer src="app.js"></script>
 </head>
 <body>
-  <div id="boot-splash" role="status" aria-label="Loading ScreenMark"><div class="boot-inner"><img src="icons/episode-stack-intro.gif" alt=""></div></div>
+  <div id="boot-splash" role="status" aria-label="Loading ScreenMark"><div class="boot-inner"><img src="icons/episode-stack-intro.jpg" alt=""></div></div>
   <script>
     (function () {
       var mult = 1, reducedMotion = false, savedPrefs = {};
@@ -72,11 +73,37 @@
         mult = reducedMotion ? 0 : ({ fast: .7, normal: 1, slow: 1.2 }[savedPrefs.animationSpeed] || 1);
       } catch (e) {}
       var splash = document.getElementById("boot-splash"), image = splash.querySelector("img");
+      // Opening animation + layout chosen in Settings > Animations > Opening animation (mirrored to their own localStorage keys).
+      var SPLASH = { a: "icons/episode-stack-intro.gif", b: "splash/stack-draw.gif", c: "splash/fan-flip.gif", d: "splash/card-deal.gif" }, SPLASH_MS = { a: 3430, b: 4000, c: 4000, d: 4000 }, style = "a", showName = false, k = 1;
+      try {
+        style = localStorage.getItem("screenmark_splash_style") || "a"; if (!SPLASH[style]) style = "a";
+        var lay = JSON.parse(localStorage.getItem("screenmark_splash_layout") || "{}") || {};
+        k = Math.min(130, Math.max(50, Number(lay.size) || 100)) / 100; showName = lay.name === true;
+      } catch (e) {}
+      var width = "min(72vw," + Math.round(280 * k) + "px)", video = null;
+      image.style.width = width;
+      // Played as muted video (hardware decoded, so it stays smooth while the app loads); the GIF is the fallback.
+      if (!reducedMotion) {
+        video = document.createElement("video");
+        video.muted = true; video.autoplay = true; video.playsInline = true; video.preload = "auto"; video.disablePictureInPicture = true;
+        video.setAttribute("muted", ""); video.setAttribute("playsinline", "");
+        video.style.cssText = "display:block;height:auto;width:" + width;
+        var tv = document.createElement("video"), vx = tv.canPlayType('video/mp4; codecs="avc1.42E01E"') ? "mp4" : tv.canPlayType('video/webm; codecs="vp9"') ? "webm" : "";
+        video.poster = SPLASH[style].replace(/\.gif$/, ".jpg"); video.src = SPLASH[style].replace(/\.gif$/, "." + (vx || "mp4")); video.noCodec = !vx;
+        image.parentNode.replaceChild(video, image);
+      }
+      if (showName) {
+        var label = document.createElement("b"); label.textContent = "ScreenMark";
+        label.style.cssText = "display:block;margin-top:14px;font-size:" + (1.5 * Math.max(.7, k)).toFixed(2) + "rem;font-weight:800;letter-spacing:-.02em";
+        var box = (video || image).parentNode;
+        box.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:center";
+        box.appendChild(label);
+      }
       if (reducedMotion) image.src = "icons/app-icon-512.png";
       splash.style.setProperty("--boot-speed", String(mult));
-      // The intro is a single 53-frame (3.43 s) play. Leave a short beat
+      // The intro is a single play (3.43 s for the default, 4 s for the others). Leave a short beat
       // after it completes before revealing app data.
-      var start = 0, introMs = reducedMotion ? 0 : 3430, readyGapMs = 500, readyRequested = false, done = false;
+      var start = 0, introMs = reducedMotion ? 0 : SPLASH_MS[style], readyGapMs = 500, readyRequested = false, done = false;
       function finishWhenReady() {
         if (!readyRequested || !start || done) return;
         done = true;
@@ -90,12 +117,25 @@
         start = Date.now(); finishWhenReady();
       }
       function showStaticMark() {
+        if (video && video.isConnected) { video.parentNode.replaceChild(image, video); video = null; }
         if (image.src.endsWith("app-icon-512.png")) return;
         image.src = "icons/app-icon-512.png";
       }
-      if (image.complete && image.naturalWidth) startIntro();
-      else image.addEventListener("load", startIntro, { once: true });
-      image.addEventListener("error", function () { introMs = 0; showStaticMark(); startIntro(); }, { once: true });
+      function watchImage() {
+        if (image.complete && image.naturalWidth) startIntro();
+        else image.addEventListener("load", startIntro, { once: true });
+        image.addEventListener("error", function () { introMs = 0; showStaticMark(); startIntro(); }, { once: true });
+      }
+      function fallbackToGif() {
+        if (start || !video || !video.isConnected) return;
+        video.parentNode.replaceChild(image, video); video = null;
+        image.src = SPLASH[style].replace(/\.gif$/, ".jpg"); watchImage();
+      }
+      if (video) {
+        video.addEventListener("playing", startIntro, { once: true });
+        video.addEventListener("error", fallbackToGif, { once: true });
+        if (video.noCodec) fallbackToGif(); var played = video && video.play(); if (played && played.catch) played.catch(fallbackToGif);
+      } else watchImage();
       window.ScreenMarkSplash = { ready: function () { readyRequested = true; finishWhenReady(); } };
       setTimeout(function () {
         if (!start) { introMs = 0; showStaticMark(); startIntro(); }

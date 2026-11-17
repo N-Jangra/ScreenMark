@@ -263,7 +263,9 @@
     const searchControl = kind === "movie" ? `<label class="profile-collection-search"><i data-lucide="search" aria-hidden="true"></i><input type="search" data-collection-search="${esc(searchKey)}" value="${esc(searchText)}" placeholder="Search ${favorites ? "movie favorites" : "movies"}" aria-label="Search ${favorites ? "movie favorites" : "movies"}"></label>` : "";
     let content;
     if (profileStatusGroups && selectedStatus === "all") {
-      const ordered = [...statuses.filter(status => status !== (roles.done || "Completed")), roles.done || "Completed"].filter(status => statuses.includes(status));
+      // Grouped order: In Progress, On Hold, (custom statuses), Completed, Dropped, Watchlist.
+      const lead = [roles.active || "In Progress", roles.hold || "On Hold"], tail = [roles.done || "Completed", roles.dropped || "Dropped", roles.queued || "Watchlist"];
+      const ordered = [...lead.filter(status => statuses.includes(status)), ...statuses.filter(status => ![...lead, ...tail].includes(status)), ...tail.filter(status => statuses.includes(status))];
       const groupMap = new Map(ordered.map(status => [status, []]));
       filtered.forEach(item => groupMap.get(item.status)?.push(item));
       const grouped = ordered.map(status => ({ status, rows: groupMap.get(status) })).filter(group => group.rows.length);

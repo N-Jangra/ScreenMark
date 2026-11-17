@@ -22,3 +22,15 @@ The three apps use separate storage keys and separate cache names.
 ## Backups and restore (0.1.5)
 
 Backup JSON never contains temporary `blob:` image links (they are dropped on export), and the browser export reads each title's full details first. Backup JSON is `version: 2` (top-level `index`, a `backupRef` per title with source, source id, category, title and year). Exports are gzip-compressed (`.json.gz`) in the browser and in the Android app; the Android app also offers `.sqx`, which encrypts the compressed stream in authenticated chunks using a PBKDF2-derived AES-256-GCM key. On Android, **Encrypted transfer file → Create** opens Save As; **Share encrypted transfer → Share** stages bounded chunks and opens Android's share chooser without a location picker. Artwork reads use small, low-memory-aware parallel groups, and the native chooser grants its FileProvider URI through `ClipData`. Restore detects the format by content, matches existing titles by source + source id then by title and year, rebuilds the metadata link from `backupRef`, restores included image paths, preferences and activity history, and queues titles for sync. CSV exports include `Source`, `SourceID`, `ID`, dates and tracking fields; TXT is `Title (Year)`.
+
+## Transfers: progress, notifications and images (0.1.12)
+
+- Imports report bytes read, then titles saved and images cached; the percentage drives the floating progress button, the live progress page and the Android notification (`ShareIntent` plugin, `kind: "import"`). Exports reuse the button and page but keep their own notification.
+- Importing writes, per image: the artwork cache row, episode still rows (`cachedDetails.episodesById.<id>.image`) and the grid poster row (`<id>:p`, signature = `thumbSigOf(item)`). Without the poster row imported posters only survive until the next restart.
+- Titles are decoded and saved three at a time (two on low-memory devices).
+- An ongoing notification is cancelled when the activity is destroyed, swept on launch and expires after two minutes without updates.
+
+## Achievements page performance (0.1.12)
+
+- `entries()` caches its last result keyed by the library array, its length, the sum of `updatedAt` stamps and the favourite count; a changed library recomputes. The profile, the achievements page, award checks and shares all share that result.
+- Badge placeholders are static (no `ach-shimmer` animation), `.ach-section` and grid tiles use `content-visibility:auto`, and badge images are `loading="lazy" decoding="async"`.
