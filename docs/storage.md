@@ -34,3 +34,9 @@ Backup JSON never contains temporary `blob:` image links (they are dropped on ex
 
 - `entries()` caches its last result keyed by the library array, its length, the sum of `updatedAt` stamps and the favourite count; a changed library recomputes. The profile, the achievements page, award checks and shares all share that result.
 - Badge placeholders are static (no `ach-shimmer` animation), `.ach-section` and grid tiles use `content-visibility:auto`, and badge images are `loading="lazy" decoding="async"`.
+
+## Profile sections, swipes and achievements (0.2.0)
+
+- Hidden profile sections are stored in `localStorage` as `screenmark_profile_hidden_sections` (an array of section keys). They are left out of the profile page but stay in the reorder sheet.
+- Touch swipes on Discover and Statistics (and the watchlists) are judged from the last touch position, because Android cancels the touch pointer once it starts scrolling; only a cancelled mouse drag drops a swipe.
+- Achievement badge lists use opacity instead of per-image shadow and grey filters, have no loading shimmer, isolate each scrolling row and skip off-screen grids, which keeps the page responsive on phones.

@@ -2,6 +2,28 @@
 
 All notable changes are recorded here. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] — 2026-11-18
+
+### Added
+
+- Profile: each row in Reorder profile sections has an eye button to hide or show that section on the profile (stored locally; hidden sections stay in the reorder list).
+- Discover and Statistics: swipe left or right to switch between Shows and Movies.
+- Discover shelves from TMDB that mirror themoviedb.org's home page: What's popular, Popular streaming, On TV, In theaters, Coming soon to theaters, For rent and Free to watch (Movies and TV) next to Trending and Latest (needs a TMDB API key; streaming, rent and free lists use US availability).
+- Discover shelves from Rotten Tomatoes' home page (Movies in Theaters, Free To Watch, Limited Releases Now Playing, Coming Soon To Theaters, New to Rent/Buy at Home, Latest Certified Fresh, RT Recommends and more), with Tomatometer scores on the tiles; Shows get the shelves that contain series. Text-only lists without posters are skipped.
+- Discover shelves from Kitsu that mirror kitsu.app/explore/anime: Trending this week, Top airing, Top upcoming, Highest rated and Most popular (anime movies on the Movies tab, TV anime on Shows).
+- Discover shelves from IMDb's home page, best effort: they are read only with the IMDb session the app keeps for the IMDb source and are left out when IMDb answers with its bot-check page.
+
+### Changed
+
+- Source options: the Show / Hide text button next to an API key (for example OMDb) is now an eye icon that switches to a crossed-out eye while the key is visible.
+- Opening animation page: the round Reset and Save buttons sit at the end of the page content instead of floating over the style cards.
+- Version metadata is 0.2.0 (Android versionCode 200).
+
+### Fixed
+
+- Swipes now work on phones: a touch pointer cancelled by scrolling no longer discards the swipe (this also fixes the watchlist Ongoing / Upcoming swipe).
+- Achievements page is lighter on phones: no per-badge shadow or grey filters in lists, no loading shimmer, isolated scrolling rows and off-screen grids skipped.
+
 ## [0.1.12] — 2026-11-17
 
 ### Added
