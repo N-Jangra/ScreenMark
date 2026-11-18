@@ -4654,7 +4654,7 @@
     const sourceKeyToggle = eventClosest(event, "[data-toggle-source-key]");
     if (sourceKeyToggle) {
       const input = $(`[data-source-api-key="${CSS.escape(sourceKeyToggle.dataset.toggleSourceKey)}"]`);
-      if (input) { const reveal = input.type === "password"; input.type = reveal ? "text" : "password"; sourceKeyToggle.textContent = reveal ? "Hide" : "Show"; sourceKeyToggle.setAttribute("aria-label", `${reveal ? "Hide" : "Show"} API key`); sourceKeyToggle.setAttribute("aria-pressed", String(reveal)); }
+      if (input) { const reveal = input.type === "password"; input.type = reveal ? "text" : "password"; sourceKeyToggle.innerHTML = `<i data-lucide="${reveal ? "eye-off" : "eye"}" aria-hidden="true"></i>`; window.lucide?.createIcons?.({ root: sourceKeyToggle, attrs: { "aria-hidden": "true" } }); sourceKeyToggle.setAttribute("aria-pressed", String(reveal)); sourceKeyToggle.setAttribute("aria-label", `${reveal ? "Hide" : "Show"} API key`); sourceKeyToggle.setAttribute("aria-pressed", String(reveal)); }
       return;
     }
     const sourceTest = eventClosest(event, "[data-test-metadata-source]");
@@ -4838,6 +4838,18 @@
     if (eventClosest(event, "[data-open-profile-menu]")) { showPopup($("#profile-options-dialog")); return; }
     if (eventClosest(event, "[data-profile-reorder-open]")) { closePopup($("#profile-options-dialog"), { preserveHistory: true }); showPopup($("#profile-reorder-dialog")); return; }
     if (event.target?.id === "profile-reorder-dialog" || eventClosest(event, "[data-profile-reorder-close]")) { closePopup($("#profile-reorder-dialog")); return; }
+    const sectionEye = eventClosest(event, "[data-section-eye]");
+    if (sectionEye) {
+      const key = sectionEye.closest("[data-order-key]")?.dataset.orderKey; let hidden = [];
+      try { hidden = JSON.parse(localStorage.getItem("screenmark_profile_hidden_sections") || "[]"); } catch (_) {}
+      hidden = hidden.includes(key) ? hidden.filter(entry => entry !== key) : [...hidden, key];
+      try { localStorage.setItem("screenmark_profile_hidden_sections", JSON.stringify(hidden)); } catch (_) {}
+      const off = hidden.includes(key), section = $(`[data-profile-section="${key}"]`);
+      sectionEye.setAttribute("aria-pressed", String(off)); sectionEye.setAttribute("aria-label", `${off ? "Show" : "Hide"} ${sectionEye.closest("[data-order-key]").querySelector("strong").textContent} on profile`);
+      sectionEye.innerHTML = `<i data-lucide="${off ? "eye-off" : "eye"}" aria-hidden="true"></i>`; window.lucide?.createIcons({ root: sectionEye, attrs: { "aria-hidden": "true" } });
+      if (section) section.hidden = off; else if (!off) { render(); showPopup($("#profile-reorder-dialog"), { silent: true }); }
+      return;
+    }
     const orderMove = eventClosest(event, "[data-order-move]");
     if (orderMove) {
       const row = orderMove.closest("[data-order-key]"), list = row?.parentElement, target = orderMove.dataset.orderMove === "up" ? row?.previousElementSibling : row?.nextElementSibling;
@@ -4993,7 +5005,18 @@
     }
   });
   const watchlistSwipeIgnoredTarget = target => target?.closest?.("input, select, textarea, dialog, .watchlist-view-toggle");
+  const inHorizontalScroller = target => { for (let node = target; node && node !== document.body; node = node.parentElement) { const style = getComputedStyle(node); if (/(auto|scroll)/.test(style.overflowX) && node.scrollWidth > node.clientWidth + 2) return node; } return null; };
+  // A swipe that starts on a sideways-scrolling row belongs to that row until it has nothing left to scroll in that direction.
+  const rowCanScroll = (swipe, dx) => swipe.row && (dx < 0 ? swipe.rowLeft + swipe.row.clientWidth < swipe.row.scrollWidth - 4 : swipe.rowLeft > 4);
   const watchlistSwipeStart = (x, y, target, id) => {
+    if (page === "statistics" && !statsSubpage) {
+      if (watchlistSwipeIgnoredTarget(target) || target?.closest?.(".stats-media-tabs, nav")) { watchlistSwipe = null; return; }
+      const row = inHorizontalScroller(target); watchlistSwipe = { id, x, y, stats: true, row, rowLeft: row?.scrollLeft || 0 }; return;
+    }
+    if (page === "discover") {
+      if (watchlistSwipeIgnoredTarget(target) || target?.closest?.("#header-type")) { watchlistSwipe = null; return; }
+      const row = inHorizontalScroller(target); watchlistSwipe = { id, x, y, discover: true, row, rowLeft: row?.scrollLeft || 0 }; return;
+    }
     if ((page !== "series-watchlist" && page !== "movie-watchlist") || watchlistSwipeIgnoredTarget(target)) { watchlistSwipe = null; return; }
     if (!target?.closest?.(".watchlist-page")) { watchlistSwipe = null; return; }
     watchlistSwipe = { id, x, y, tab: watchlistTab };
@@ -5004,6 +5027,18 @@
     watchlistSwipe = null;
     const dx = x - swipe.x, dy = y - swipe.y;
     if (Math.abs(dx) < 44 || Math.abs(dx) < Math.abs(dy) * 1.15) return;
+    if ((swipe.stats || swipe.discover) && rowCanScroll(swipe, dx)) return;
+    if (swipe.stats) {
+      const tabs = [...document.querySelectorAll(".stats-media-tabs [data-stats-category]")], at = tabs.findIndex(tab => tab.getAttribute("aria-selected") === "true");
+      tabs[at + (dx < 0 ? 1 : -1)]?.click();
+      return;
+    }
+    if (swipe.discover) {
+      // Shows ⇄ Movies: left goes to the next tab, right to the previous one.
+      const tabs = [...document.querySelectorAll("#header-type [data-discover-category]")], at = tabs.findIndex(tab => tab.getAttribute("aria-pressed") === "true");
+      tabs[at + (dx < 0 ? 1 : -1)]?.click();
+      return;
+    }
     if (dx < 0 && swipe.tab === "watchlist") changeWatchlistTab("upcoming");
     else if (dx > 0 && swipe.tab === "upcoming") changeWatchlistTab("watchlist");
   };
@@ -5014,7 +5049,9 @@
   $("#page-content").addEventListener("touchend", event => {
     const touch = event.changedTouches[0]; if (touch) watchlistSwipeEnd(touch.clientX, touch.clientY, touch.identifier);
   }, { passive: true });
-  $("#page-content").addEventListener("touchcancel", () => { watchlistSwipe = null; }, { passive: true });
+  // Android WebView cancels the touch once it starts scrolling, so judge the swipe by the last touchmove position.
+  $("#page-content").addEventListener("touchmove", event => { const touch = event.touches[0]; if (watchlistSwipe && touch) { watchlistSwipe.lx = touch.clientX; watchlistSwipe.ly = touch.clientY; } }, { passive: true });
+  $("#page-content").addEventListener("touchcancel", () => { const swipe = watchlistSwipe; if (swipe && swipe.lx != null) watchlistSwipeEnd(swipe.lx, swipe.ly, swipe.id); watchlistSwipe = null; }, { passive: true });
   $("#page-content").addEventListener("pointerdown", event => {
     if (event.pointerType !== "mouse" || !event.isPrimary || event.button !== 0) return;
     watchlistSwipeStart(event.clientX, event.clientY, event.target, event.pointerId);
@@ -5023,7 +5060,8 @@
     if (event.pointerType !== "mouse") return;
     watchlistSwipeEnd(event.clientX, event.clientY, event.pointerId);
   }, { passive: true });
-  $("#page-content").addEventListener("pointercancel", () => { watchlistSwipe = null; }, { passive: true });
+  // A touch pointer is cancelled as soon as the browser starts scrolling; the touch handlers above judge those swipes, so only a mouse drag is dropped here.
+  $("#page-content").addEventListener("pointercancel", event => { if (event.pointerType === "mouse") watchlistSwipe = null; }, { passive: true });
   $("#page-content").addEventListener("keydown", event => {
     if (event.key !== "Enter" && event.key !== " ") return;
     const watchlistCard = eventClosest(event, "[data-watchlist-open]");

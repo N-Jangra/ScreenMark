@@ -1317,7 +1317,7 @@ video.ss-media, img.ss-media { border-radius:var(--ss-radius,0); }
 #ss-boot:fullscreen { background:var(--ss-bg,#030712); }
 
 /* Reset / Save: round icon buttons floating just above the bottom bar */
-.ss-fab { position:fixed; right:16px; bottom:calc(var(--ss-bar,64px) + 14px + env(safe-area-inset-bottom,0px)); z-index:40; display:flex; gap:10px; }
+.ss-fab { position:static; display:flex; justify-content:flex-end; gap:10px; margin:14px 0 8px; }
 .ss-fab-btn { display:grid; place-items:center; width:50px; height:50px; border:1px solid var(--line); border-radius:50%; background:var(--surface); color:var(--text-strong,inherit); box-shadow:0 8px 22px rgba(0,0,0,.35); }
 .ss-fab-btn i { width:22px; height:22px; }
 .ss-fab-btn.is-primary { background:var(--accent); border-color:var(--accent); color:var(--accent-foreground,#fff); }
@@ -1331,3 +1331,15 @@ body[data-page="add"] .bottom-bar { display:none !important; }
 body[data-page="add"] .add-entry-footer { position:fixed !important; left:0 !important; right:0 !important; width:auto !important; max-width:none !important; bottom:0 !important; z-index:30; margin:0 !important; padding:10px 14px calc(10px + env(safe-area-inset-bottom)) !important; border-top:1px solid var(--line); border-radius:0 !important; background:var(--surface); backdrop-filter:none; box-shadow:0 -10px 18px -12px rgba(0,0,0,.35); }
 body[data-page="add"] .app-shell { padding-bottom:calc(84px + env(safe-area-inset-bottom)); }
 body[data-page="add"] #page-content { padding-top:16px; padding-bottom:0; }
+/* Achievements performance: per-image filters (drop-shadow, grayscale) are very costly on phones, so lists use cheap opacity instead. */
+.achievements-page .ach-badge-art, .achievements-page .ach-tier-art, .achievements-page .achievement-art:not(.is-large) { filter:none; will-change:auto; }
+.achievements-page .ach-badge.is-locked .ach-badge-art, .achievements-page .ach-tier.is-locked .ach-tier-art, .achievements-page .ach-tier.is-next .ach-tier-art, .achievements-page .achievement-art.is-locked:not(.is-large) { filter:none; opacity:.35; }
+.achievements-page .ach-art-wrap::before { animation:none; }
+.achievements-page .ach-row { scroll-snap-type:none; overscroll-behavior-x:contain; contain:layout paint; }
+.achievements-page .ach-badge { contain:layout paint; }
+.achievements-page .ach-badge:hover { background:none; }
+.ach-grid, .ach-tiers { content-visibility:auto; contain-intrinsic-size:auto 600px; }
+.profile-level-summary .achievement-level-ring, .achievement-level-orb .achievement-level-ring { filter:none; }
+[data-profile-section][hidden] { display:none !important; }
+.source-key-eye { display:grid; place-items:center; width:44px; min-width:44px; height:44px; padding:0; }
+.source-key-eye svg { width:20px; height:20px; }
