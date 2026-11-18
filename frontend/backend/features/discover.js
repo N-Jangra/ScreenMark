@@ -530,10 +530,20 @@
       const kind = category === "movie" ? "movie" : "tv";
       const latestSort = kind === "movie" ? "primary_release_date.desc" : "first_air_date.desc";
       const releaseParam = kind === "movie" ? "release_date.lte" : "first_air_date.lte";
-      const [trending, latest, genreData] = await Promise.all([
-        tmdbGet(`/trending/${kind}/week`, settings).catch(() => ({ results: [] })),
-        tmdbGet(`/discover/${kind}?sort_by=${latestSort}&${releaseParam}=${day(0)}&include_adult=false&page=1`, settings).catch(() => ({ results: [] })),
-        tmdbGet(`/genre/${kind}/list`, settings).catch(() => ({ genres: [] }))
+      // The same shelves as themoviedb.org's home page: What's Popular (Streaming, On TV, For Rent, In Theaters) and Free to Watch.
+      const empty = () => ({ results: [] }), safe = path => tmdbGet(path, settings).catch(empty);
+      const monetized = type => safe(`/discover/${kind}?sort_by=popularity.desc&watch_region=US&with_watch_monetization_types=${type}&include_adult=false&page=1`);
+      const [trending, latest, genreData, popular, streaming, rent, free, onTv, theaters, upcoming] = await Promise.all([
+        safe(`/trending/${kind}/week`),
+        safe(`/discover/${kind}?sort_by=${latestSort}&${releaseParam}=${day(0)}&include_adult=false&page=1`),
+        tmdbGet(`/genre/${kind}/list`, settings).catch(() => ({ genres: [] })),
+        safe(`/${kind}/popular?page=1`),
+        monetized("flatrate"),
+        kind === "movie" ? monetized("rent") : Promise.resolve(empty()),
+        monetized("free"),
+        kind === "tv" ? safe("/tv/on_the_air?page=1") : Promise.resolve(empty()),
+        kind === "movie" ? safe("/movie/now_playing?region=US&page=1") : Promise.resolve(empty()),
+        kind === "movie" ? safe("/movie/upcoming?region=US&page=1") : Promise.resolve(empty())
       ]);
       const genreNames = new Map((genreData.genres || []).map(row => [row.id, row.name]));
       const tmdbRows = (rows, title) => ({ source: "tmdb", title, items: (rows || []).slice(0, 24).map(row => {
@@ -544,7 +554,55 @@
           genres: (row.genre_ids || []).map(id => genreNames.get(id)).filter(Boolean),
           url: `https://www.themoviedb.org/${kind === "movie" ? "movie" : "tv"}/${row.id}`, subtitle: release.slice(0, 4)
         }); }).filter(row => row.title && row.image) });
-      return [tmdbRows(trending.results, "Trending"), tmdbRows(latest.results, "Latest")];
+      return [tmdbRows(trending.results, "Trending"), tmdbRows(popular.results, "What's popular"), tmdbRows(streaming.results, "Popular streaming"), tmdbRows(onTv.results, "On TV"), tmdbRows(theaters.results, "In theaters"), tmdbRows(upcoming.results, "Coming soon to theaters"), tmdbRows(rent.results, "For rent"), tmdbRows(free.results, kind === "movie" ? "Free to watch · Movies" : "Free to watch · TV"), tmdbRows(latest.results, "Latest")];
+    });
+    if (want("imdb") && nativeApp) jobs.push(async () => {
+      // Best effort: IMDb's home page embeds its shelves as page data, but it sits behind a bot check. It is only read with the IMDb session the app
+      // already keeps for the IMDb source; without that session IMDb answers with a challenge page and these shelves are simply left out.
+      const html = await sourceText("imdb", "https://www.imdb.com/", settings, { noCache: true, headers: { Accept: "text/html", Referer: "https://www.imdb.com/" } });
+      const raw = /__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(String(html || ""))?.[1];
+      if (!raw) return [];
+      const data = JSON.parse(raw), found = new Map();
+      const isSeries = node => /tv(series|miniseries)|^tv/i.test(String(node.titleType?.id || node.titleType?.text || node.titleType || ""));
+      const readable = key => String(key).replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\b(edges|titles|list|data|nodes?)\b/gi, "").replace(/\s+/g, " ").trim();
+      const walk = (node, key, depth) => {
+        if (!node || typeof node !== "object" || depth > 14) return;
+        if (Array.isArray(node)) {
+          const titles = node.map(entry => entry?.node || entry).filter(entry => /^tt\d+$/.test(String(entry?.id || entry?.const || "")) && (entry.titleText?.text || entry.originalTitleText?.text));
+          if (titles.length >= 4) found.set(`${key}#${found.size}`, titles);
+          node.forEach(entry => walk(entry, key, depth + 1));
+          return;
+        }
+        Object.entries(node).forEach(([name, value]) => walk(value, name, depth + 1));
+      };
+      walk(data, "", 0);
+      const sections = [];
+      for (const [id, titles] of found) {
+        const name = readable(id.split("#")[0]);
+        if (!name) continue;
+        const rows = titles.filter(entry => (category === "series") === isSeries(entry)).slice(0, 24).map(entry => result("imdb", category, entry.id || entry.const, entry.titleText?.text || entry.originalTitleText?.text, {
+          year: String(entry.releaseYear?.year || ""), image: entry.primaryImage?.url || "", rating: Number(entry.ratingsSummary?.aggregateRating) ? Number((entry.ratingsSummary.aggregateRating / 2).toFixed(1)) : 0,
+          url: `https://www.imdb.com/title/${entry.id || entry.const}/`, subtitle: String(entry.releaseYear?.year || "")
+        })).filter(row => row.title && row.image);
+        if (rows.length >= 3) sections.push({ source: "imdb", title: `IMDb · ${name.charAt(0).toUpperCase()}${name.slice(1)}`, items: rows });
+      }
+      return sections;
+    });
+    if (want("rottentomatoes")) jobs.push(async () => {
+      // rottentomatoes.com's home page lists poster shelves (Movies in Theaters, Free To Watch, Coming Soon To Theaters, ...) as plain HTML.
+      const html = String(await sourceText("rottentomatoes", "https://www.rottentomatoes.com/", settings, { headers: { Accept: "text/html" } }) || "");
+      const wanted = category === "movie" ? "/m/" : "/tv/", sections = [];
+      for (const part of html.split(/<section\s+class="dynamic-poster-list"/i).slice(1)) {
+        const heading = textFromHtml(part.match(/<rt-text context="heading"[^>]*>([\s\S]*?)<\/rt-text>/i)?.[1] || "").trim();
+        const items = [...part.matchAll(/<media-info-tile\b[\s\S]*?<\/media-info-tile>/gi)].map(([tile]) => {
+          const href = (tile.match(/media-url="([^"]+)"/i)?.[1] || "").replace(/\/s\d+.*$/, ""), image = tile.match(/<rt-img[^>]*\bsrc="([^"]+)"/i)?.[1] || "";
+          const title = textFromHtml(tile.match(/data-analytics="title"[\s\S]*?>([^<]+)<\/rt-text>/i)?.[1] || tile.match(/alt="([^"]*) poster"/i)?.[1] || "");
+          const score = Number((tile.match(/slot="criticsScore"[^>]*>\s*(\d+)%/i) || [])[1]) || 0;
+          return href.startsWith(wanted) && title && image ? result("rottentomatoes", category, href, title, { image, url: `https://www.rottentomatoes.com${href}`, rating: score ? score / 10 : 0, subtitle: score ? `🍅 ${score}%` : "" }) : null;
+        }).filter(Boolean).slice(0, 24);
+        if (heading && items.length >= 3) sections.push({ source: "rottentomatoes", title: heading, items });
+      }
+      return sections;
     });
     if (want("anilist")) jobs.push(async () => {
       const list = async sort => { const gql = `query{Page(perPage:24){media(type:ANIME,format_in:${anilistFormats(category)},sort:${sort},isAdult:false){${ANILIST_FIELDS}}}}`; const data = await requestJson("https://graphql.anilist.co", { ...settings, method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ query: gql }) }); return anilistRows(anilistData(data).Page?.media, category); };
@@ -588,18 +646,21 @@
       return [{ source: "tvdb", title: `Top ${noun} on TheTVDB`, items: rows(top).slice(0, 24) }, { source: "tvdb", title: `New ${noun}`, items: rows(recent).slice(0, 24) }];
     });
     if (want("kitsu")) jobs.push(async () => {
+      // The same shelves as kitsu.app/explore/anime: Trending This Week, Top Airing, Top Upcoming, Highest Rated and Most Popular.
       const subtype = category === "movie" ? "movie" : "TV";
-      const rows = response => (response.data || []).map(row => {
+      const rows = response => (response.data || []).filter(row => category === "movie" ? row.attributes?.subtype === "movie" : row.attributes?.subtype !== "movie").map(row => {
         const attributes = row.attributes || {}, poster = attributes.posterImage || {};
         return result("kitsu", category, row.id, attributes.titles?.en || attributes.titles?.en_jp || attributes.canonicalTitle || "Untitled", { year: String(attributes.startDate || "").slice(0, 4), image: poster.large || poster.medium || poster.small || "", backdrop: attributes.coverImage?.large || attributes.coverImage?.original || "", description: textFromHtml(attributes.synopsis || attributes.description), rating: Number(attributes.averageRating) / 10 || 0, goal: category === "series" ? Number(attributes.episodeCount) || 0 : 0, genres: [], url: `https://kitsu.io/anime/${attributes.slug || row.id}`, subtitle: [attributes.startDate?.slice(0, 4), attributes.subtype, attributes.averageRating ? `★ ${(Number(attributes.averageRating) / 10).toFixed(1)}` : ""].filter(Boolean).join(" · ") });
       }).filter(row => row.title && row.image);
       const base = `https://kitsu.io/api/edge/anime?filter[subtype]=${encode(subtype)}&page[limit]=20`;
-      const [current, popular] = await Promise.all([
-        sourceJson("kitsu", `${base}&filter[status]=current&sort=-userCount`, settings).catch(() => ({})),
-        sourceJson("kitsu", `${base}&sort=-userCount`, settings).catch(() => ({}))
+      const list = query => sourceJson("kitsu", `${base}&${query}`, settings).catch(() => ({}));
+      const [trending, airing, upcoming, rated, popular] = await Promise.all([
+        sourceJson("kitsu", "https://kitsu.io/api/edge/trending/anime?limit=20", settings).catch(() => ({})),
+        list("filter[status]=current&sort=-userCount"), list("filter[status]=upcoming&sort=-userCount"), list("sort=ratingRank"), list("sort=popularityRank")
       ]);
       const noun = category === "movie" ? "anime movies" : "anime";
-      return [{ source: "kitsu", title: `Trending ${noun}`, items: category === "movie" ? rows(popular) : rows(current) }, { source: "kitsu", title: `Popular ${noun}`, items: rows(popular) }];
+      const shelf = (title, response) => ({ source: "kitsu", title, items: rows(response) });
+      return [shelf("Trending this week", trending.data?.length ? trending : popular), shelf(`Top airing ${noun}`, airing), shelf(`Top upcoming ${noun}`, upcoming), shelf(`Highest rated ${noun}`, rated), shelf(`Most popular ${noun}`, popular)];
     });
     metadata.available(category, settings).filter(source => source.custom && source.config.suggestionsUrl && (!sourceKey || sourceKey === source.key)).forEach(source => jobs.push(async () => {
       const config = source.config;
