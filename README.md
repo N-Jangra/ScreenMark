@@ -1,4 +1,4 @@
-# ScreenMark 0.1.12
+# ScreenMark 0.2.0
 
 ScreenMark is a local-first tracker for **movies and TV series**. It runs as a browser single-page app and as a Capacitor Android app, with an iOS-style interface that adapts from phones to tablets and desktops, and keeps its library in an app-specific storage namespace.
 
@@ -12,7 +12,7 @@ ScreenMark is a local-first tracker for **movies and TV series**. It runs as a b
 - **Quick setup** walks a fresh install through four steps (series watched, series to watch, movies watched, movies to watch) and is available later from Profile ⋮ → Quick setup. Empty Favorites pages offer the same style of picker, listing titles from your local library.
 - Newly added source-linked titles sync their full details in the background. Series episode guides and, with **Save all images**, original episode stills are saved without opening each season; episode pages resolve saved stills from IndexedDB after the temporary WebView cache is cleared, so they remain available offline. A persistent sync overlay shows the active title and episode-artwork progress and opens Sync status.
 - **Sync status** (`#sync`) separates new-title detail downloads from saved-metadata refreshes. Both queues can be paused or resumed. Unfinished download jobs stay paused after an app restart; Clear sync removes their history and stops queued work. Failed rows offer icon-only Retry buttons. The empty state uses the same layout as SavePoint.
-- Discover offers Grid, List and Cards views (Cards prefer landscape backdrops, with posters as fallback) and shows suggestion shelves from TVmaze, TMDB, AniList, MyAnimeList (Jikan) and Kitsu, labelled with their sources.
+- Discover offers Grid, List and Cards views (Cards prefer landscape backdrops, with posters as fallback) and shows suggestion shelves (mirroring each source's own home page for TMDB, Rotten Tomatoes and Kitsu) from TVmaze, TMDB, AniList, MyAnimeList (Jikan) and Kitsu, labelled with their sources.
 - Discover movies and series across TVmaze, AniList, MyAnimeList (Jikan), Kitsu, TMDB, TheTVDB, IMDb, Rotten Tomatoes and OMDb. Search results are grouped by source, with a dedicated View all results page for each provider.
 - Without a search query, Discover shows suggestion shelves without repeating a catalog title across categories.
 - Pull-to-refresh is available on Discover, Show and Movie watchlists, with content moving below the sticky controls during the drag. Android's native edge stretch is disabled so the fixed bottom bar stays in place. Watchlist status changes animate nearby cards into their new positions.
@@ -56,7 +56,7 @@ The app lists them under **Settings → Metadata Sources**. TMDB, TheTVDB and OM
 - [Metadata sources](docs/metadata.md) — providers, API keys and fetching behavior.
 - [Storage](docs/storage.md) — library persistence, image cache and backups.
 - [Data schema](docs/db-schema.md) and [file layout](docs/file-schema.md).
-- [Release notes](CHANGELOG.md) — current 0.1.12 changes and earlier release notes.
+- [Release notes](CHANGELOG.md) — current 0.2.0 changes and earlier release notes.
 - The sibling Kotlin Android test app and its device load-test results are documented in `../ScreenMark-kot/KOTLIN-PORT-REPORT.md`.
 - [Frontend module map](frontend/README.md).
 

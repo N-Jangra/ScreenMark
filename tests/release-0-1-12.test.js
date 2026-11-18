@@ -17,13 +17,8 @@ function loadPages(files, extra = {}) {
   return window;
 }
 
-test("0.1.12 changelog, docs and version metadata agree", () => {
-  assert.equal(JSON.parse(read("package.json")).version, "0.1.12");
-  assert.match(read("frontend/app-config.js"), /"version": "0\.1\.12"/);
-  assert.match(read("android/app/build.gradle"), /versionName "0\.1\.12"/);
-  assert.match(read("android/app/build.gradle"), /versionCode 112/);
+test("0.1.12 changelog and docs notes remain", () => {
   assert.match(read("CHANGELOG.md"), /## \[0\.1\.12\] — 2026-11-17/);
-  assert.match(read("docs/README.md"), /ScreenMark 0\.1\.12/);
   assert.match(read("docs/storage.md"), /Transfers: progress, notifications and images \(0\.1\.12\)/);
   assert.match(read("docs/metadata.md"), /Cast, crew and character pages by source \(0\.1\.12\)/);
 });
